@@ -1904,7 +1904,7 @@ async fn get_server_settings(State(state): State<AppState>, headers: HeaderMap) 
     Ok(Json(state.cedar.server_settings().await?))
 }
 
-/// Change cedar's server-wide settings; the body (`{max_image_side?, sandbox_idle_minutes?, sandbox_runtime?, run_timeout_secs?}`)
+/// Change cedar's server-wide settings; the body (`{max_image_side?, sandbox_idle_minutes?, sandbox_runtime?, run_timeout_secs?, computer_runtime?}`)
 /// goes through as it is.
 async fn put_server_settings(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;

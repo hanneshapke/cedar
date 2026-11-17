@@ -105,6 +105,8 @@ function render(s) {
   }
   const toggle = $('browser-toggle');
   if (document.activeElement !== toggle) toggle.checked = s.browser;
+  const computer = $('computer-toggle');
+  if (document.activeElement !== computer) computer.checked = s.computer;
 
   // The forms of the user's own server and of a hosted provider: each filled from the saved
   // config while that is the option in use, until the user starts typing.
@@ -806,6 +808,9 @@ $('ts-install').addEventListener('click', () => invoke('install_tailscale').then
 $('docker-finish').addEventListener('click', () => invoke('finish_docker_setup').catch((e) => alert(e)));
 $('browser-toggle').addEventListener('change', (ev) => {
   invoke('set_browser', { enabled: ev.target.checked }).then(refresh).catch((e) => alert(e));
+});
+$('computer-toggle').addEventListener('change', (ev) => {
+  invoke('set_computer', { enabled: ev.target.checked }).then(refresh).catch((e) => alert(e));
 });
 // The chat's Settings sends the window here with #llama for its "Run a model here with llama.cpp"
 // and for "Manage…" on the model the app runs: that option is opened and scrolled to.

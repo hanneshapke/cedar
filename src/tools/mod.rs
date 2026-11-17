@@ -17,6 +17,7 @@ mod calendar;
 mod drive;
 mod changes;
 mod chart;
+mod computer;
 pub mod custom;
 mod document;
 pub(crate) mod fetch;
@@ -47,6 +48,7 @@ pub use bash::Bash;
 pub use bestbuy::BestBuy;
 pub use browser::BrowserTool;
 pub use chart::GenerateChart;
+pub use computer::ComputerTool;
 pub use custom::PythonTool;
 pub use document::ReadDocument;
 pub use fetch::{DownloadFile, FetchUrl, WebClient};
@@ -70,6 +72,7 @@ pub use weather::WeatherForecast;
 pub use web_search::BraveSearch;
 
 use crate::browser::BrowserSession;
+use crate::computer::ComputerSession;
 use crate::config::Config;
 use crate::config::GoogleOAuthConfig as GoogleCredentials;
 use crate::llm::{LlmClient, MessageRequest};
@@ -91,6 +94,12 @@ pub struct ToolContext {
     pub sandbox: Arc<dyn Sandbox>,
     /// The run's browser, started on first use. `None` when the browser is turned off.
     pub browser: Option<Arc<BrowserSession>>,
+    /// The run's desktop, started on first use. `None` when the computer is turned off, or
+    /// outside a run.
+    pub computer: Option<Arc<ComputerSession>>,
+    /// The longer side, in pixels, an image shown to the model may have (the server's
+    /// `max_image_side` setting).
+    pub max_image_side: u32,
     /// Per-command wall-clock limit.
     pub timeout: Duration,
     /// Cap on returned output, per stream.
@@ -165,6 +174,35 @@ impl ToolModel {
     }
 }
 
+/// What a call gives the model: text, and for a tool that shows something (the `computer`'s
+/// screen) an image with it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolOutput {
+    pub text: String,
+    pub image: Option<ToolImage>,
+}
+
+/// An image in a tool's result, base64-encoded.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolImage {
+    pub media_type: String,
+    pub data: String,
+}
+
+impl ToolImage {
+    /// The content block the image is stored and sent as.
+    pub fn block(&self) -> Value {
+        json!({ "type": "image",
+                "source": { "type": "base64", "media_type": self.media_type, "data": self.data } })
+    }
+}
+
+impl From<String> for ToolOutput {
+    fn from(text: String) -> Self {
+        Self { text, image: None }
+    }
+}
+
 /// A tool is a name, a description, a JSON schema for its input, and a function.
 #[async_trait]
 pub trait Tool: Send + Sync {
@@ -172,6 +210,11 @@ pub trait Tool: Send + Sync {
     fn description(&self) -> &str;
     fn schema(&self) -> Value;
     async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String>;
+
+    /// [`Self::call`] for a tool whose result is more than text. The agent calls this one.
+    async fn call_output(&self, ctx: &ToolContext, input: &Value) -> Result<ToolOutput> {
+        self.call(ctx, input).await.map(ToolOutput::from)
+    }
 
     /// The personal tool this is, for what only those have: where it comes from (local or the
     /// marketplace) and what its manifest declares.
@@ -234,7 +277,7 @@ impl ToolSet {
     /// isn't off), `compare_stocks` unless `STOCKS` is off, `search_products` if a Brave or
     /// Best Buy key is configured or saved (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
     /// `remember` and `forget` unless `MEMORY` is off, the `records_*` tools unless `RECORDS` is off,
-    /// `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
+    /// `browser` if `BROWSER` is on, `computer` if `COMPUTER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
     /// is on (through the REST APIs, or MCP servers whose tools are discovered later), the Slack
     /// tools if a Slack bot token is configured or saved (and `SLACK` isn't off), and the
     /// personal Python tools in `TOOLS_DIR`, if set.
@@ -339,6 +382,9 @@ impl ToolSet {
             set.tools
                 .push(Box::new(BrowserTool::new(cfg.web_fetch_allow_private)));
         }
+        if cfg.computer.enabled {
+            set.tools.push(Box::new(ComputerTool::new(&cfg.computer)));
+        }
         // The client from the environment wins over a saved one, as elsewhere; a refresh token
         // from the environment only ever belongs to the environment's client.
         let oauth = cfg
@@ -436,7 +482,7 @@ impl ToolSet {
     /// The tools a run may use. `None` (or an entry `*`) means every tool; otherwise each entry
     /// names a group (see [`GROUPS`]) or a single tool, and the sandbox tools are always included.
     pub fn select<'a>(&'a self, allow: Option<&'a [String]>) -> ToolView<'a> {
-        ToolView { set: self, allow }
+        ToolView { set: self, allow, no_computer: false }
     }
 
     /// Check a run's tool selection. Groups are accepted whether or not this server offers them
@@ -569,6 +615,7 @@ const GROUP_WORDS: &[(&str, &[&str])] = &[
     ("stocks", &["stock", "ticker", "etf", "nasdaq", "dow", "portfolio", "invest", "investing", "share", "market"]),
     ("products", &["buy", "purchase", "shop", "shopping", "product", "gift", "cheapest", "deal", "price"]),
     ("browser", &["browser", "click", "javascript", "button", "form", "login", "website"]),
+    ("computer", &["computer", "desktop", "screen", "screenshot", "gui", "mouse", "window", "application", "app", "libreoffice", "firefox"]),
     ("gmail", &["email", "mail", "gmail", "inbox", "newsletter", "draft"]),
     ("calendar", &["calendar", "meeting", "schedule", "appointment", "agenda", "availability", "event", "busy", "free"]),
     ("drive", &["drive", "doc", "docs", "gdoc", "folder", "google"]),
@@ -630,6 +677,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("memory", "Memory"),
     ("records", "Records"),
     ("browser", "Browser"),
+    ("computer", "Computer use"),
     ("gmail", "Gmail"),
     ("calendar", "Calendar"),
     ("drive", "Google Drive & Docs"),
@@ -663,6 +711,7 @@ pub fn group_of(name: &str) -> &'static str {
         REMEMBER | FORGET | RECALL => "memory",
         RECORDS_LIST | RECORDS_DESCRIBE | RECORDS_SAVE | RECORDS_LOOKUP | RECORDS_DROP => "records",
         "browser" => "browser",
+        "computer" => "computer",
         n if n.starts_with("gmail_") => "gmail",
         n if n.starts_with("calendar_") => "calendar",
         n if n.starts_with("drive_") => "drive",
@@ -689,14 +738,27 @@ pub fn writes(name: &str) -> bool {
 pub struct ToolView<'a> {
     set: &'a ToolSet,
     allow: Option<&'a [String]>,
+    /// The run gets no `computer`: its model reads no images, or the computer is the user's own
+    /// and nobody is there to answer for the run.
+    no_computer: bool,
 }
 
 impl<'a> ToolView<'a> {
+    /// The view without the `computer` tool, whose every result is a screenshot: for a model
+    /// that reads no images, and for an unattended run when the computer is the user's own.
+    pub fn without_computer(mut self) -> Self {
+        self.no_computer = true;
+        self
+    }
+
     fn allows(&self, name: &str) -> bool {
+        let group = self.set.group(name);
+        if self.no_computer && group == "computer" {
+            return false;
+        }
         let Some(allow) = self.allow else {
             return true;
         };
-        let group = self.set.group(name);
         group == "core" || allow.iter().any(|a| a == "*" || a == name || a == group)
     }
 
@@ -769,6 +831,14 @@ impl<'a> ToolView<'a> {
             note.push_str(
                 " For pages that only work in a real browser (content loaded by JavaScript, search \
                  forms, buttons that open dialogs or load more), use the browser tool.",
+            );
+        }
+        if self.get("computer").is_some() {
+            note.push_str(
+                " For work that needs an application with windows (a spreadsheet or document in \
+                 an office suite, a page that only works in a full web browser, anything you \
+                 would click through), use the computer tool; it is slower than every other \
+                 tool, so use it only when no other tool can do the job.",
             );
         }
         if self.get("weather_forecast").is_some() {

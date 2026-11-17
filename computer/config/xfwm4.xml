@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- One workspace, and no compositor: there is no GPU behind the virtual screen. -->
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="workspace_count" type="int" value="1"/>
+    <property name="use_compositing" type="bool" value="false"/>
+  </property>
+</channel>

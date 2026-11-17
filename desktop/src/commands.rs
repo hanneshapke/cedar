@@ -153,6 +153,19 @@ pub fn set_browser(app: AppHandle, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Turns the `computer` tool on or off and restarts cedar. On means this computer itself: the
+/// model may look at its screen and use its mouse and keyboard, each time with the user's OK.
+#[tauri::command]
+pub fn set_computer(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    app::refuse_when_remote(&state.config()).map_err(fail)?;
+    state
+        .update_config(|c| c.computer = enabled)
+        .map_err(fail)?;
+    tauri::async_runtime::spawn(app::restart(app));
+    Ok(())
+}
+
 /// Shares the chat with the phone apps (iOS, Android) over Tailscale, or stops sharing it.
 #[tauri::command]
 pub async fn set_share(app: AppHandle, enabled: bool) -> Result<(), String> {

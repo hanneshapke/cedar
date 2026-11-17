@@ -22,6 +22,18 @@ async fn main() -> Result<()> {
         println!("cedar {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
+    // The driver of this computer's own screen, which the server starts once per `computer`
+    // call when `COMPUTER_RUNTIME=native` (see cedar::computer and cedar::native).
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("computer") {
+        #[cfg(feature = "native-computer")]
+        std::process::exit(cedar::native::main(&args[1..]));
+        #[cfg(not(feature = "native-computer"))]
+        {
+            eprintln!("this cedar was built without the native computer driver (the `native-computer` feature)");
+            std::process::exit(1);
+        }
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")),
@@ -41,6 +53,7 @@ async fn main() -> Result<()> {
         web_search = cfg.brave_api_key.is_some(),
         web_fetch = cfg.web_fetch,
         browser = cfg.browser.enabled,
+        computer = cfg.computer.enabled,
         weather = cfg.weather,
         google_api = ?cfg.google_apis.iter().map(|s| s.prefix.as_str()).collect::<Vec<_>>(),
         mcp = ?cfg.mcp_servers.iter().map(|s| s.prefix.as_str()).collect::<Vec<_>>(),
@@ -51,6 +64,25 @@ async fn main() -> Result<()> {
             network = %cfg.browser.network,
             "BROWSER is on: only the URLs the model navigates to are checked, so pages the browser \
              reaches by itself (links, redirects, scripts) can reach whatever its Docker network can"
+        );
+    }
+    if cfg.computer.enabled && cfg.computer.native() && !cfg!(feature = "native-computer") {
+        // Not a reason to refuse to start: an app that bundles such a cedar would not come up.
+        tracing::warn!(
+            "COMPUTER_RUNTIME=native, but this cedar was built without the driver for its own \
+             computer (build it with `--features native-computer`): the computer tool works a \
+             desktop in a container instead"
+        );
+    } else if cfg.computer.enabled && cfg.computer.native() {
+        tracing::warn!(
+            "COMPUTER is on with COMPUTER_RUNTIME=native: in attended runs the model can see this \
+             computer's screen and use its mouse and keyboard, once the user allows it"
+        );
+    } else if cfg.computer.enabled && cfg.computer.online() {
+        tracing::warn!(
+            network = %cfg.computer.network,
+            "COMPUTER is on with network access: the model works a full desktop with a web browser, \
+             which can reach whatever its Docker network can, and sees the conversation's workspace"
         );
     }
     if cfg.web_fetch_allow_private {

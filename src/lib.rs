@@ -10,6 +10,7 @@ pub mod attachments;
 pub mod auth;
 pub mod browser;
 pub mod compact;
+pub mod computer;
 pub mod config;
 pub mod context;
 pub mod error;
@@ -24,6 +25,8 @@ pub mod memory;
 pub mod records;
 pub mod mcp;
 pub mod models;
+#[cfg(feature = "native-computer")]
+pub mod native;
 pub mod openshell;
 pub mod plan;
 pub mod policy;

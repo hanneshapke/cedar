@@ -8,6 +8,7 @@ use axum::http::{Method, Request, StatusCode};
 use axum::Router;
 use cedar::api::{self, AppState};
 use cedar::browser::{Browser, BrowserFactory};
+use cedar::computer::{Computer, ComputerFactory};
 use cedar::config::Config;
 use cedar::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
 use cedar::models::{ModelEntry, Usage};
@@ -619,6 +620,85 @@ impl BrowserFactory for FakeBrowserFactory {
     }
 }
 
+// -- fake computer ---------------------------------------------------------------------------
+
+/// A 1280x800 screen that answers every request with the same small screenshot and records
+/// what reached it. A click at x = 13 fails like the driver does.
+#[derive(Default)]
+pub struct FakeComputer {
+    pub requests: Mutex<Vec<Value>>,
+}
+
+/// The base64 the fake screen's screenshot is made of.
+pub const FAKE_SCREENSHOT: &str = "c2NyZWVu";
+
+#[async_trait]
+impl Computer for FakeComputer {
+    fn screen(&self) -> (u32, u32) {
+        (1280, 800)
+    }
+
+    async fn call(&self, request: &Value, _timeout: Duration) -> Result<Value> {
+        self.requests.lock().unwrap().push(request.clone());
+        if request["x"] == 13 {
+            return Err(anyhow!("xdotool: the pointer could not be moved"));
+        }
+        Ok(json!({
+            "image": FAKE_SCREENSHOT,
+            "media_type": "image/png",
+            "width": request["width"].as_u64().unwrap_or(1280),
+            "height": request["height"].as_u64().unwrap_or(800),
+            "screen": [1280, 800],
+            "pointer": [request["x"].as_u64().unwrap_or(640), request["y"].as_u64().unwrap_or(400)],
+            "window": "Untitled 1 - LibreOffice Calc",
+        }))
+    }
+}
+
+#[derive(Default)]
+pub struct FakeComputerFactory {
+    /// The run and the workspace each computer was started for.
+    pub created: Mutex<Vec<(Uuid, Uuid, Arc<FakeComputer>)>>,
+    pub destroyed: Mutex<Vec<Uuid>>,
+    pub cleanups: AtomicUsize,
+    pub unhealthy: AtomicBool,
+}
+
+impl FakeComputerFactory {
+    pub fn computer(&self, index: usize) -> Arc<FakeComputer> {
+        self.created.lock().unwrap()[index].2.clone()
+    }
+}
+
+#[async_trait]
+impl ComputerFactory for FakeComputerFactory {
+    async fn create(&self, run_id: Uuid, workspace_id: Uuid) -> Result<Arc<dyn Computer>> {
+        let computer = Arc::new(FakeComputer::default());
+        self.created
+            .lock()
+            .unwrap()
+            .push((run_id, workspace_id, computer.clone()));
+        Ok(computer)
+    }
+
+    async fn destroy(&self, run_id: Uuid) {
+        self.destroyed.lock().unwrap().push(run_id);
+    }
+
+    async fn cleanup_orphans(&self) -> Result<usize> {
+        self.cleanups.fetch_add(1, Ordering::SeqCst);
+        Ok(0)
+    }
+
+    async fn health(&self) -> Result<()> {
+        if self.unhealthy.load(Ordering::SeqCst) {
+            Err(anyhow!("computer image is missing"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 // -- HTTP harness ----------------------------------------------------------------------------
 
 pub const KEY_A: &str = "key-a";
@@ -661,6 +741,7 @@ pub struct TestApp {
     pub llm: Arc<ScriptedLlm>,
     pub factory: Arc<FakeFactory>,
     pub browsers: Arc<FakeBrowserFactory>,
+    pub computers: Arc<FakeComputerFactory>,
 }
 
 #[derive(Debug, Clone)]
@@ -712,12 +793,17 @@ impl TestApp {
         let clients = Arc::new(LlmRouter::new());
         clients.set(TEST_MODEL, llm.clone());
         let browsers = Arc::new(FakeBrowserFactory::default());
-        let state = AppState::with_browsers(
+        let computers = Arc::new(FakeComputerFactory::default());
+        let state = AppState::with_containers(
             test_config(extra),
             store,
             clients,
             factory.clone(),
             browsers.clone(),
+            // The one fake stands in for both: desktops in containers and the user's own
+            // computer (`computer_runtime` says which a run gets).
+            computers.clone(),
+            Some(computers.clone()),
         )
         .unwrap();
         state.integrations.reload().await.unwrap();
@@ -730,6 +816,7 @@ impl TestApp {
             llm,
             factory,
             browsers,
+            computers,
         }
     }
 

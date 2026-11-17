@@ -553,6 +553,8 @@ async fn generate_pdf_renders_markdown_in_the_sandbox() {
     let ctx = ToolContext {
         sandbox: sb.clone(),
         browser: None,
+        computer: None,
+        max_image_side: cedar::images::DEFAULT_MAX_SIDE,
         timeout: 60 * SECOND,
         max_output: 32_768,
         model: None,
@@ -605,6 +607,8 @@ fn tool_ctx(sb: &Arc<dyn Sandbox>) -> cedar::tools::ToolContext {
     cedar::tools::ToolContext {
         sandbox: sb.clone(),
         browser: None,
+        computer: None,
+        max_image_side: cedar::images::DEFAULT_MAX_SIDE,
         timeout: 60 * SECOND,
         max_output: 32_768,
         model: None,

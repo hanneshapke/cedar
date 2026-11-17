@@ -178,9 +178,76 @@ pub fn small_window_note(window: u32) -> String {
     )
 }
 
-/// The size of `messages` as sent, in bytes of their JSON.
+/// What an image counts as in [`size`], whatever its base64 takes: about what a vision model
+/// spends on a screenshot or a photo (some 1,500 to 2,000 tokens), in the bytes of as much text.
+const IMAGE_BYTES: usize = 6_000;
+/// At least this many of the newest images in tool results (the `computer` tool's screenshots)
+/// stay in a request; older ones are taken out this many at a time, so the start of the request
+/// stays the same text for a few turns and the server can reuse what it computed for it.
+const KEPT_VIEWS: usize = 3;
+const VIEW_GONE: &str = "[The screenshot that came with this result is no longer shown; take a new one to see the screen.]";
+
+/// The size of `messages` as sent, in bytes of their JSON, with each image counted as
+/// [`IMAGE_BYTES`].
 pub fn size(messages: &[Value]) -> usize {
-    messages.iter().map(|m| m.to_string().len()).sum()
+    messages.iter().map(message_size).sum()
+}
+
+fn message_size(message: &Value) -> usize {
+    let mut over = 0;
+    let mut count = |block: &Value| {
+        if block["type"] == "image" {
+            let data = block["source"]["data"].as_str().map_or(0, str::len);
+            over += data.saturating_sub(IMAGE_BYTES);
+        }
+    };
+    for block in message["content"].as_array().into_iter().flatten() {
+        count(block);
+        block["content"].as_array().into_iter().flatten().for_each(&mut count);
+    }
+    message.to_string().len() - over
+}
+
+fn has_image(result: &Value) -> bool {
+    result["type"] == "tool_result"
+        && result["content"]
+            .as_array()
+            .is_some_and(|parts| parts.iter().any(|p| p["type"] == "image"))
+}
+
+/// `messages` with the images of older tool results taken out and a note left in their place:
+/// all but the newest few (see [`KEPT_VIEWS`]), or every one when the model reads no `images`
+/// (a conversation continued on another model). A screenshot shows the screen as it was, so an
+/// old one tells the model little and costs as much as a new one. `None` when nothing is taken
+/// out.
+pub fn with_recent_views(messages: &[Value], images: bool) -> Option<Vec<Value>> {
+    let results = || {
+        messages
+            .iter()
+            .flat_map(|m| m["content"].as_array().into_iter().flatten())
+            .filter(|b| has_image(b))
+    };
+    let total = results().count();
+    let gone = if images { total.saturating_sub(KEPT_VIEWS) / KEPT_VIEWS * KEPT_VIEWS } else { total };
+    if gone == 0 {
+        return None;
+    }
+    let mut out = messages.to_vec();
+    let old = out
+        .iter_mut()
+        .flat_map(|m| m["content"].as_array_mut().into_iter().flatten())
+        .filter(|b| has_image(b))
+        .take(gone);
+    for block in old {
+        let text: String = block["content"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|p| p["text"].as_str())
+            .collect();
+        block["content"] = Value::String(format!("{text}\n{VIEW_GONE}"));
+    }
+    Some(out)
 }
 
 /// The tool results a run has cut, by `tool_use_id`, with how many characters each kept. A cut
@@ -251,11 +318,11 @@ pub fn fit(messages: &[Value], max_bytes: usize, earlier: &Cuts) -> Fitted {
         if Some(i) == newest {
             continue;
         }
-        let before = out[i].to_string().len();
+        let before = message_size(&out[i]);
         let n = cut_results(&mut out[i], &messages[i], OLD_RESULT_CHARS, &mut cuts);
         if n > 0 {
             trimmed += n;
-            used = used - before + out[i].to_string().len();
+            used = used - before + message_size(&out[i]);
         }
     }
     if let Some(i) = newest {
@@ -266,14 +333,14 @@ pub fn fit(messages: &[Value], max_bytes: usize, earlier: &Cuts) -> Fitted {
             }
             let excess = used - max_bytes;
             let keep = len.saturating_sub(excess + 200).max(NEW_RESULT_MIN_CHARS);
-            let before = out[i].to_string().len();
+            let before = message_size(&out[i]);
             let original = &messages[i]["content"][b];
             out[i]["content"][b]["content"] = Value::String(cut(&result_text(original), keep));
             if let Some(id) = original["tool_use_id"].as_str() {
                 cuts.keep(id, keep);
             }
             trimmed += 1;
-            let after = out[i].to_string().len();
+            let after = message_size(&out[i]);
             if after >= before {
                 break;
             }
@@ -284,11 +351,11 @@ pub fn fit(messages: &[Value], max_bytes: usize, earlier: &Cuts) -> Fitted {
     // calls and their results), and never leaving results whose calls are gone.
     let mut dropped = 0;
     while used > max_bytes && out.len() > 3 {
-        used -= out[1].to_string().len();
+        used -= message_size(&out[1]);
         out.remove(1);
         dropped += 1;
         if out.len() > 3 && out[1]["role"] == "user" && has_tool_results(&out[1]) {
-            used -= out[1].to_string().len();
+            used -= message_size(&out[1]);
             out.remove(1);
             dropped += 1;
         }
@@ -302,7 +369,7 @@ pub fn fit(messages: &[Value], max_bytes: usize, earlier: &Cuts) -> Fitted {
     if used > max_bytes {
         let last = out.len() - 1;
         let n = out[last]["content"].as_array().map_or(0, |b| b.len()).max(1);
-        let each = (max_bytes.saturating_sub(used - out[last].to_string().len()) / n).max(LAST_RESORT_CHARS);
+        let each = (max_bytes.saturating_sub(used - message_size(&out[last])) / n).max(LAST_RESORT_CHARS);
         let original = messages.last().expect("not empty");
         trimmed += cut_results(&mut out[last], original, each, &mut cuts);
     }
@@ -514,6 +581,70 @@ mod tests {
         let mut c = Budget::new(None, 1_000);
         assert!(!c.learn_window(1_000, Some("max_tokens"), Usage { input_tokens: 5, output_tokens: 1_000 }));
         assert!(!c.learn_window(1_000, Some("end_turn"), usage));
+    }
+
+    fn view(id: &str, data: &str) -> Value {
+        json!({ "type": "tool_result", "tool_use_id": id, "content": [
+            { "type": "text", "text": format!("screen {id}") },
+            { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": data } },
+        ] })
+    }
+
+    fn views(n: usize) -> Vec<Value> {
+        (0..n)
+            .map(|i| json!({ "role": "user", "content": [view(&format!("t{i}"), "aGk=")] }))
+            .collect()
+    }
+
+    #[test]
+    fn an_image_counts_the_same_whatever_its_bytes() {
+        let small = [json!({ "role": "user", "content": [view("t", &"A".repeat(IMAGE_BYTES))] })];
+        let large = [json!({ "role": "user", "content": [view("t", &"A".repeat(400_000))] })];
+        assert_eq!(size(&small), size(&large));
+        let attached = [json!({ "role": "user", "content": [
+            { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "A".repeat(400_000) } },
+            { "type": "text", "text": "what is this?" },
+        ] })];
+        assert!(size(&attached) < IMAGE_BYTES + 500, "{}", size(&attached));
+        // A request with a screenshot in it is cut by what its text takes, and the screenshot
+        // goes with an old result, without the arithmetic going below zero.
+        let mut messages = vec![json!({ "role": "user", "content": "task" })];
+        messages.push(json!({ "role": "user", "content": [view("old", &"A".repeat(400_000))] }));
+        messages.push(json!({ "role": "user", "content": [result("new", &"x".repeat(3_000))] }));
+        let fitted = fit(&messages, 4_000, &Cuts::default());
+        assert!(fitted.messages[1]["content"][0]["content"].is_string());
+        assert!(size(&fitted.messages) <= 4_000);
+    }
+
+    #[test]
+    fn old_screenshots_leave_requests_a_few_at_a_time() {
+        let shown = |messages: &[Value]| -> Vec<bool> {
+            messages.iter().map(|m| has_image(&m["content"][0])).collect()
+        };
+        // Up to five stay as they are; the sixth takes the three oldest out.
+        for n in 0..=5 {
+            assert_eq!(with_recent_views(&views(n), true), None, "{n}");
+        }
+        let six = with_recent_views(&views(6), true).unwrap();
+        assert_eq!(shown(&six), [false, false, false, true, true, true]);
+        assert_eq!(
+            six[0]["content"][0]["content"],
+            format!("screen t0\n{VIEW_GONE}"),
+            "the text of the result stays"
+        );
+        // The same ones are gone until three more have come, so the request's start holds still.
+        let eight = with_recent_views(&views(8), true).unwrap();
+        assert_eq!(shown(&eight)[..4], [false, false, false, true]);
+        assert_eq!(shown(&with_recent_views(&views(9), true).unwrap()).iter().filter(|s| **s).count(), 3);
+        // A model that reads no images is sent none.
+        let none = with_recent_views(&views(2), false).unwrap();
+        assert_eq!(shown(&none), [false, false]);
+        // Other results, and images the user attached, are not touched.
+        let other = [json!({ "role": "user", "content": [
+            result("t", "text"),
+            { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "aGk=" } },
+        ] })];
+        assert_eq!(with_recent_views(&other, false), None);
     }
 
     #[test]

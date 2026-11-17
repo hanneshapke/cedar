@@ -86,6 +86,7 @@ fn main() {
             commands::cancel_llama,
             commands::remove_llama,
             commands::set_browser,
+            commands::set_computer,
             commands::open_chat,
             commands::open_in_browser,
             commands::open_url,

@@ -148,6 +148,7 @@ const cedarTrust = (() => {
     deletes: 'trust.what.deletes',
     network: 'trust.what.network',
     community: 'trust.what.community',
+    computer: 'trust.what.computer',
   };
 
   /**
