@@ -770,7 +770,9 @@ is still the same Cedar 0.11.
 3. The workflow releases every platform whose version has no tag yet
    (`scripts/release-plan.sh`), each as a GitHub Release of its own:
    - **cedar**: runs the tests, builds and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>`
-     and `cedar-browser:<version>` for amd64 and arm64 (and `:latest`), builds the Apple Silicon
+     and `cedar-browser:<version>` for amd64 and arm64 (and `:latest`), and in jobs of its own
+     `cedar-computer:<version>` (a failure there doesn't stop the release; the notes then leave
+     that image out), builds the Apple Silicon
      DMG, the x64 MSI and the Linux tarballs, and creates `v<version>` with them, a
      `checksums.txt`, the signed update bundles (`Cedar-<version>-apple-silicon.app.tar.gz` and
      the MSI, each with a `.sig`) and `latest.json`, which installed apps read to find the update

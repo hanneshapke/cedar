@@ -31,6 +31,7 @@ jobs:
       pull-requests: read
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
+      computer: ${{ steps.computer.outputs.computer }}
     steps:
       # On a pull request the filter asks the API for the changed files, so it needs no checkout.
       - if: github.event_name == 'pull_request'
@@ -52,6 +53,16 @@ jobs:
               - '!.github/workflows/ios.yml'
               - '!.github/workflows/pages.yml'
               - '!.github/workflows/testflight.yml'
+      # What the computer image is built from, and the code and tests that drive its container.
+      - if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        id: computer
+        with:
+          filters: |
+            computer:
+              - 'computer/**'
+              - 'src/computer.rs'
+              - 'tests/docker_computer.rs'
 
   clippy:
     needs: changes
@@ -126,6 +137,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -p cedar --features native-computer --all-targets --locked -- -D warnings
       - run: cargo test -p cedar --features native-computer --locked --lib native
+
+  # The desktop behind the computer tool (computer/): the image builds on both architectures the
+  # release publishes, and the real container does what the tool needs (tests/docker_computer.rs).
+  # Nothing else builds this image before a release does. It is large, so only pull requests that
+  # touch it, and manual runs, pay for it.
+  computer-image:
+    needs: changes
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && needs.changes.outputs.computer == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t cedar-computer computer/
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked --test docker_computer -- --ignored --test-threads 1
 
   # The community tool registry (registry/): every tool follows the rules and the index is up to
   # date. cedar's own checks run on the tools too, in `tests/registry.rs` under `test`.
