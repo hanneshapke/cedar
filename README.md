@@ -68,7 +68,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
 | `POST /v1/runs/{id}/plan` | Agree to the plan an interactive run is waiting on: `{"steps": [{"id", "title"}, ...]}` (1–12, edited, reordered, added or removed as you like). Returns `202`; `409` if the run isn't waiting for its plan. |
 | `POST /v1/runs/{id}/approvals/{approval_id}` | Answer an `approval.required` event: `{"decision": "allow" \| "allow_always" \| "deny"}`. Returns `202`; `409` if the run isn't waiting for that approval. |
-| `GET /v1/events` | Server-Sent Events: every run of the key that ends, as it ends. Replays from `?after=<id>` or the `Last-Event-ID` header, then follows live, and never closes on its own. See [Being told when a run ends](#being-told-when-a-run-ends). |
+| `GET /v1/events` | Server-Sent Events: every run of the key that ends, as it ends (with `?users=all`, from a [service key](#acting-for-users), every user's too). Replays from `?after=<id>` or the `Last-Event-ID` header, then follows live, and never closes on its own. See [Being told when a run ends](#being-told-when-a-run-ends). |
 | `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
 | `DELETE /v1/runs/{id}` | Delete a finished run with its messages and events. `409` while it is still active. |
@@ -111,6 +111,22 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /healthz`, `GET /readyz` | Liveness, and readiness (database + Docker, and the OpenShell gateway when sandboxes run on it). No auth. |
 
 A run belongs to the key that created it. Anyone else gets `404`.
+
+### Acting for users
+
+A service that has users of its own in front of cedar (cedar-chat with [more than one
+person](chat/README.md#users) on it) names the user each request is for in an `X-Cedar-User`
+header, a UUID. Everything the request reads and writes is then that user's instead of the key's:
+runs and their traces, [memory](#memory), [records](#records), always-allowed approvals, the limit
+on active runs. Only a key listed in `CEDAR_SERVICE_KEYS` may send the header (`403` from any
+other, `400` when it isn't a UUID); without it, such a key acts as itself, like any other. Users
+are filed under the UUID alone, so they keep what is theirs when the service's key is replaced, and
+every service key can act for every user. A service key also gets one stream of all of them:
+`GET /v1/events?users=all` carries its own finished runs and every user's.
+
+What is not per user: the registered models, the server settings, the [integrations](#integrations)
+(one Google account, one Slack token: every user's runs can use them), the personal tools in
+`TOOLS_DIR`, and `MAX_CONCURRENT_RUNS`, which all users share.
 
 ### Choosing tools
 
@@ -706,6 +722,7 @@ Settings come from environment variables. The important ones:
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty (required when `GMAIL` or `CALENDAR` is on) |
 | `GOOGLE_REFRESH_TOKEN` | empty (required when `GMAIL` or `CALENDAR` is on, unless the account is connected from the chat UI; see [Integrations](#integrations)) |
 | `CEDAR_ADMIN_KEYS` | empty (comma-separated subset of `CEDAR_API_KEYS` that may manage [integrations](#integrations)) |
+| `CEDAR_SERVICE_KEYS` | empty (comma-separated subset of `CEDAR_API_KEYS` that may [act for users](#acting-for-users) with `X-Cedar-User`) |
 | `CEDAR_SECRET_KEY` | empty (64 hex characters, `openssl rand -hex 32`; encrypts integration credentials saved through the API, which can't be saved without it) |
 | `GOOGLE_SCOPES` | `openid email` plus `gmail.readonly`, `gmail.compose`, `calendar.readonly` (what "Connect Google" asks for; space- or comma-separated full scope URLs) |
 | `GMAIL_TOOLS` | `search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft` (`*` for every tool the server lists) |

@@ -342,6 +342,9 @@ pub struct Config {
     pub api_keys: Vec<String>,
     /// The subset of `api_keys` that may use the admin routes (integrations).
     pub admin_keys: Vec<String>,
+    /// The subset of `api_keys` that may act for users (`X-Cedar-User`): a service with users of
+    /// its own in front of cedar, such as cedar-chat.
+    pub service_keys: Vec<String>,
     /// Encrypts integration secrets saved through the admin API. Without it they can't be saved.
     pub secret_key: Option<[u8; 32]>,
     pub database_url: String,
@@ -576,6 +579,10 @@ impl Config {
         if admin_keys.iter().any(|k| !api_keys.contains(k)) {
             bail!("every key in CEDAR_ADMIN_KEYS must also be in CEDAR_API_KEYS");
         }
+        let service_keys = list("CEDAR_SERVICE_KEYS");
+        if service_keys.iter().any(|k| !api_keys.contains(k)) {
+            bail!("every key in CEDAR_SERVICE_KEYS must also be in CEDAR_API_KEYS");
+        }
 
         // A GUI launcher (the macOS app) runs without the user's PATH, so it names the CLI itself.
         let docker_bin = get("DOCKER_BIN").unwrap_or_else(|| "docker".into());
@@ -669,6 +676,7 @@ impl Config {
             mcp_servers,
             api_keys,
             admin_keys,
+            service_keys,
             secret_key,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
             bind_addr: parse(
@@ -1243,6 +1251,20 @@ mod tests {
         ]))
         .unwrap_err();
         assert!(err.to_string().contains("CEDAR_ADMIN_KEYS"), "{err}");
+
+        assert!(cfg.service_keys.is_empty());
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a,b"),
+            ("CEDAR_SERVICE_KEYS", "a"),
+        ]))
+        .unwrap();
+        assert_eq!(cfg.service_keys, ["a"]);
+        let err = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("CEDAR_SERVICE_KEYS", "z"),
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("CEDAR_SERVICE_KEYS"), "{err}");
         for bad in ["abc", &"zz".repeat(32), &"ab".repeat(31)] {
             let err = Config::from_lookup(lookup(&[
                 ("CEDAR_API_KEYS", "a"),

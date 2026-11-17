@@ -301,6 +301,36 @@ remove the tool.
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
 
+## Users
+
+A server starts with one user, the *primary* one: whoever presents `CHAT_ACCESS_TOKEN` (or
+anyone, without one). More people are added over the API with the admin token, and each signs in
+with an access token of their own, entered where the page or an app asks for the token:
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $CHAT_ACCESS_TOKEN" -H "X-Admin-Token: $CHAT_ADMIN_TOKEN" \
+     -H 'content-type: application/json' -d '{"name": "Ada"}' localhost:3000/api/users
+# {"user": {"id": "0193…", "name": "Ada", ...}, "token": "…"}   the token is shown this once
+```
+
+Two things have to be set first: `CHAT_ACCESS_TOKEN` and `CHAT_ADMIN_TOKEN` here, and this
+server's `CEDAR_API_KEY` in cedar's `CEDAR_SERVICE_KEYS` (see
+[Acting for users](../README.md#acting-for-users)); `POST /api/users` answers `409` until cedar
+agrees.
+
+Each user has their own conversations, starred list, search and inbox, agents and their runs,
+settings (defaults, language, notifications, contributing), registered browsers and phones, and
+contribution receipts; another user's conversation or agent is a `404`. In cedar, a user's runs,
+traces, memories and records are filed under the user's id, so the Memory and Records pages are
+theirs too. The primary user's stay where they always were, under this server's own key, which is
+why adding users changes nothing for a server that had one.
+
+Shared by everyone on the server, for now: the models and the server settings (with the default
+`CHAT_MODELS_ACCESS=users`, any user can change them), the integrations (every user's runs can use
+the one connected Google account and Slack token), the personal tools, and
+[pairing](#pairing-the-ios-and-android-apps), whose code carries `CHAT_ACCESS_TOKEN` and so signs
+a phone in as the primary user. There is no page for managing users yet.
+
 ## Updates
 
 When a release newer than this cedar-chat is out, every UI shows a banner at the top with its
@@ -832,6 +862,12 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 
 | Method and path | Purpose |
 | --- | --- |
+| `GET /api/me` | Who the token belongs to: `{id, name, primary, has_token, created_at}` (see [Users](#users)) |
+| `GET /api/users` | Admin: `{users: [...]}`, the primary user first |
+| `POST /api/users` | Admin: add a user, `{"name"}`. `201` with `{user, token}`; the token is not shown again. `409` when cedar doesn't let this server act for users |
+| `PATCH /api/users/{id}` | Admin: rename, `{"name"}` |
+| `POST /api/users/{id}/token` | Admin: a new token for the user, `{user, token}`; the old one stops working |
+| `DELETE /api/users/{id}` | Admin: remove a user with their conversations, agents, settings and devices here and their runs, memories and records in cedar. `409` for the primary user |
 | `GET /api/config` | `{auth_required, admin_enabled, models_access, memory, contributions}`; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), `contributions` is whether `CHAT_CONTRIBUTIONS_URL` is set, and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |

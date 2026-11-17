@@ -147,6 +147,8 @@ pub async fn tick(state: &AppState, now: DateTime<Utc>) -> anyhow::Result<usize>
     let mut started = 0;
     let mut watching = Vec::new();
     for schedule in state.store.due_schedules(now).await? {
+        // Each agent's work is done as its owner.
+        let state = &state.as_user(schedule.user_id);
         let trigger = match Trigger::of(&schedule) {
             Ok(trigger) => trigger,
             Err(e) => {
@@ -170,7 +172,7 @@ pub async fn tick(state: &AppState, now: DateTime<Utc>) -> anyhow::Result<usize>
     }
     let checked: Vec<bool> = futures_util::stream::iter(watching)
         .map(|(schedule, trigger)| async move {
-            match check(state, &schedule, &trigger, now).await {
+            match check(&state.as_user(schedule.user_id), &schedule, &trigger, now).await {
                 Ok(started) => started,
                 Err(e) => {
                     tracing::warn!(schedule_id = %schedule.id, error = %e, "could not check an agent's trigger");

@@ -19,6 +19,8 @@ pub struct EventHub {
     /// Per owner, the id of the latest notification (a finished run), for `GET /v1/events`.
     /// Entries are made by the first stream and dropped once no stream is left.
     owners: Mutex<HashMap<String, watch::Sender<i64>>>,
+    /// The id of the latest notification of anyone, for a service key's stream of all its users.
+    all: watch::Sender<i64>,
     /// Wakes the webhook worker when a run with a callback has finished.
     deliveries: Notify,
 }
@@ -69,9 +71,15 @@ impl EventHub {
             .subscribe()
     }
 
+    /// Follow everyone's finished runs (a service key's `GET /v1/events?users=all`).
+    pub fn subscribe_all(&self) -> watch::Receiver<i64> {
+        self.all.subscribe()
+    }
+
     /// A run of `owner` ended with notification `id`: wake its streams and, if it has a
     /// callback, the webhook worker.
     pub fn finished(&self, owner: &str, id: i64, callback: bool) {
+        self.all.send_replace(id);
         if let Some(tx) = self.owners.lock().unwrap().get(owner) {
             tx.send_replace(id);
         }

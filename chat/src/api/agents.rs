@@ -191,7 +191,7 @@ fn clean_limits(min_interval_secs: Option<u32>, max_runs_per_day: Option<u32>) -
     Ok(())
 }
 
-pub(super) async fn list(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+pub(super) async fn list(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
     let mut agents = Vec::new();
     for schedule in state.store.list_schedules().await? {
         let last = last_run(&state, schedule.id).await?;
@@ -210,7 +210,7 @@ pub(super) async fn list(State(state): State<AppState>) -> Result<Json<Value>, A
     })))
 }
 
-pub(super) async fn create(State(state): State<AppState>, ApiJson(body): ApiJson<AgentBody>) -> Result<(StatusCode, Json<Value>), AppError> {
+pub(super) async fn create(Scoped(state): Scoped, ApiJson(body): ApiJson<AgentBody>) -> Result<(StatusCode, Json<Value>), AppError> {
     let title = clean_title(body.title)?.ok_or_else(|| AppError::BadRequest("title must not be empty".into()))?;
     let prompt = clean_message("prompt", body.prompt.as_deref().unwrap_or_default())?;
     let (model, reasoning) = clean_model_choice(&state, body.model.as_deref(), body.reasoning.as_deref()).await?;
@@ -276,13 +276,13 @@ pub(super) async fn create(State(state): State<AppState>, ApiJson(body): ApiJson
     Ok((StatusCode::CREATED, Json(view(&state, &schedule, None, hook.as_ref().map(|(_, secret)| secret.as_str())))))
 }
 
-pub(super) async fn get(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+pub(super) async fn get(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let schedule = find(&state, &id).await?;
     let runs = with_turns(&state, state.store.list_schedule_runs(schedule.id, MAX_SCHEDULE_RUNS).await?).await?;
     Ok(Json(json!({ "agent": view(&state, &schedule, runs.first(), None), "runs": runs })))
 }
 
-pub(super) async fn update(State(state): State<AppState>, Path(id): Path<String>, ApiJson(body): ApiJson<AgentBody>) -> Result<Json<Value>, AppError> {
+pub(super) async fn update(Scoped(state): Scoped, Path(id): Path<String>, ApiJson(body): ApiJson<AgentBody>) -> Result<Json<Value>, AppError> {
     let mut schedule = find(&state, &id).await?;
     let now = Utc::now();
     if let Some(title) = body.title {
@@ -361,20 +361,20 @@ pub(super) async fn update(State(state): State<AppState>, Path(id): Path<String>
     Ok(Json(view(&state, &schedule, last.as_ref(), secret.as_deref())))
 }
 
-pub(super) async fn delete(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, AppError> {
+pub(super) async fn delete(Scoped(state): Scoped, Path(id): Path<String>) -> Result<StatusCode, AppError> {
     let schedule = find(&state, &id).await?;
     remove_schedule(&state, &schedule).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub(super) async fn run_now(State(state): State<AppState>, Path(id): Path<String>) -> Result<(StatusCode, Json<RunDetail>), AppError> {
+pub(super) async fn run_now(Scoped(state): Scoped, Path(id): Path<String>) -> Result<(StatusCode, Json<RunDetail>), AppError> {
     let schedule = find(&state, &id).await?;
     Ok((StatusCode::ACCEPTED, Json(start_now(&state, &schedule).await?)))
 }
 
 /// A new secret for a webhook agent; the old one stops working at once. This is the only time
 /// the new one is shown.
-pub(super) async fn rotate_hook(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+pub(super) async fn rotate_hook(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let mut schedule = find(&state, &id).await?;
     if schedule.hook_id.is_none() {
         return Err(AppError::Conflict("this agent has no webhook".into()));
@@ -389,7 +389,7 @@ pub(super) async fn rotate_hook(State(state): State<AppState>, Path(id): Path<St
 /// Try a trigger out before saving it: one check, with nothing kept. Says what was seen, so a
 /// path can be found in it, and whether a run would start (never at a first look for a trigger
 /// that waits for a change or for something new).
-pub(super) async fn test(State(state): State<AppState>, ApiJson(body): ApiJson<TestBody>) -> Result<Json<Value>, AppError> {
+pub(super) async fn test(Scoped(state): Scoped, ApiJson(body): ApiJson<TestBody>) -> Result<Json<Value>, AppError> {
     let trigger = Trigger::parse(body.trigger).map_err(AppError::BadRequest)?;
     if !trigger.watches() {
         return Err(AppError::BadRequest("only a trigger that watches something can be tried out".into()));
@@ -420,7 +420,7 @@ pub(super) async fn test(State(state): State<AppState>, ApiJson(body): ApiJson<T
 }
 
 /// The latest runs of every agent, newest first, each with its agent and what started it.
-pub(super) async fn activity(State(state): State<AppState>, ApiQuery(q): ApiQuery<ActivityQuery>) -> Result<Json<Value>, AppError> {
+pub(super) async fn activity(Scoped(state): Scoped, ApiQuery(q): ApiQuery<ActivityQuery>) -> Result<Json<Value>, AppError> {
     let limit = q.limit.unwrap_or(ACTIVITY_PAGE).clamp(1, MAX_ACTIVITY_PAGE);
     let rows = state.store.list_activity(q.before, limit + 1).await?;
     let more = rows.len() as u32 > limit;
@@ -459,7 +459,7 @@ const MAX_DEVICE_BYTES: usize = crate::prompt::MAX_FENCED_BYTES;
 /// item, an automation app. Unlike a webhook this takes the access token, so it is the user
 /// asking; unlike "run now" it can bring something along (shared text, a link), which the run
 /// gets as data, and it is held to the agent's limits, because an automation can call often.
-pub(super) async fn from_device(State(state): State<AppState>, Path(id): Path<String>, body: axum::body::Bytes) -> Result<(StatusCode, Json<Value>), AppError> {
+pub(super) async fn from_device(Scoped(state): Scoped, Path(id): Path<String>, body: axum::body::Bytes) -> Result<(StatusCode, Json<Value>), AppError> {
     let schedule = find(&state, &id).await?;
     if !schedule.enabled {
         return Err(AppError::Conflict("this agent is paused".into()));
@@ -523,7 +523,7 @@ fn followup_view(state: &AppState, followup: &Followup, agent: Option<&Schedule>
 /// dismissing it only records that it was seen. Nothing is scheduled before this. The first
 /// decision stands, so two devices showing the same suggestion can't set it up twice.
 pub(super) async fn decide_followup(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path((turn_id, call_id)): Path<(String, String)>,
     ApiJson(body): ApiJson<FollowupBody>,
 ) -> Result<Json<Value>, AppError> {

@@ -121,6 +121,8 @@ pub(super) async fn receive(State(state): State<AppState>, Path(hook_id): Path<S
         return Err(GONE);
     }
     let Some(schedule) = state.store.get_schedule_by_hook(&hook_id).await? else { return Err(GONE) };
+    // From here on, as the agent's owner: the run it starts is theirs.
+    let state = state.as_user(schedule.user_id);
     if !state.hook_limits.take(&hook_id, PER_HOOK_A_MINUTE) {
         return Err(too_many());
     }

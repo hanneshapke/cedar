@@ -70,6 +70,28 @@ struct FakeCedar {
     /// is not offered, as Gmail isn't before Google is connected.
     tool_answers: Mutex<HashMap<String, VecDeque<Value>>>,
     tool_calls: Mutex<Vec<(String, Value)>>,
+    /// Who each `POST /v1/runs` was for (`X-Cedar-User`; `None`: the key itself).
+    run_users: Mutex<Vec<Option<String>>>,
+    /// When set, the key may not act for users, as on a cedar without it in CEDAR_SERVICE_KEYS.
+    not_service: Mutex<bool>,
+    /// Every query `GET /v1/events` was opened with.
+    stream_queries: Mutex<Vec<String>>,
+    /// Whose memories and records were deleted for good (`DELETE /v1/memory`, `/v1/records`).
+    wiped: Mutex<Vec<(&'static str, Option<String>)>>,
+}
+
+fn user_of(headers: &HeaderMap) -> Option<String> {
+    headers.get("x-cedar-user").and_then(|v| v.to_str().ok()).map(String::from)
+}
+
+/// As cedar does: a key that is not a service key is refused when it names a user.
+fn refused_user(s: &Shared, headers: &HeaderMap) -> Option<axum::response::Response> {
+    (user_of(headers).is_some() && *s.not_service.lock().unwrap())
+        .then(|| cedar_error(StatusCode::FORBIDDEN, "forbidden", "this API key may not act for users (see CEDAR_SERVICE_KEYS)"))
+}
+
+async fn list_runs(State(s): State<Shared>, headers: HeaderMap) -> axum::response::Response {
+    refused_user(&s, &headers).unwrap_or_else(|| Json(json!({ "runs": [], "next_before": null })).into_response())
 }
 
 type Shared = Arc<FakeCedar>;
@@ -85,6 +107,9 @@ fn cedar_error(status: StatusCode, code: &str, message: &str) -> axum::response:
 async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Json<Value>) -> axum::response::Response {
     if !authorized(&headers) {
         return cedar_error(StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid API key");
+    }
+    if let Some(refused) = refused_user(&s, &headers) {
+        return refused;
     }
     let prompt = body["prompt"].as_str().unwrap().to_string();
     if prompt.contains("TOO MANY") {
@@ -117,6 +142,7 @@ async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Jso
     let id = Uuid::new_v4();
     let run = json!({ "id": id, "status": "queued", "prompt": prompt, "model": body["model"], "final_text": null, "error": null });
     s.prompts.lock().unwrap().push(prompt);
+    s.run_users.lock().unwrap().push(user_of(&headers));
     s.parents.lock().unwrap().push(parent);
     s.runs.lock().unwrap().insert(id, run.clone());
     (StatusCode::ACCEPTED, Json(run)).into_response()
@@ -310,7 +336,12 @@ async fn notifications(State(s): State<Shared>, headers: HeaderMap, axum::extrac
     if !authorized(&headers) {
         return cedar_error(StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid API key");
     }
-    let after: i64 = q.as_deref().and_then(|q| q.strip_prefix("after=")).and_then(|n| n.parse().ok()).unwrap_or(0);
+    let q = q.unwrap_or_default();
+    s.stream_queries.lock().unwrap().push(q.clone());
+    if q.split('&').any(|p| p == "users=all") && *s.not_service.lock().unwrap() {
+        return cedar_error(StatusCode::FORBIDDEN, "forbidden", "this API key may not follow users' runs (see CEDAR_SERVICE_KEYS)");
+    }
+    let after: i64 = q.split('&').find_map(|p| p.strip_prefix("after=")).and_then(|n| n.parse().ok()).unwrap_or(0);
     let mut body = String::from(": keep-alive\n\n");
     for n in s.notifications.lock().unwrap().iter().filter(|n| n["id"].as_i64().unwrap() > after) {
         body.push_str(&format!("id: {}\nevent: {}\ndata: {n}\n\n", n["id"], n["type"].as_str().unwrap()));
@@ -504,7 +535,8 @@ async fn forget_memory(State(s): State<Shared>, Path(id): Path<String>) -> axum:
     StatusCode::NO_CONTENT.into_response()
 }
 
-async fn forget_all_memory(State(s): State<Shared>) -> axum::response::Response {
+async fn forget_all_memory(State(s): State<Shared>, headers: HeaderMap) -> axum::response::Response {
+    s.wiped.lock().unwrap().push(("memory", user_of(&headers)));
     match s.memory.lock().unwrap().as_mut() {
         Some(items) => {
             items.clear();
@@ -544,7 +576,8 @@ async fn drop_record_set(State(s): State<Shared>, Path(name): Path<String>) -> a
     StatusCode::NO_CONTENT.into_response()
 }
 
-async fn drop_all_records(State(s): State<Shared>) -> axum::response::Response {
+async fn drop_all_records(State(s): State<Shared>, headers: HeaderMap) -> axum::response::Response {
+    s.wiped.lock().unwrap().push(("records", user_of(&headers)));
     match s.records.lock().unwrap().as_mut() {
         Some(sets) => {
             sets.clear();
@@ -634,7 +667,7 @@ impl Harness {
     async fn new(extra: &[(&str, &str)]) -> Self {
         let cedar = Shared::default();
         let fake = Router::new()
-            .route("/v1/runs", post(create_run))
+            .route("/v1/runs", post(create_run).get(list_runs))
             .route("/v1/runs/{id}", get(get_run).delete(delete_run))
             .route("/v1/runs/{id}/cancel", post(cancel_run))
             .route(
@@ -4329,4 +4362,153 @@ async fn a_suggested_follow_up_becomes_an_agent_only_when_accepted() {
     assert_eq!(h.json(Method::DELETE, &format!("/api/agents/{}", agent["id"].as_str().unwrap()), None).await.0, StatusCode::NO_CONTENT);
     let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
     assert_eq!(detail["followups"][0]["agent_id"], Value::Null);
+}
+
+// -- users ------------------------------------------------------------------------------------
+
+/// One request as whoever `token` belongs to, with the admin token when `admin`.
+async fn as_user(h: &Harness, method: Method, uri: &str, token: &str, admin: bool, body: Option<Value>) -> (StatusCode, Value) {
+    let mut req = Request::builder().method(method).uri(uri).header("authorization", format!("Bearer {token}"));
+    if admin {
+        req = req.header("x-admin-token", "admin");
+    }
+    let req = match body {
+        Some(b) => req.header("content-type", "application/json").body(Body::from(b.to_string())),
+        None => req.body(Body::empty()),
+    }
+    .unwrap();
+    let (status, _, text) = h.call_full(req).await;
+    (status, serde_json::from_str(&text).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn each_user_has_their_own_conversations_agents_settings_and_cedar_owner() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin")]).await;
+
+    // The server starts with its primary user: whoever has the shared access token.
+    let (status, me) = as_user(&h, Method::GET, "/api/me", "access", false, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!((me["primary"].as_bool(), me["has_token"].as_bool()), (Some(true), Some(false)));
+
+    // Users are managed with the admin token; a new one's token is shown once.
+    let (status, _) = as_user(&h, Method::POST, "/api/users", "access", false, Some(json!({ "name": "Ada" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": " " }))).await.0, StatusCode::BAD_REQUEST);
+    let (status, made) = as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": "Ada" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{made}");
+    let ada = made["token"].as_str().unwrap().to_string();
+    let ada_id = made["user"]["id"].as_str().unwrap().to_string();
+    assert_eq!(ada.len(), 64);
+    let (_, me) = as_user(&h, Method::GET, "/api/me", &ada, false, None).await;
+    assert_eq!((me["id"].as_str(), me["name"].as_str(), me["primary"].as_bool()), (Some(ada_id.as_str()), Some("Ada"), Some(false)));
+    let (_, list) = as_user(&h, Method::GET, "/api/users", &ada, true, None).await;
+    assert_eq!(list["users"].as_array().unwrap().len(), 2);
+    assert!(!list.to_string().contains(&ada), "the token is never listed");
+    assert_eq!(as_user(&h, Method::GET, "/api/me", "someone-else", false, None).await.0, StatusCode::UNAUTHORIZED);
+
+    // Each sends a message: the primary user's run is the key's own in cedar, Ada's is hers.
+    let (_, mine) = as_user(&h, Method::POST, "/api/conversations", "access", false, Some(json!({}))).await;
+    let mine = mine["id"].as_str().unwrap().to_string();
+    let (status, _) = as_user(&h, Method::POST, &format!("/api/conversations/{mine}/messages"), "access", false, Some(json!({ "content": "the owner's question" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (_, hers) = as_user(&h, Method::POST, "/api/conversations", &ada, false, Some(json!({}))).await;
+    let hers = hers["id"].as_str().unwrap().to_string();
+    let (status, turn) = as_user(&h, Method::POST, &format!("/api/conversations/{hers}/messages"), &ada, false, Some(json!({ "content": "Ada's question" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    let (hers_turn, hers_run) = (turn["id"].as_str().unwrap().to_string(), turn["run_id"].as_str().unwrap().to_string());
+    assert_eq!(*h.cedar.run_users.lock().unwrap(), [None, Some(ada_id.clone())]);
+
+    // Neither sees, finds or changes the other's.
+    let titles = |list: &Value| list["conversations"].as_array().unwrap().iter().map(|c| c["title"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+    assert_eq!(titles(&as_user(&h, Method::GET, "/api/conversations", "access", false, None).await.1), ["the owner's question"]);
+    assert_eq!(titles(&as_user(&h, Method::GET, "/api/conversations", &ada, false, None).await.1), ["Ada's question"]);
+    for (method, uri, body) in [
+        (Method::GET, format!("/api/conversations/{hers}"), None),
+        (Method::PATCH, format!("/api/conversations/{hers}"), Some(json!({ "title": "Taken" }))),
+        (Method::DELETE, format!("/api/conversations/{hers}"), None),
+        (Method::POST, format!("/api/conversations/{hers}/messages"), Some(json!({ "content": "let me in" }))),
+        (Method::PUT, format!("/api/conversations/{hers}/star"), None),
+        (Method::GET, format!("/api/turns/{hers_turn}/trace"), None),
+        (Method::POST, format!("/api/turns/{hers_turn}/cancel"), None),
+    ] {
+        let (status, _) = as_user(&h, method.clone(), &uri, "access", false, body).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{method} {uri}");
+    }
+    let (_, found) = as_user(&h, Method::GET, "/api/conversations/search?q=question", "access", false, None).await;
+    assert_eq!(found["conversations"].as_array().unwrap().len(), 1, "{found}");
+
+    // Settings are a person's own.
+    let (status, _) = as_user(&h, Method::PUT, "/api/settings/locale", &ada, false, Some(json!({ "locale": "de" }))).await;
+    assert!(status.is_success(), "{status}");
+    assert_eq!(as_user(&h, Method::GET, "/api/settings", &ada, false, None).await.1["locale"], "de");
+    assert_eq!(as_user(&h, Method::GET, "/api/settings", "access", false, None).await.1["locale"], Value::Null);
+
+    // Ada's response finishes: cedar's one stream of everyone's runs tells this server, and
+    // only her inbox has it.
+    h.finish_with(&hers_run, "completed", Some("an answer for Ada"), Some("end_turn"));
+    assert_eq!(h.sync().await, 1);
+    assert!(h.cedar.stream_queries.lock().unwrap().last().unwrap().contains("users=all"));
+    assert_eq!(as_user(&h, Method::GET, "/api/inbox", &ada, false, None).await.1["unread"], 1);
+    assert_eq!(as_user(&h, Method::GET, "/api/inbox", "access", false, None).await.1["unread"], 0);
+
+    // A new token replaces the old one.
+    let (status, rotated) = as_user(&h, Method::POST, &format!("/api/users/{ada_id}/token"), "access", true, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let ada_new = rotated["token"].as_str().unwrap().to_string();
+    assert_eq!(as_user(&h, Method::GET, "/api/me", &ada, false, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(as_user(&h, Method::GET, "/api/me", &ada_new, false, None).await.0, StatusCode::OK);
+
+    // Removing her takes her conversations here and her runs, memories and records in cedar;
+    // the primary user can't be removed.
+    let primary = me_id(&h, "access").await;
+    assert_eq!(as_user(&h, Method::DELETE, &format!("/api/users/{primary}"), "access", true, None).await.0, StatusCode::CONFLICT);
+    assert_eq!(as_user(&h, Method::DELETE, &format!("/api/users/{ada_id}"), "access", true, None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(as_user(&h, Method::GET, "/api/me", &ada_new, false, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(*h.cedar.deleted.lock().unwrap(), [Uuid::parse_str(&hers_run).unwrap()]);
+    assert_eq!(*h.cedar.wiped.lock().unwrap(), [("memory", Some(ada_id.clone())), ("records", Some(ada_id))]);
+    assert_eq!(titles(&as_user(&h, Method::GET, "/api/conversations", "access", false, None).await.1), ["the owner's question"]);
+}
+
+async fn me_id(h: &Harness, token: &str) -> String {
+    as_user(h, Method::GET, "/api/me", token, false, None).await.1["id"].as_str().unwrap().to_string()
+}
+
+/// A scheduled agent runs as the user who made it, whoever the scheduler itself runs as.
+#[tokio::test]
+async fn an_agent_runs_as_its_owner() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin")]).await;
+    let (_, made) = as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": "Ada" }))).await;
+    let (ada, ada_id) = (made["token"].as_str().unwrap().to_string(), made["user"]["id"].as_str().unwrap().to_string());
+    let body = json!({ "title": "Morning", "prompt": "what is new?", "frequency": "daily", "time": "08:00", "timezone": "UTC" });
+    let (status, schedule) = as_user(&h, Method::POST, "/api/schedules", &ada, false, Some(body)).await;
+    assert_eq!(status, StatusCode::CREATED, "{schedule}");
+    let id = schedule["id"].as_str().unwrap();
+    assert!(as_user(&h, Method::GET, "/api/schedules", "access", false, None).await.1["schedules"].as_array().unwrap().is_empty());
+    assert_eq!(as_user(&h, Method::GET, &format!("/api/schedules/{id}"), "access", false, None).await.0, StatusCode::NOT_FOUND);
+
+    let started = schedule::tick(&h.state, Utc::now() + chrono::Duration::days(2)).await.unwrap();
+    assert_eq!(started, 1);
+    assert_eq!(*h.cedar.run_users.lock().unwrap(), [Some(ada_id)]);
+    let (_, detail) = as_user(&h, Method::GET, &format!("/api/schedules/{id}"), &ada, false, None).await;
+    assert_eq!(detail["runs"].as_array().unwrap().len(), 1, "{detail}");
+}
+
+/// A cedar that doesn't count this service among its service keys: the server works as before
+/// for its one user, and says what to change when a second is added.
+#[tokio::test]
+async fn without_a_service_key_there_is_only_the_primary_user() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin")]).await;
+    *h.cedar.not_service.lock().unwrap() = true;
+    let (status, err) = as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": "Ada" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(err["error"]["message"].as_str().unwrap().contains("CEDAR_SERVICE_KEYS"), "{err}");
+    assert_eq!(as_user(&h, Method::GET, "/api/users", "access", true, None).await.1["users"].as_array().unwrap().len(), 1);
+
+    // The primary user's finished runs still arrive, over the key's own stream.
+    let (_, conv) = as_user(&h, Method::POST, "/api/conversations", "access", false, Some(json!({}))).await;
+    let (_, turn) = as_user(&h, Method::POST, &format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap()), "access", false, Some(json!({ "content": "hello" }))).await;
+    h.finish_with(turn["run_id"].as_str().unwrap(), "completed", Some("hi"), Some("end_turn"));
+    assert_eq!(h.sync().await, 1);
+    assert_eq!(*h.cedar.run_users.lock().unwrap(), [None]);
+    assert_eq!(as_user(&h, Method::GET, "/api/inbox", "access", false, None).await.1["unread"], 1);
 }

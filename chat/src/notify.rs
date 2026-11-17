@@ -59,7 +59,12 @@ pub fn start(state: AppState, stop: CancellationToken) -> JoinHandle<()> {
 /// ends (cedar closed it) or `stop` is cancelled. Returns how many were handled.
 pub async fn sync(state: &AppState, stop: &CancellationToken) -> Result<usize, AppError> {
     let after = state.store.notifications_cursor().await?;
-    let resp = state.cedar.notifications(after).await?;
+    // Every user's finished runs come in one stream, which cedar gives a service key. A cedar
+    // that doesn't count this service among those has only the primary user's to tell of.
+    let resp = match state.cedar.notifications(after, true).await {
+        Err(AppError::Upstream { status: reqwest::StatusCode::FORBIDDEN, .. }) => state.cedar.notifications(after, false).await?,
+        other => other?,
+    };
     let mut body = resp.bytes_stream();
     let mut buf: Vec<u8> = Vec::new();
     let mut handled = 0;
@@ -103,10 +108,12 @@ pub async fn handle(state: &AppState, notification: &Value) -> Result<(), AppErr
         .as_i64()
         .ok_or_else(|| AppError::BadGateway("a notification from cedar has no id".into()))?;
     let run_id = notification["run_id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
-    if let Some(turn) = match run_id {
+    if let Some((turn, user)) = match run_id {
         Some(run_id) => state.store.get_turn_by_run(run_id).await?,
         None => None,
     } {
+        // As the turn's owner from here on; the cursor below is the server's.
+        let state = &state.as_user(user);
         // What cedar's stream says is enough to announce, but the page wants the text too.
         let turn = refresh(state, turn).await?;
         let conversation = state.store.get_conversation(turn.conversation_id).await?;
@@ -124,7 +131,7 @@ pub async fn handle(state: &AppState, notification: &Value) -> Result<(), AppErr
             "schedule_id": conversation.as_ref().and_then(|c| c.schedule_id),
         });
         // No tab open is fine.
-        let _ = state.notices.send(notice);
+        let _ = state.notices.send((user, notice));
         // Out of the app too, unless a page marks it seen in the meantime (see `channels`).
         let state = state.clone();
         let turn_id = turn.id;

@@ -18,9 +18,34 @@ fn to_dt(ms: i64) -> DateTime<Utc> {
     DateTime::from_timestamp_millis(ms).unwrap_or_default()
 }
 
+/// Someone who uses this server. See `migrations/0016_users.sql`.
+#[derive(Debug, Clone, Serialize)]
+pub struct User {
+    pub id: Uuid,
+    pub name: String,
+    /// Who the server belonged to before it had users: whoever presents `CHAT_ACCESS_TOKEN`.
+    pub primary: bool,
+    /// Whether the user has an access token of their own (never the token).
+    pub has_token: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+fn user_from_row(r: &SqliteRow) -> Result<User> {
+    Ok(User {
+        id: Uuid::parse_str(r.try_get("id")?)?,
+        name: r.try_get("name")?,
+        primary: r.try_get::<i64, _>("is_primary")? != 0,
+        has_token: r.try_get::<Option<String>, _>("token_sha256")?.is_some(),
+        created_at: to_dt(r.try_get("created_at")?),
+    })
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Conversation {
     pub id: Uuid,
+    /// Whose it is. Not part of the API: a user only ever sees their own.
+    #[serde(skip)]
+    pub user_id: Uuid,
     pub title: Option<String>,
     /// The model (a cedar registry id) and reasoning level used most recently, so the pickers
     /// can restore them.
@@ -243,6 +268,9 @@ pub struct InboxItem {
 #[derive(Debug, Clone, Serialize)]
 pub struct Schedule {
     pub id: Uuid,
+    /// Whose it is: its runs are that user's.
+    #[serde(skip)]
+    pub user_id: Uuid,
     pub title: String,
     pub prompt: String,
     pub model: Option<String>,
@@ -443,6 +471,7 @@ pub struct Preferences {
 fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
     Ok(Conversation {
         id: Uuid::parse_str(r.try_get("id")?)?,
+        user_id: Uuid::parse_str(r.try_get("user_id")?)?,
         title: r.try_get("title")?,
         model: r.try_get("model")?,
         reasoning: r.try_get("reasoning")?,
@@ -487,6 +516,7 @@ const NOTEWORTHY: &str = "('completed', 'failed')";
 fn schedule_from_row(r: &SqliteRow) -> Result<Schedule> {
     Ok(Schedule {
         id: Uuid::parse_str(r.try_get("id")?)?,
+        user_id: Uuid::parse_str(r.try_get("user_id")?)?,
         title: r.try_get("title")?,
         prompt: r.try_get("prompt")?,
         model: r.try_get("model")?,
@@ -624,9 +654,14 @@ fn contribution_from_row(r: &SqliteRow) -> Result<Contribution> {
     })
 }
 
+/// A handle on the database for one user: what it lists, finds, changes and adds is that user's
+/// (another user's conversation is not found). [`Store::connect`] gives the primary user's;
+/// [`Store::as_user`] another's. The few methods that look across users, for the background
+/// work that serves all of them, say so.
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,
+    user: Uuid,
 }
 
 impl Store {
@@ -654,7 +689,112 @@ impl Store {
 
     async fn migrated(pool: SqlitePool) -> Result<Self> {
         sqlx::migrate!("./migrations").run(&pool).await.context("running migrations")?;
-        Ok(Self { pool })
+        let primary: String = sqlx::query_scalar("SELECT id FROM users WHERE is_primary = 1").fetch_one(&pool).await.context("reading the primary user")?;
+        Ok(Self { pool, user: Uuid::parse_str(&primary)? })
+    }
+
+    // -- users ------------------------------------------------------------------------------
+
+    /// The user this handle reads and writes for.
+    pub fn user(&self) -> Uuid {
+        self.user
+    }
+
+    /// The same database, for another user.
+    pub fn as_user(&self, user: Uuid) -> Self {
+        Self { pool: self.pool.clone(), user }
+    }
+
+    /// Across users: the primary user's id.
+    pub async fn primary_user(&self) -> Result<Uuid> {
+        let id: String = sqlx::query_scalar("SELECT id FROM users WHERE is_primary = 1").fetch_one(&self.pool).await?;
+        Ok(Uuid::parse_str(&id)?)
+    }
+
+    /// Across users: everyone, the primary user first, then oldest first.
+    pub async fn list_users(&self) -> Result<Vec<User>> {
+        let rows = sqlx::query("SELECT * FROM users ORDER BY is_primary DESC, created_at, id").fetch_all(&self.pool).await?;
+        rows.iter().map(user_from_row).collect()
+    }
+
+    /// Across users.
+    pub async fn get_user(&self, id: Uuid) -> Result<Option<User>> {
+        let row = sqlx::query("SELECT * FROM users WHERE id = ?").bind(id.to_string()).fetch_optional(&self.pool).await?;
+        row.as_ref().map(user_from_row).transpose()
+    }
+
+    /// Across users: whose access token has this SHA-256 (hex).
+    pub async fn user_by_token(&self, token_sha256: &str) -> Result<Option<User>> {
+        let row = sqlx::query("SELECT * FROM users WHERE token_sha256 = ?").bind(token_sha256).fetch_optional(&self.pool).await?;
+        row.as_ref().map(user_from_row).transpose()
+    }
+
+    /// Add a user who signs in with the token that has this SHA-256 (hex).
+    pub async fn create_user(&self, name: &str, token_sha256: &str) -> Result<User> {
+        let id = Uuid::now_v7();
+        sqlx::query("INSERT INTO users (id, name, token_sha256, created_at) VALUES (?, ?, ?, ?)")
+            .bind(id.to_string())
+            .bind(name)
+            .bind(token_sha256)
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        Ok(self.get_user(id).await?.expect("just inserted"))
+    }
+
+    pub async fn rename_user(&self, id: Uuid, name: &str) -> Result<bool> {
+        let res = sqlx::query("UPDATE users SET name = ? WHERE id = ?").bind(name).bind(id.to_string()).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// Replace a user's access token; the old one stops working. The primary user has none.
+    pub async fn set_user_token(&self, id: Uuid, token_sha256: &str) -> Result<bool> {
+        let res = sqlx::query("UPDATE users SET token_sha256 = ? WHERE id = ? AND is_primary = 0")
+            .bind(token_sha256)
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// Remove a user and everything of theirs here. The primary user can't be removed.
+    pub async fn delete_user(&self, id: Uuid) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM users WHERE id = ? AND is_primary = 0").bind(id.to_string()).execute(&self.pool).await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// Every cedar run this user's conversations hold, so they can be deleted with the user.
+    pub async fn list_run_ids(&self) -> Result<Vec<Uuid>> {
+        let rows = sqlx::query("SELECT t.run_id FROM turns t JOIN conversations c ON c.id = t.conversation_id WHERE c.user_id = ?")
+            .bind(self.user.to_string())
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter().map(|r| Ok(Uuid::parse_str(r.try_get("run_id")?)?)).collect()
+    }
+
+    async fn setting<T: serde::de::DeserializeOwned + Default>(&self, key: &str) -> Result<T> {
+        let row = sqlx::query("SELECT value FROM user_settings WHERE user_id = ? AND key = ?")
+            .bind(self.user.to_string())
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
+        match row {
+            Some(r) => Ok(serde_json::from_str(r.try_get("value")?)?),
+            None => Ok(T::default()),
+        }
+    }
+
+    async fn set_setting<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?) \
+             ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(self.user.to_string())
+        .bind(key)
+        .bind(serde_json::to_string(value)?)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     // -- conversations ----------------------------------------------------------------------
@@ -662,8 +802,9 @@ impl Store {
     pub async fn create_conversation(&self, title: Option<&str>) -> Result<Conversation> {
         let id = Uuid::now_v7();
         let now = now_ms();
-        sqlx::query("INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+        sqlx::query("INSERT INTO conversations (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
             .bind(id.to_string())
+            .bind(self.user.to_string())
             .bind(title)
             .bind(now)
             .bind(now)
@@ -673,8 +814,9 @@ impl Store {
     }
 
     pub async fn get_conversation(&self, id: Uuid) -> Result<Option<Conversation>> {
-        let row = sqlx::query(&format!("{CONVERSATION_SELECT} WHERE c.id = ?"))
+        let row = sqlx::query(&format!("{CONVERSATION_SELECT} WHERE c.id = ? AND c.user_id = ?"))
             .bind(id.to_string())
+            .bind(self.user.to_string())
             .fetch_optional(&self.pool)
             .await?;
         row.as_ref().map(conversation_from_row).transpose()
@@ -684,8 +826,9 @@ impl Store {
     /// listed under their schedule.
     pub async fn list_conversations(&self, limit: u32) -> Result<Vec<Conversation>> {
         let rows = sqlx::query(&format!(
-            "{CONVERSATION_SELECT} WHERE c.schedule_id IS NULL ORDER BY c.updated_at DESC, c.id DESC LIMIT ?"
+            "{CONVERSATION_SELECT} WHERE c.user_id = ? AND c.schedule_id IS NULL ORDER BY c.updated_at DESC, c.id DESC LIMIT ?"
         ))
+        .bind(self.user.to_string())
         .bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;
@@ -699,8 +842,9 @@ impl Store {
             ", (SELECT s.title FROM schedules s WHERE s.id = c.schedule_id) AS schedule_title FROM conversations c",
         );
         let rows = sqlx::query(&format!(
-            "{select} WHERE c.starred_at IS NOT NULL ORDER BY c.starred_at DESC, c.id DESC LIMIT ?"
+            "{select} WHERE c.user_id = ? AND c.starred_at IS NOT NULL ORDER BY c.starred_at DESC, c.id DESC LIMIT ?"
         ))
+        .bind(self.user.to_string())
         .bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;
@@ -746,12 +890,15 @@ impl Store {
             })
             .collect();
         let message_tests: Vec<String> = terms.iter().map(|term| in_message(&mut like, term)).collect();
+        // The user is bound like the patterns, after them.
+        binds.push(self.user.to_string());
+        let mine = format!("c.user_id = ?{}", binds.len());
 
         let select = CONVERSATION_SELECT.replace(
             "FROM conversations c",
             ", (SELECT s.title FROM schedules s WHERE s.id = c.schedule_id) AS schedule_title FROM conversations c",
         );
-        let sql = format!("{select} WHERE {} ORDER BY c.updated_at DESC, c.id DESC LIMIT {limit}", wanted.join(" AND "));
+        let sql = format!("{select} WHERE {mine} AND {} ORDER BY c.updated_at DESC, c.id DESC LIMIT {limit}", wanted.join(" AND "));
         let mut found = sqlx::query(&sql);
         for pattern in &binds {
             found = found.bind(pattern);
@@ -794,11 +941,12 @@ impl Store {
     /// first starred, so it doesn't jump to the top of the list. Returns whether it exists.
     pub async fn set_starred(&self, id: Uuid, starred: bool) -> Result<bool> {
         let res = if starred {
-            sqlx::query("UPDATE conversations SET starred_at = COALESCE(starred_at, ?) WHERE id = ?").bind(now_ms())
+            sqlx::query("UPDATE conversations SET starred_at = COALESCE(starred_at, ?) WHERE id = ? AND user_id = ?").bind(now_ms())
         } else {
-            sqlx::query("UPDATE conversations SET starred_at = NULL WHERE id = ?")
+            sqlx::query("UPDATE conversations SET starred_at = NULL WHERE id = ? AND user_id = ?")
         }
         .bind(id.to_string())
+        .bind(self.user.to_string())
         .execute(&self.pool)
         .await?;
         Ok(res.rows_affected() == 1)
@@ -809,9 +957,11 @@ impl Store {
     pub async fn mark_seen(&self, conversation_id: Uuid) -> Result<u64> {
         let res = sqlx::query(
             "UPDATE turns SET seen = 1 WHERE conversation_id = ? AND seen = 0 \
-             AND status NOT IN ('queued', 'running')",
+             AND status NOT IN ('queued', 'running') \
+             AND conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)",
         )
         .bind(conversation_id.to_string())
+        .bind(self.user.to_string())
         .execute(&self.pool)
         .await?;
         Ok(res.rows_affected())
@@ -822,9 +972,10 @@ impl Store {
         let rows = sqlx::query(&format!(
             "SELECT t.id AS turn_id, t.conversation_id, t.status, t.stop_reason, t.finished_at, \
              c.title, c.schedule_id FROM turns t JOIN conversations c ON c.id = t.conversation_id \
-             WHERE t.seen = 0 AND t.status IN {NOTEWORTHY} \
+             WHERE c.user_id = ? AND t.seen = 0 AND t.status IN {NOTEWORTHY} \
              ORDER BY t.finished_at DESC, t.id DESC LIMIT ?"
         ))
+        .bind(self.user.to_string())
         .bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;
@@ -834,8 +985,10 @@ impl Store {
     /// How many responses the inbox holds.
     pub async fn count_unseen(&self) -> Result<i64> {
         let n: i64 = sqlx::query_scalar(&format!(
-            "SELECT COUNT(*) FROM turns WHERE seen = 0 AND status IN {NOTEWORTHY}"
+            "SELECT COUNT(*) FROM turns t JOIN conversations c ON c.id = t.conversation_id \
+             WHERE c.user_id = ? AND t.seen = 0 AND t.status IN {NOTEWORTHY}"
         ))
+        .bind(self.user.to_string())
         .fetch_one(&self.pool)
         .await?;
         Ok(n)
@@ -843,25 +996,27 @@ impl Store {
 
     /// Set (or, with `None`, clear) the tools a conversation uses instead of the defaults.
     pub async fn set_conversation_tools(&self, id: Uuid, tools: Option<&[String]>) -> Result<bool> {
-        let res = sqlx::query("UPDATE conversations SET tools = ? WHERE id = ?")
+        let res = sqlx::query("UPDATE conversations SET tools = ? WHERE id = ? AND user_id = ?")
             .bind(to_json(tools)?)
             .bind(id.to_string())
+            .bind(self.user.to_string())
             .execute(&self.pool)
             .await?;
         Ok(res.rows_affected() == 1)
     }
 
     pub async fn rename_conversation(&self, id: Uuid, title: &str) -> Result<bool> {
-        let res = sqlx::query("UPDATE conversations SET title = ? WHERE id = ?")
+        let res = sqlx::query("UPDATE conversations SET title = ? WHERE id = ? AND user_id = ?")
             .bind(title)
             .bind(id.to_string())
+            .bind(self.user.to_string())
             .execute(&self.pool)
             .await?;
         Ok(res.rows_affected() == 1)
     }
 
     pub async fn delete_conversation(&self, id: Uuid) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM conversations WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        let res = sqlx::query("DELETE FROM conversations WHERE id = ? AND user_id = ?").bind(id.to_string()).bind(self.user.to_string()).execute(&self.pool).await?;
         Ok(res.rows_affected() == 1)
     }
 
@@ -911,20 +1066,25 @@ impl Store {
     }
 
     pub async fn get_turn(&self, id: Uuid) -> Result<Option<Turn>> {
-        let row = sqlx::query(&format!("SELECT {TURN_COLS} FROM turns WHERE id = ?"))
+        let row = sqlx::query(&format!("SELECT {TURN_COLS} FROM turns WHERE id = ? AND conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)"))
             .bind(id.to_string())
+            .bind(self.user.to_string())
             .fetch_optional(&self.pool)
             .await?;
         row.as_ref().map(turn_from_row).transpose()
     }
 
-    /// The turn that holds a cedar run, if this service started it.
-    pub async fn get_turn_by_run(&self, run_id: Uuid) -> Result<Option<Turn>> {
-        let row = sqlx::query(&format!("SELECT {TURN_COLS} FROM turns WHERE run_id = ?"))
-            .bind(run_id.to_string())
-            .fetch_optional(&self.pool)
-            .await?;
-        row.as_ref().map(turn_from_row).transpose()
+    /// Across users: the turn that holds a cedar run, if this service started it, and whose it
+    /// is. For cedar's stream of finished runs, which names only the run.
+    pub async fn get_turn_by_run(&self, run_id: Uuid) -> Result<Option<(Turn, Uuid)>> {
+        let row = sqlx::query(&format!(
+            "SELECT {}, c.user_id FROM turns t JOIN conversations c ON c.id = t.conversation_id WHERE t.run_id = ?",
+            TURN_COLS.split(", ").map(|c| format!("t.{c}")).collect::<Vec<_>>().join(", ")
+        ))
+        .bind(run_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        row.as_ref().map(|r| Ok((turn_from_row(r)?, Uuid::parse_str(r.try_get("user_id")?)?))).transpose()
     }
 
     /// The conversation each of `run_ids` answered a message in, with its title, for the runs that
@@ -933,9 +1093,10 @@ impl Store {
         let ids: Vec<String> = run_ids.iter().map(Uuid::to_string).collect();
         let rows = sqlx::query(
             "SELECT t.run_id, t.conversation_id, c.title FROM turns t JOIN conversations c ON c.id = t.conversation_id \
-             WHERE t.run_id IN (SELECT value FROM json_each(?))",
+             WHERE t.run_id IN (SELECT value FROM json_each(?)) AND c.user_id = ?",
         )
         .bind(serde_json::to_string(&ids)?)
+        .bind(self.user.to_string())
         .fetch_all(&self.pool)
         .await?;
         rows.iter()
@@ -948,8 +1109,9 @@ impl Store {
     }
 
     pub async fn list_turns(&self, conversation_id: Uuid) -> Result<Vec<Turn>> {
-        let rows = sqlx::query(&format!("SELECT {TURN_COLS} FROM turns WHERE conversation_id = ? ORDER BY seq"))
+        let rows = sqlx::query(&format!("SELECT {TURN_COLS} FROM turns WHERE conversation_id = ? AND conversation_id IN (SELECT id FROM conversations WHERE user_id = ?) ORDER BY seq"))
             .bind(conversation_id.to_string())
+            .bind(self.user.to_string())
             .fetch_all(&self.pool)
             .await?;
         rows.iter().map(turn_from_row).collect()
@@ -984,9 +1146,10 @@ impl Store {
 
     /// The person's thumbs on a response; `None` clears it. False if there is no such turn.
     pub async fn set_turn_rating(&self, id: Uuid, rating: Option<i8>) -> Result<bool> {
-        let done = sqlx::query("UPDATE turns SET rating = ? WHERE id = ?")
+        let done = sqlx::query("UPDATE turns SET rating = ? WHERE id = ? AND conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)")
             .bind(rating.map(i64::from))
             .bind(id.to_string())
+            .bind(self.user.to_string())
             .execute(&self.pool)
             .await?;
         Ok(done.rows_affected() > 0)
@@ -995,22 +1158,11 @@ impl Store {
     // -- contributions ----------------------------------------------------------------------
 
     pub async fn contribution_settings(&self) -> Result<ContributionSettings> {
-        let row = sqlx::query("SELECT value FROM settings WHERE key = 'contributions'").fetch_optional(&self.pool).await?;
-        match row {
-            Some(r) => Ok(serde_json::from_str(r.try_get("value")?)?),
-            None => Ok(ContributionSettings::default()),
-        }
+        self.setting("contributions").await
     }
 
     pub async fn set_contribution_settings(&self, settings: &ContributionSettings) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO settings (key, value) VALUES ('contributions', ?) \
-             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        )
-        .bind(serde_json::to_string(settings)?)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        self.set_setting("contributions", settings).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1025,10 +1177,11 @@ impl Store {
         url: &str,
     ) -> Result<Contribution> {
         sqlx::query(
-            "INSERT INTO contributions (id, conversation_id, title, withdraw_token, content_sha256, license, url, submitted_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO contributions (id, user_id, conversation_id, title, withdraw_token, content_sha256, license, url, submitted_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id)
+        .bind(self.user.to_string())
         .bind(conversation_id.to_string())
         .bind(title)
         .bind(withdraw_token)
@@ -1042,20 +1195,21 @@ impl Store {
     }
 
     pub async fn get_contribution(&self, id: &str) -> Result<Option<Contribution>> {
-        let row = sqlx::query("SELECT * FROM contributions WHERE id = ?").bind(id).fetch_optional(&self.pool).await?;
+        let row = sqlx::query("SELECT * FROM contributions WHERE id = ? AND user_id = ?").bind(id).bind(self.user.to_string()).fetch_optional(&self.pool).await?;
         row.as_ref().map(contribution_from_row).transpose()
     }
 
     /// Every contribution, newest first.
     pub async fn list_contributions(&self) -> Result<Vec<Contribution>> {
-        let rows = sqlx::query("SELECT * FROM contributions ORDER BY submitted_at DESC, id DESC").fetch_all(&self.pool).await?;
+        let rows = sqlx::query("SELECT * FROM contributions WHERE user_id = ? ORDER BY submitted_at DESC, id DESC").bind(self.user.to_string()).fetch_all(&self.pool).await?;
         rows.iter().map(contribution_from_row).collect()
     }
 
     /// The contributions of one conversation that were not withdrawn.
     pub async fn contributions_of(&self, conversation_id: Uuid) -> Result<Vec<Contribution>> {
-        let rows = sqlx::query("SELECT * FROM contributions WHERE conversation_id = ? AND withdrawn_at IS NULL ORDER BY submitted_at DESC")
+        let rows = sqlx::query("SELECT * FROM contributions WHERE conversation_id = ? AND user_id = ? AND withdrawn_at IS NULL ORDER BY submitted_at DESC")
             .bind(conversation_id.to_string())
+            .bind(self.user.to_string())
             .fetch_all(&self.pool)
             .await?;
         rows.iter().map(contribution_from_row).collect()
@@ -1085,49 +1239,27 @@ impl Store {
     // -- settings ---------------------------------------------------------------------------
 
     pub async fn preferences(&self) -> Result<Preferences> {
-        let row = sqlx::query("SELECT value FROM settings WHERE key = 'preferences'").fetch_optional(&self.pool).await?;
-        match row {
-            Some(r) => Ok(serde_json::from_str(r.try_get("value")?)?),
-            None => Ok(Preferences::default()),
-        }
+        self.setting("preferences").await
     }
 
     pub async fn set_preferences(&self, prefs: &Preferences) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO settings (key, value) VALUES ('preferences', ?) \
-             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        )
-        .bind(serde_json::to_string(prefs)?)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        self.set_setting("preferences", prefs).await
     }
 
     /// How the user is told out of the app when a response finishes (see `channels`).
     pub async fn notification_settings(&self) -> Result<crate::channels::NotificationSettings> {
-        let row = sqlx::query("SELECT value FROM settings WHERE key = 'notifications'").fetch_optional(&self.pool).await?;
-        match row {
-            Some(r) => Ok(serde_json::from_str(r.try_get("value")?)?),
-            None => Ok(Default::default()),
-        }
+        self.setting("notifications").await
     }
 
     pub async fn set_notification_settings(&self, settings: &crate::channels::NotificationSettings) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO settings (key, value) VALUES ('notifications', ?) \
-             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        )
-        .bind(serde_json::to_string(settings)?)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        self.set_setting("notifications", settings).await
     }
 
     // -- push subscriptions -----------------------------------------------------------------
 
     /// Oldest first.
     pub async fn push_subscriptions(&self) -> Result<Vec<PushSubscription>> {
-        let rows = sqlx::query("SELECT * FROM push_subscriptions ORDER BY created_at, id").fetch_all(&self.pool).await?;
+        let rows = sqlx::query("SELECT * FROM push_subscriptions WHERE user_id = ? ORDER BY created_at, id").bind(self.user.to_string()).fetch_all(&self.pool).await?;
         rows.iter().map(push_subscription_from_row).collect()
     }
 
@@ -1135,8 +1267,8 @@ impl Store {
     pub async fn add_push_subscription(&self, endpoint: &str, p256dh: &str, auth: &str, user_agent: Option<&str>) -> Result<PushSubscription> {
         let id = Uuid::now_v7();
         sqlx::query(
-            "INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?) \
-             ON CONFLICT (endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent",
+            "INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, user_agent, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?) \
+             ON CONFLICT (endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent",
         )
         .bind(id.to_string())
         .bind(endpoint)
@@ -1144,6 +1276,7 @@ impl Store {
         .bind(auth)
         .bind(user_agent)
         .bind(now_ms())
+        .bind(self.user.to_string())
         .execute(&self.pool)
         .await?;
         let row = sqlx::query("SELECT * FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).fetch_one(&self.pool).await?;
@@ -1151,13 +1284,13 @@ impl Store {
     }
 
     pub async fn delete_push_subscription(&self, id: Uuid) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM push_subscriptions WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        let res = sqlx::query("DELETE FROM push_subscriptions WHERE id = ? AND user_id = ?").bind(id.to_string()).bind(self.user.to_string()).execute(&self.pool).await?;
         Ok(res.rows_affected() == 1)
     }
 
     /// The browser unsubscribed itself: forget its endpoint.
     pub async fn delete_push_subscription_by_endpoint(&self, endpoint: &str) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).execute(&self.pool).await?;
+        let res = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?").bind(endpoint).bind(self.user.to_string()).execute(&self.pool).await?;
         Ok(res.rows_affected() == 1)
     }
 
@@ -1174,7 +1307,7 @@ impl Store {
 
     /// Oldest first.
     pub async fn apns_devices(&self) -> Result<Vec<ApnsDevice>> {
-        let rows = sqlx::query("SELECT * FROM apns_devices ORDER BY created_at, id").fetch_all(&self.pool).await?;
+        let rows = sqlx::query("SELECT * FROM apns_devices WHERE user_id = ? ORDER BY created_at, id").bind(self.user.to_string()).fetch_all(&self.pool).await?;
         rows.iter().map(apns_device_from_row).collect()
     }
 
@@ -1182,13 +1315,14 @@ impl Store {
     pub async fn add_apns_device(&self, token: &str, name: Option<&str>) -> Result<ApnsDevice> {
         let id = Uuid::now_v7();
         sqlx::query(
-            "INSERT INTO apns_devices (id, token, name, created_at) VALUES (?, ?, ?, ?) \
-             ON CONFLICT (token) DO UPDATE SET name = excluded.name",
+            "INSERT INTO apns_devices (id, token, name, created_at, user_id) VALUES (?, ?, ?, ?, ?) \
+             ON CONFLICT (token) DO UPDATE SET user_id = excluded.user_id, name = excluded.name",
         )
         .bind(id.to_string())
         .bind(token)
         .bind(name)
         .bind(now_ms())
+        .bind(self.user.to_string())
         .execute(&self.pool)
         .await?;
         let row = sqlx::query("SELECT * FROM apns_devices WHERE token = ?").bind(token).fetch_one(&self.pool).await?;
@@ -1196,13 +1330,13 @@ impl Store {
     }
 
     pub async fn delete_apns_device(&self, id: Uuid) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM apns_devices WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        let res = sqlx::query("DELETE FROM apns_devices WHERE id = ? AND user_id = ?").bind(id.to_string()).bind(self.user.to_string()).execute(&self.pool).await?;
         Ok(res.rows_affected() == 1)
     }
 
     /// The app turned push off, or moved to another server: forget its token.
     pub async fn delete_apns_device_by_token(&self, token: &str) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM apns_devices WHERE token = ?").bind(token).execute(&self.pool).await?;
+        let res = sqlx::query("DELETE FROM apns_devices WHERE token = ? AND user_id = ?").bind(token).bind(self.user.to_string()).execute(&self.pool).await?;
         Ok(res.rows_affected() == 1)
     }
 
@@ -1219,7 +1353,7 @@ impl Store {
 
     /// Oldest first.
     pub async fn android_devices(&self) -> Result<Vec<AndroidDevice>> {
-        let rows = sqlx::query("SELECT * FROM android_devices ORDER BY created_at, id").fetch_all(&self.pool).await?;
+        let rows = sqlx::query("SELECT * FROM android_devices WHERE user_id = ? ORDER BY created_at, id").bind(self.user.to_string()).fetch_all(&self.pool).await?;
         rows.iter().map(android_device_from_row).collect()
     }
 
@@ -1227,14 +1361,15 @@ impl Store {
     pub async fn add_android_device(&self, transport: &str, token: &str, name: Option<&str>) -> Result<AndroidDevice> {
         let id = Uuid::now_v7();
         sqlx::query(
-            "INSERT INTO android_devices (id, transport, token, name, created_at) VALUES (?, ?, ?, ?, ?) \
-             ON CONFLICT (token) DO UPDATE SET transport = excluded.transport, name = excluded.name",
+            "INSERT INTO android_devices (id, transport, token, name, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?) \
+             ON CONFLICT (token) DO UPDATE SET user_id = excluded.user_id, transport = excluded.transport, name = excluded.name",
         )
         .bind(id.to_string())
         .bind(transport)
         .bind(token)
         .bind(name)
         .bind(now_ms())
+        .bind(self.user.to_string())
         .execute(&self.pool)
         .await?;
         let row = sqlx::query("SELECT * FROM android_devices WHERE token = ?").bind(token).fetch_one(&self.pool).await?;
@@ -1242,13 +1377,13 @@ impl Store {
     }
 
     pub async fn delete_android_device(&self, id: Uuid) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM android_devices WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        let res = sqlx::query("DELETE FROM android_devices WHERE id = ? AND user_id = ?").bind(id.to_string()).bind(self.user.to_string()).execute(&self.pool).await?;
         Ok(res.rows_affected() == 1)
     }
 
     /// The app turned push off, or moved to another server: forget its token.
     pub async fn delete_android_device_by_token(&self, token: &str) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM android_devices WHERE token = ?").bind(token).execute(&self.pool).await?;
+        let res = sqlx::query("DELETE FROM android_devices WHERE token = ? AND user_id = ?").bind(token).bind(self.user.to_string()).execute(&self.pool).await?;
         Ok(res.rows_affected() == 1)
     }
 
@@ -1261,7 +1396,8 @@ impl Store {
         Ok(())
     }
 
-    /// The id of the last notification taken from cedar's event stream (0: none yet).
+    /// The server's, not a user's: the id of the last notification taken from cedar's event
+    /// stream (0: none yet).
     pub async fn notifications_cursor(&self) -> Result<i64> {
         let row = sqlx::query("SELECT value FROM settings WHERE key = 'notifications_cursor'")
             .fetch_optional(&self.pool)
@@ -1289,12 +1425,13 @@ impl Store {
         let id = Uuid::now_v7();
         let now = now_ms();
         sqlx::query(
-            "INSERT INTO schedules (id, title, prompt, model, reasoning, source_conversation_id, tools, notify, frequency, \
+            "INSERT INTO schedules (id, user_id, title, prompt, model, reasoning, source_conversation_id, tools, notify, frequency, \
              weekday, time_of_day, timezone, enabled, next_run_at, created_at, updated_at, trigger_kind, trigger, hook_id, \
              hook_secret, min_interval_secs, max_runs_per_day) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
+        .bind(self.user.to_string())
         .bind(new.title)
         .bind(new.prompt)
         .bind(new.model)
@@ -1321,27 +1458,28 @@ impl Store {
     }
 
     pub async fn get_schedule(&self, id: Uuid) -> Result<Option<Schedule>> {
-        let row = sqlx::query("SELECT * FROM schedules WHERE id = ?").bind(id.to_string()).fetch_optional(&self.pool).await?;
+        let row = sqlx::query("SELECT * FROM schedules WHERE id = ? AND user_id = ?").bind(id.to_string()).bind(self.user.to_string()).fetch_optional(&self.pool).await?;
         row.as_ref().map(schedule_from_row).transpose()
     }
 
     /// Enabled schedules first, soonest first.
     pub async fn list_schedules(&self) -> Result<Vec<Schedule>> {
-        let rows = sqlx::query("SELECT * FROM schedules ORDER BY enabled DESC, next_run_at, id").fetch_all(&self.pool).await?;
+        let rows = sqlx::query("SELECT * FROM schedules WHERE user_id = ? ORDER BY enabled DESC, next_run_at, id").bind(self.user.to_string()).fetch_all(&self.pool).await?;
         rows.iter().map(schedule_from_row).collect()
     }
 
     pub async fn count_schedules(&self) -> Result<i64> {
-        Ok(sqlx::query("SELECT COUNT(*) AS n FROM schedules").fetch_one(&self.pool).await?.try_get("n")?)
+        Ok(sqlx::query("SELECT COUNT(*) AS n FROM schedules WHERE user_id = ?").bind(self.user.to_string()).fetch_one(&self.pool).await?.try_get("n")?)
     }
 
     /// The classic schedules (`time` triggers), as `/api/schedules` lists them for apps from
     /// before agents had other triggers.
     pub async fn list_time_schedules(&self) -> Result<Vec<Schedule>> {
-        let rows = sqlx::query("SELECT * FROM schedules WHERE trigger_kind = 'time' ORDER BY enabled DESC, next_run_at, id").fetch_all(&self.pool).await?;
+        let rows = sqlx::query("SELECT * FROM schedules WHERE user_id = ? AND trigger_kind = 'time' ORDER BY enabled DESC, next_run_at, id").bind(self.user.to_string()).fetch_all(&self.pool).await?;
         rows.iter().map(schedule_from_row).collect()
     }
 
+    /// Across users: a webhook's caller knows the hook, not whose agent it is.
     pub async fn get_schedule_by_hook(&self, hook_id: &str) -> Result<Option<Schedule>> {
         let row = sqlx::query("SELECT * FROM schedules WHERE hook_id = ?").bind(hook_id).fetch_optional(&self.pool).await?;
         row.as_ref().map(schedule_from_row).transpose()
@@ -1454,8 +1592,9 @@ impl Store {
     pub async fn list_activity(&self, before: Option<DateTime<Utc>>, limit: u32) -> Result<Vec<ActivityRow>> {
         let rows = sqlx::query(
             "SELECT r.*, s.title AS agent_title, s.trigger_kind AS agent_kind FROM schedule_runs r \
-             JOIN schedules s ON s.id = r.schedule_id WHERE r.started_at < ? ORDER BY r.started_at DESC, r.id DESC LIMIT ?",
+             JOIN schedules s ON s.id = r.schedule_id WHERE s.user_id = ? AND r.started_at < ? ORDER BY r.started_at DESC, r.id DESC LIMIT ?",
         )
+        .bind(self.user.to_string())
         .bind(before.map_or(i64::MAX, |t| t.timestamp_millis()))
         .bind(limit as i64)
         .fetch_all(&self.pool)
@@ -1467,11 +1606,11 @@ impl Store {
 
     /// Deleting a schedule takes its runs and the conversations they created with it.
     pub async fn delete_schedule(&self, id: Uuid) -> Result<bool> {
-        let res = sqlx::query("DELETE FROM schedules WHERE id = ?").bind(id.to_string()).execute(&self.pool).await?;
+        let res = sqlx::query("DELETE FROM schedules WHERE id = ? AND user_id = ?").bind(id.to_string()).bind(self.user.to_string()).execute(&self.pool).await?;
         Ok(res.rows_affected() == 1)
     }
 
-    /// Enabled schedules whose next run is at or before `now`, earliest first.
+    /// Across users: enabled schedules whose next run is at or before `now`, earliest first.
     pub async fn due_schedules(&self, now: DateTime<Utc>) -> Result<Vec<Schedule>> {
         let rows = sqlx::query("SELECT * FROM schedules WHERE enabled = 1 AND next_run_at <= ? ORDER BY next_run_at, id")
             .bind(now.timestamp_millis())
@@ -1496,8 +1635,9 @@ impl Store {
     pub async fn create_scheduled_conversation(&self, schedule_id: Uuid, title: &str) -> Result<Conversation> {
         let id = Uuid::now_v7();
         let now = now_ms();
-        sqlx::query("INSERT INTO conversations (id, title, schedule_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO conversations (id, user_id, title, schedule_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
             .bind(id.to_string())
+            .bind(self.user.to_string())
             .bind(title)
             .bind(schedule_id.to_string())
             .bind(now)
@@ -1584,10 +1724,68 @@ mod tests {
         assert_eq!(turns[0].stop_reason.as_deref(), Some("end_turn"));
         assert!(turns[0].finished_at.is_some() && !turns[0].seen);
         assert!(turns[1].finished_at.is_none());
-        assert_eq!(store.get_turn_by_run(t1.run_id).await.unwrap().unwrap().id, t1.id);
+        let (found, owner) = store.get_turn_by_run(t1.run_id).await.unwrap().unwrap();
+        assert_eq!((found.id, owner), (t1.id, store.user()));
 
         assert!(store.delete_conversation(c.id).await.unwrap());
         assert!(store.get_turn(t2.id).await.unwrap().is_none());
+    }
+
+    /// One database, two users: each handle lists, finds and changes only its own user's rows.
+    #[tokio::test]
+    async fn users_see_only_what_is_theirs() {
+        let owner = Store::connect_memory().await.unwrap();
+        assert_eq!(owner.user(), owner.primary_user().await.unwrap());
+        let ada = owner.create_user("Ada", "aa").await.unwrap();
+        assert!(!ada.primary && ada.has_token);
+        assert_eq!(owner.user_by_token("aa").await.unwrap().unwrap().id, ada.id);
+        assert!(owner.user_by_token("bb").await.unwrap().is_none());
+        let ada = owner.as_user(ada.id);
+
+        // Conversations and their turns.
+        let mine = owner.create_conversation(Some("Mine")).await.unwrap();
+        let hers = ada.create_conversation(Some("Hers")).await.unwrap();
+        assert_eq!((mine.user_id, hers.user_id), (owner.user(), ada.user()));
+        let turn = ada.insert_turn(hers.id, Uuid::new_v4(), "a secret plan", "queued", None, None, &[]).await.unwrap();
+        ada.update_turn(turn.id, "completed", Some("done"), None, Some("end_turn")).await.unwrap();
+        assert!(owner.get_conversation(hers.id).await.unwrap().is_none());
+        assert!(owner.get_turn(turn.id).await.unwrap().is_none());
+        assert!(owner.list_turns(hers.id).await.unwrap().is_empty());
+        let titles = |list: Vec<Conversation>| list.into_iter().map(|c| c.title.unwrap()).collect::<Vec<_>>();
+        assert_eq!(titles(owner.list_conversations(10).await.unwrap()), ["Mine"]);
+        assert_eq!(titles(ada.list_conversations(10).await.unwrap()), ["Hers"]);
+        assert!(owner.search_conversations("secret", 10).await.unwrap().is_empty());
+        assert_eq!(ada.search_conversations("secret", 10).await.unwrap().len(), 1);
+        assert_eq!((owner.count_unseen().await.unwrap(), ada.count_unseen().await.unwrap()), (0, 1));
+        assert!(owner.inbox(10).await.unwrap().is_empty());
+        // Another user's can't be changed, starred, marked or deleted either.
+        assert!(!owner.rename_conversation(hers.id, "Taken").await.unwrap());
+        assert!(!owner.set_starred(hers.id, true).await.unwrap());
+        assert!(!owner.set_turn_rating(turn.id, Some(1)).await.unwrap());
+        assert_eq!(owner.mark_seen(hers.id).await.unwrap(), 0);
+        assert!(!owner.delete_conversation(hers.id).await.unwrap());
+        assert_eq!(ada.list_run_ids().await.unwrap(), [turn.run_id]);
+        // The run names its turn's owner, for cedar's stream of everyone's finished runs.
+        assert_eq!(owner.get_turn_by_run(turn.run_id).await.unwrap().unwrap().1, ada.user());
+
+        // Settings and devices.
+        ada.set_preferences(&Preferences { locale: Some("de".into()), ..Default::default() }).await.unwrap();
+        assert_eq!(owner.preferences().await.unwrap().locale, None);
+        assert_eq!(ada.preferences().await.unwrap().locale.as_deref(), Some("de"));
+        let phone = owner.add_apns_device("token-1", Some("Phone")).await.unwrap();
+        assert!(ada.apns_devices().await.unwrap().is_empty());
+        assert!(!ada.delete_apns_device(phone.id).await.unwrap());
+        // A phone that signs in as someone else is theirs from then on.
+        ada.add_apns_device("token-1", Some("Phone")).await.unwrap();
+        assert!(owner.apns_devices().await.unwrap().is_empty());
+        assert_eq!(ada.apns_devices().await.unwrap().len(), 1);
+
+        // Removing a user takes what was theirs; the primary user stays.
+        assert!(!owner.delete_user(owner.user()).await.unwrap());
+        assert!(owner.delete_user(ada.user()).await.unwrap());
+        assert!(owner.get_turn_by_run(turn.run_id).await.unwrap().is_none());
+        assert_eq!(owner.list_users().await.unwrap().len(), 1);
+        assert_eq!(titles(owner.list_conversations(10).await.unwrap()), ["Mine"]);
     }
 
     #[tokio::test]
