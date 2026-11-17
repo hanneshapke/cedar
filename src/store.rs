@@ -196,6 +196,9 @@ pub struct Finish<'a> {
     pub event_data: Value,
 }
 
+/// The lowest version a downstream build's migration may have; cedar numbers its own below it.
+pub const EXTENSION_MIGRATION_FLOOR: i64 = 1_000_000;
+
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,
@@ -231,11 +234,37 @@ impl Store {
     }
 
     async fn migrated(pool: SqlitePool) -> Result<Self> {
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .context("running migrations")?;
+        let mut migrator = sqlx::migrate!("./migrations");
+        // Downstream builds keep their own migrations in the same table (see
+        // [`Self::run_extension_migrations`]), so applied versions this list lacks are expected.
+        migrator.set_ignore_missing(true);
+        migrator.run(&pool).await.context("running migrations")?;
         Ok(Self { pool })
+    }
+
+    /// Apply a downstream build's migrations (e.g. `sqlx::migrate!("./migrations")` in its own
+    /// crate) to this database. They share sqlx's bookkeeping table with cedar's, so every
+    /// version must be at least [`EXTENSION_MIGRATION_FLOOR`]; cedar's own stay below it.
+    /// Keep extension tables separate (a name prefix such as `ee_`) and never alter cedar's.
+    pub async fn run_extension_migrations(
+        &self,
+        mut migrator: sqlx::migrate::Migrator,
+    ) -> Result<()> {
+        if let Some(m) = migrator
+            .iter()
+            .find(|m| m.version < EXTENSION_MIGRATION_FLOOR)
+        {
+            anyhow::bail!(
+                "extension migration {} ({}) is numbered below {EXTENSION_MIGRATION_FLOOR}, the range cedar reserves for its own",
+                m.version,
+                m.description
+            );
+        }
+        migrator.set_ignore_missing(true);
+        migrator
+            .run(&self.pool)
+            .await
+            .context("running extension migrations")
     }
 
     pub async fn ping(&self) -> Result<()> {
@@ -390,8 +419,8 @@ impl Store {
         })?))
     }
 
-    /// For modules that keep their own tables (see `secrets`).
-    pub(crate) fn pool(&self) -> &SqlitePool {
+    /// For modules that keep their own tables (see `secrets`), and a downstream build's.
+    pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }
 
