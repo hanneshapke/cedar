@@ -179,7 +179,11 @@ Running everything here, the setup window shows three steps:
   a model that reads images may then look at your screen and use your mouse and keyboard, and
   asks before every step (see
   [The user's own computer](../README.md#the-users-own-computer) and its safety notes). macOS
-  asks for the Screen Recording and Accessibility permissions the first time it is used. The
+  asks for the Screen Recording and Accessibility permissions the first time it is used. An app
+  you built yourself is signed anew on every build, and macOS then no longer counts a permission
+  given to the build before, though its switch still shows as on: remove Cedar from both lists
+  (the − button, or `tccutil reset Accessibility io.github.hanneshapke.cedar` and the same with
+  `ScreenCapture`), reopen the app and allow it again. The
   app starts cedar with this computer as the default, and also pulls `cedar-computer` (about
   1.4 GB), so the desktop in a container can be chosen instead under Settings → Advanced in the
   chat. If that pull fails, the app carries on without it and tries again at the next launch.

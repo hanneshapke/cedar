@@ -34,10 +34,14 @@ const MAX_KEYS: usize = 20;
 const MAX_SCROLL: i64 = 30;
 const JPEG_QUALITY: u8 = 80;
 const NO_INPUT: &str = "Cedar may not use the mouse and keyboard yet: allow it under System \
-     Settings → Privacy & Security → Accessibility, then try again";
+     Settings → Privacy & Security → Accessibility, then try again. If Cedar is already switched \
+     on there, the entry belongs to another build of the app: select it, remove it with the − \
+     button, quit and reopen Cedar, and allow it again when asked";
 #[cfg(target_os = "macos")]
 const NO_SCREEN: &str = "Cedar may not see the screen yet: allow it under System Settings → \
-     Privacy & Security → Screen Recording, then quit and reopen Cedar";
+     Privacy & Security → Screen Recording, then quit and reopen Cedar. If Cedar is already \
+     switched on there, the entry belongs to another build of the app: remove it with the − \
+     button first";
 
 /// Run `cedar computer <args>`; the process's exit code.
 pub fn main(args: &[String]) -> i32 {
