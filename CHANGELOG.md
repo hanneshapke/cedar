@@ -2,8 +2,6 @@
 
 ## Unreleased
 
-- **Cedar can be extended from another crate.** `cedar::server::serve` runs the server that `cedar` runs, with `Extensions` for extra routes (under `/v1` with the usual key check, or public), middleware, and startup hooks, and `Store::run_extension_migrations` applies a downstream crate's own migrations (numbered from 1000000) next to cedar's. A private build such as an enterprise edition can ship its own binary on top of cedar instead of forking it; see [docs/extending.md](docs/extending.md).
-
 - **The phone apps are released only when they change.** Cedar, the Android app and the iOS app share `major.minor` and now count patch versions on their own: a release ships the platforms whose version it bumps (`scripts/bump-version.sh` picks the ones that changed), each under its own tag (`v…`, `android-v…`, `ios-v…`). So 0.11.2 on the desktop next to 0.11.0 on a phone is the same Cedar 0.11, and a desktop fix no longer sends an unchanged app to TestFlight.
 
 ## 0.10.1

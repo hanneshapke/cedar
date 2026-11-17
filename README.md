@@ -1402,8 +1402,6 @@ python3 registry/build_index.py --check  # the community tool registry's rules a
 
 The integration tests drive the real router with a scripted LLM, a fake sandbox, and a fake browser (`tests/common/mod.rs`), and the LLM client against a local mock of a chat-completions server.
 
-**Building on cedar.** A separate crate (an enterprise edition, an in-house build) can depend on cedar and ship its own binary instead of forking it; see [docs/extending.md](docs/extending.md).
-
 **Benchmark.** [`bench/`](bench/README.md) holds cedar-bench, a hermetic benchmark that runs tasks through the runs API against mock services (search, pages, weather, stocks, Gmail and Calendar over synthetic personas) and compares models on success, reliability, cost and safety, with a PDF and Markdown report. `bench/scripts/stack.sh start` and `stack.sh run` run it; see its README.
 
 ## Limitations
