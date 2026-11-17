@@ -66,7 +66,14 @@ async fn main() -> Result<()> {
              reaches by itself (links, redirects, scripts) can reach whatever its Docker network can"
         );
     }
-    if cfg.computer.enabled && cfg.computer.native() {
+    if cfg.computer.enabled && cfg.computer.native() && !cfg!(feature = "native-computer") {
+        // Not a reason to refuse to start: an app that bundles such a cedar would not come up.
+        tracing::warn!(
+            "COMPUTER_RUNTIME=native, but this cedar was built without the driver for its own \
+             computer (build it with `--features native-computer`): the computer tool works a \
+             desktop in a container instead"
+        );
+    } else if cfg.computer.enabled && cfg.computer.native() {
         tracing::warn!(
             "COMPUTER is on with COMPUTER_RUNTIME=native: in attended runs the model can see this \
              computer's screen and use its mouse and keyboard, once the user allows it"

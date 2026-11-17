@@ -675,7 +675,9 @@ so it must never change.
 # From the repository root. Replace the triple with x86_64-apple-darwin for an Intel build.
 T=aarch64-apple-darwin
 rustup target add $T
-cargo build --release -p cedar -p cedar-chat --target $T
+# native-computer: the driver behind "Let Cedar use this computer" (without it that switch gives
+# a desktop in a container instead).
+cargo build --release -p cedar -p cedar-chat --features cedar/native-computer --target $T
 install -m 0755 target/$T/release/cedar desktop/binaries/cedar-$T
 install -m 0755 target/$T/release/cedar-chat desktop/binaries/cedar-chat-$T
 
@@ -699,7 +701,8 @@ the OpenSSL that cedar-chat links statically (Git's own Perl can't). In PowerShe
 $T = "x86_64-pc-windows-msvc"
 # The C runtime linked in, so the servers run on PCs without the Visual C++ Redistributable.
 $env:RUSTFLAGS = "-C target-feature=+crt-static"
-cargo build --release -p cedar -p cedar-chat --target $T
+# native-computer: the driver behind "Let Cedar use this computer".
+cargo build --release -p cedar -p cedar-chat --features cedar/native-computer --target $T
 Remove-Item Env:RUSTFLAGS
 Copy-Item target/$T/release/cedar.exe desktop/binaries/cedar-$T.exe
 Copy-Item target/$T/release/cedar-chat.exe desktop/binaries/cedar-chat-$T.exe

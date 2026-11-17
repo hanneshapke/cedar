@@ -892,9 +892,6 @@ impl Config {
         }
         crate::openshell::memory_quantity(&self.sandbox.memory)
             .map_err(|e| anyhow!("SANDBOX_MEMORY: {e}"))?;
-        if self.computer.enabled && self.computer.native() && !cfg!(feature = "native-computer") {
-            bail!("COMPUTER_RUNTIME=native needs a cedar built with the native computer driver (cargo build --features native-computer)");
-        }
         if self.browser.enabled && self.browser.network == "none" {
             bail!("BROWSER_NETWORK=none leaves the browser without internet access; use a network that has it");
         }
@@ -1248,7 +1245,8 @@ mod tests {
         let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_RUNTIME", "vm")]))
             .unwrap_err();
         assert!(err.to_string().contains("COMPUTER_RUNTIME"), "{err}");
-        // Naming the runtime turns nothing on; turning it on needs a build with the driver.
+        // Naming the runtime turns nothing on. A cedar built without the driver still starts
+        // with it turned on: runs then get the desktop in a container (see `Computers`).
         let named = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_RUNTIME", "native")]))
             .unwrap();
         assert!(named.computer.native() && !named.computer.enabled);
@@ -1256,8 +1254,9 @@ mod tests {
             ("CEDAR_API_KEYS", "a"),
             ("COMPUTER", "on"),
             ("COMPUTER_RUNTIME", "native"),
-        ]));
-        assert_eq!(on.is_ok(), cfg!(feature = "native-computer"));
+        ]))
+        .unwrap();
+        assert!(on.computer.native() && on.computer.enabled);
 
         for bad in ["1280", "1280x", "axb", "100x100", "9000x800"] {
             let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_SCREEN", bad)]))
