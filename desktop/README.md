@@ -687,7 +687,10 @@ install -m 0755 target/$T/release/cedar-chat desktop/binaries/cedar-chat-$T
 
 cargo install tauri-cli --version '^2' --locked     # once
 cd desktop
-cargo tauri build --target $T --bundles dmg          # target/$T/release/bundle/dmg/Cedar_<version>_*.dmg
+# Signed ad hoc ("-"), so macOS sees one app, Cedar, rather than a bare program named cedar-app:
+# without it the Screen Recording and Accessibility permissions land on different entries and
+# "Let Cedar use this computer" keeps asking for them.
+APPLE_SIGNING_IDENTITY=- cargo tauri build --target $T --bundles dmg   # target/$T/release/bundle/dmg/Cedar_<version>_*.dmg
 ```
 
 Without the Apple secrets below the bundler signs ad hoc and skips notarization, which is fine
