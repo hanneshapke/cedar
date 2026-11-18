@@ -16,6 +16,7 @@ pub mod pairing;
 pub mod poll;
 pub mod prompt;
 pub mod schedule;
+pub mod slack;
 pub mod store;
 pub mod trigger;
 pub mod update;
