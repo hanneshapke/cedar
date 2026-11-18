@@ -1084,6 +1084,11 @@ a run that isn't interactive, a scheduled one included, posts without asking, so
 wrote in Slack reaches the model as information: the system prompt tells it not to take
 instructions from messages, but as with email, a channel anyone can post in is a way to try.
 
+The other way round, people can talk to Cedar *from* Slack: message the app or mention it in a
+channel, and the agent answers in the thread, with plans and approvals as buttons there. That is
+cedar-chat's part, since it keeps the conversations and the people; see
+[chat/README.md](chat/README.md#slack).
+
 ### Models
 
 The models runs can use live in a registry that admins manage through `PUT /v1/admin/models/{id}`,

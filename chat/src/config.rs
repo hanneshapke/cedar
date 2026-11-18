@@ -52,7 +52,22 @@ pub struct Config {
     /// of a cedar-contrib ingest; see `contrib`): `DEFAULT_CONTRIBUTIONS_URL` unless another is
     /// named. `off`, and nothing can be sent; the review dialog still exports a bundle to a file.
     pub contributions_url: Option<String>,
+    /// The Slack app people talk to Cedar through (see `slack`): its app-level token
+    /// (`CHAT_SLACK_APP_TOKEN`, `xapp-...`), which opens the Socket Mode connection events come
+    /// over, and its bot token (`CHAT_SLACK_BOT_TOKEN`, `xoxb-...`), which answers. Both or neither.
+    pub slack: Option<SlackConfig>,
 }
+
+#[derive(Debug, Clone)]
+pub struct SlackConfig {
+    pub app_token: String,
+    pub bot_token: String,
+    /// The root of Slack's Web API (`CHAT_SLACK_API_URL`); overridable so tests can point at a mock.
+    pub api_url: String,
+}
+
+/// Where Slack's Web API is unless `CHAT_SLACK_API_URL` says.
+pub const DEFAULT_SLACK_API_URL: &str = "https://slack.com/api";
 
 /// The corpus a chat contributes to unless `CHAT_CONTRIBUTIONS_URL` names another or is `off`:
 /// the project's own cedar-contrib ingest. Nothing goes there until a person turns contributing
@@ -133,7 +148,29 @@ impl Config {
                 Some(v) if matches!(v.to_ascii_lowercase().as_str(), "off" | "none" | "no" | "false" | "0") => None,
                 Some(v) => Some(v),
             },
+            slack: match (get("CHAT_SLACK_APP_TOKEN"), get("CHAT_SLACK_BOT_TOKEN")) {
+                (None, None) => None,
+                (Some(app), Some(bot)) => Some(SlackConfig {
+                    app_token: app.trim().to_string(),
+                    bot_token: bot.trim().to_string(),
+                    api_url: get("CHAT_SLACK_API_URL")
+                        .map(|u| u.trim().trim_end_matches('/').to_string())
+                        .unwrap_or_else(|| DEFAULT_SLACK_API_URL.into()),
+                }),
+                _ => bail!("set both CHAT_SLACK_APP_TOKEN and CHAT_SLACK_BOT_TOKEN for Slack, or neither"),
+            },
         };
+        if let Some(slack) = &cfg.slack {
+            if !slack.app_token.starts_with("xapp-") {
+                bail!("CHAT_SLACK_APP_TOKEN must be a Slack app-level token (xapp-...)");
+            }
+            if !slack.bot_token.starts_with("xoxb-") {
+                bail!("CHAT_SLACK_BOT_TOKEN must be a Slack bot token (xoxb-...)");
+            }
+            if !(slack.api_url.starts_with("http://") || slack.api_url.starts_with("https://")) {
+                bail!("CHAT_SLACK_API_URL must start with http:// or https://");
+            }
+        }
         if let Some(u) = &cfg.contributions_url {
             if !(u.starts_with("http://") || u.starts_with("https://")) {
                 bail!("CHAT_CONTRIBUTIONS_URL must start with http:// or https://");
@@ -220,6 +257,18 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_CONTRIBUTIONS_URL", "http://127.0.0.1:8090/")])).unwrap();
         assert_eq!(cfg.contributions_url.as_deref(), Some("http://127.0.0.1:8090"));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_CONTRIBUTIONS_URL", "contrib.example")])).is_err());
+    }
+
+    #[test]
+    fn slack_needs_both_tokens() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k")])).unwrap();
+        assert!(cfg.slack.is_none());
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_SLACK_APP_TOKEN", "xapp-1"), ("CHAT_SLACK_BOT_TOKEN", " xoxb-2 ")])).unwrap();
+        let slack = cfg.slack.unwrap();
+        assert_eq!((slack.app_token.as_str(), slack.bot_token.as_str(), slack.api_url.as_str()), ("xapp-1", "xoxb-2", DEFAULT_SLACK_API_URL));
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_SLACK_APP_TOKEN", "xapp-1")])).is_err());
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_SLACK_APP_TOKEN", "xoxb-1"), ("CHAT_SLACK_BOT_TOKEN", "xoxb-2")])).is_err());
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_SLACK_APP_TOKEN", "xapp-1"), ("CHAT_SLACK_BOT_TOKEN", "xapp-2")])).is_err());
     }
 
     #[test]

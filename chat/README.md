@@ -35,6 +35,8 @@ Both interfaces have all of these, except where noted:
   document, chart, web, and weather tools, and `web_search` when cedar has a Brave key) with their input and
   output, errors, and token usage are shown as they happen
 - A stop button cancels the running response
+- [Slack](#slack): message the Slack app or mention it in a channel, and the answer comes back in
+  the thread, with plans and approvals as buttons (when the server has a Slack app)
 - Expert mode (Settings → Advanced settings → Expert mode, saved in this browser) adds a Trace button to each message
   you send. It opens a dialog with everything the agent did for that response, from cedar's
   `GET /v1/runs/{id}/trace` (`/api/turns/{id}/trace` here): a timeline of each model call (the
@@ -297,6 +299,9 @@ remove the tool.
 | `CHAT_UPDATE_DIR` | unset | The directory the root `cedar-update` unit watches (`/var/lib/cedar/update` in [DEPLOYMENT.md](../DEPLOYMENT.md#updates)). When set, an admin's *Update* in the banner installs the release; otherwise the banner shows the commands to run |
 | `CHAT_UPDATE_URL` | `https://api.github.com/repos/hanneshapke/cedar/releases/latest` | Where the latest release is looked up (for tests) |
 | `CHAT_CONTRIBUTIONS_URL` | the project's corpus | The base URL of a [cedar-contrib](../contrib/README.md) ingest that a conversation can be [contributed](#contributing-a-conversation) to; unset, the project's own ingest. `off`, and nothing can be sent; the review dialog still exports a bundle to a file |
+| `CHAT_SLACK_APP_TOKEN` | unset | The Slack app's app-level token (`xapp-…`, scope `connections:write`), which opens the Socket Mode connection people talk to Cedar through (see [Slack](#slack)). Set with `CHAT_SLACK_BOT_TOKEN`, or neither |
+| `CHAT_SLACK_BOT_TOKEN` | unset | The same app's bot token (`xoxb-…`), which answers in Slack. It may be the token cedar's `SLACK_BOT_TOKEN` has |
+| `CHAT_SLACK_API_URL` | `https://slack.com/api` | The root of Slack's Web API (for tests) |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -637,6 +642,126 @@ curl -X POST 'https://chat.example/api/hooks/6be059e30e9f97a82578455b139de8cb' \
   machine; behind Tailscale, only your tailnet. The secret is kept in this server's database
   (`CHAT_DATABASE_URL`) as it is, like the notification credentials.
 
+## Slack
+
+People can talk to Cedar from your team's Slack: message the Slack app directly, or mention it in
+a channel, and it answers in the thread. Each thread is one conversation, listed on the page like
+any other, and each reply in it continues the conversation the way a message on the page does (the
+run continues the previous one, with its workspace and files). Plans to agree to and tool calls to
+approve show up in the thread with buttons. This is separate from cedar's
+[`slack_*` tools](../README.md#slack), which let the model read and post in Slack during a run; the
+same Slack app can do both.
+
+The app connects with Slack's **Socket Mode**: this server opens a WebSocket to Slack and the
+events come down it, so Slack never has to reach this server. It works on `127.0.0.1`, behind a
+NAT or on a tailnet, with no public address.
+
+### Setting it up
+
+1. At [api.slack.com/apps](https://api.slack.com/apps), *Create New App* → *From a manifest*, pick
+   the workspace, and paste this (or add what it lists to the app you already have for cedar's
+   Slack tools):
+
+   ```yaml
+   display_information:
+     name: Cedar
+   features:
+     app_home:
+       messages_tab_enabled: true
+       messages_tab_read_only_enabled: false
+     bot_user:
+       display_name: cedar
+       always_online: true
+   oauth_config:
+     scopes:
+       bot:
+         - app_mentions:read   # mentions in channels
+         - chat:write          # answering
+         - im:history          # direct messages to the app
+         - channels:history    # replies in a channel thread the app answers in
+         - groups:history      # the same in private channels
+         - reactions:write     # 👀 while working, ✅ when done
+         - users:read          # the name and language of someone who isn't linked yet
+         - channels:read       # (cedar's slack_* tools)
+         - groups:read         # (cedar's slack_* tools)
+   settings:
+     event_subscriptions:
+       bot_events:
+         - app_mention
+         - message.im
+         - message.channels
+         - message.groups
+     interactivity:
+       is_enabled: true
+     socket_mode_enabled: true
+   ```
+
+2. *Install to Workspace*, and copy the **Bot User OAuth Token** (`xoxb-…`) from *OAuth &
+   Permissions*. If the app already had a token for cedar's tools, reinstalling it with the new
+   scopes keeps that token.
+3. Under *Basic Information* → *App-Level Tokens*, *Generate Token and Scopes* with the scope
+   `connections:write`, and copy it (`xapp-…`).
+4. Start cedar-chat with both:
+
+   ```sh
+   CHAT_SLACK_APP_TOKEN=xapp-… CHAT_SLACK_BOT_TOKEN=xoxb-… cargo run -p cedar-chat
+   ```
+
+   The log says `Slack app connected` with the workspace's name, and Settings → Slack says so too.
+5. Invite the app to the channels it should answer in (`/invite @cedar`). Direct messages need no
+   invitation.
+
+Set `CHAT_PUBLIC_URL` to an address the people in Slack can open (the tailnet one, say), and each
+answer ends with a link to its conversation on the page; with a loopback address it has none.
+
+### Linking a Slack account
+
+Nobody's messages reach Cedar until their Slack account is linked to a [user](#users) here. The
+first time someone messages the app (or mentions it), it answers, only to them, with a code that
+is good for 15 minutes; they enter it in **Settings → Slack**, signed in here as themselves. Each
+side has then shown it is who it says: the code went to that Slack account, and only someone
+signed in here can enter it. The app then confirms in a direct message. Settings → Slack lists the
+linked accounts and can unlink one. On a server with one person, that is linking your own account;
+on a shared one, everyone links their own, and their runs, memories and conversations are theirs.
+
+### How it behaves
+
+- **What starts a conversation:** a direct message to the app, or a message that mentions it in
+  a channel. The app answers in the message's thread, and that thread is the conversation from
+  then on. In a direct message, a reply at the top level (not in the thread) starts a new one.
+- **Continuing:** a reply in the thread continues it, in a channel too, with no need to mention
+  the app again. Only the person who started a thread continues it; anyone else who mentions the
+  app there is told, only them, to start their own.
+- **While it works** the message gets 👀; a ✅ when the answer is posted, ❌ if the run failed.
+  A second message while a response is still going is not queued: the app says to wait or to say
+  `stop`, which cancels the running response (`stop`, `cancel`, and the same in German, French and
+  Spanish).
+- **Plans and approvals.** Runs from Slack are interactive, like messages on the page: a plan the
+  run waits on is posted with *Go ahead* and *Stop*, and a tool call that needs approval (the
+  `TOOL_APPROVALS` rules of [cedar](../README.md#plans-and-approvals)) with *Allow*, *Always
+  allow* (when the call has a scope) and *Deny*. Only the person whose run it is can press them,
+  and the message shows the decision once one is made, here or on the page. Without an answer, a
+  wait ends after cedar's `APPROVAL_TIMEOUT_SECS`.
+- **The answer** is posted in the thread in Slack's markup (bold, links, lists, headings; tables
+  and code as preformatted text), split into messages of under 4,000 characters. A question the
+  agent asks back (`ask_user`) is answered by replying in the thread. What a run made in its
+  workspace stays there: open the conversation on the page for the files.
+- **Messages** are the person's own words, run with their settings (model, tools, plan, language)
+  and their memories; mentions of people and channels arrive as names, links as their address.
+  The app's own messages are in the language of the person's Settings (before linking, their Slack
+  language).
+- **Restarts** lose nothing: a Slack thread, the turns asked from it and what was posted for them
+  are kept in the database, and a response that ended while this server was down is answered when
+  it is back. A code that wasn't entered yet is lost; the person gets a new one by writing again.
+
+### Privacy
+
+What someone writes to the app goes to the model server like any message on the page, and what it
+answers goes to Slack. The tokens stay in this process and are only sent to `CHAT_SLACK_API_URL`
+(and the WebSocket address Slack gives it); they are not stored in the database. Messages from
+accounts that aren't linked are not kept or sent anywhere; the app only looks up their name and
+language to word the code's message.
+
 ## Tools and settings
 
 **Settings → Tools** sets which of cedar's tool groups every new conversation gets (web search,
@@ -871,6 +996,9 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 
 | Method and path | Purpose |
 | --- | --- |
+| `GET /api/slack` | Settings → Slack: `{available, workspace, links}`. `available` is whether this server has a [Slack app](#slack); `workspace` is `{team, team_name, bot}` once it is connected (else `null`); `links` are the caller's linked Slack accounts, each `{team, team_name, slack_user, name, created_at}` |
+| `POST /api/slack/link` | Link the Slack account a code was sent to: `{"code"}` (any case, with or without the dash) → `201 {link}`, and the account is told in Slack. `400` for a code that isn't one, was used, or ran out (15 minutes); `404` without a Slack app |
+| `DELETE /api/slack/links/{team}/{slack_user}` | Unlink one of the caller's Slack accounts: `204`, or `404`. Its threads stay the caller's conversations; nobody continues them from Slack until it is linked again |
 | `GET /api/me` | Who the token belongs to: `{id, name, primary, has_token, created_at}` (see [Users](#users)) |
 | `GET /api/users` | Admin: `{users: [...]}`, the primary user first |
 | `POST /api/users` | Admin: add a user, `{"name"}`. `201` with `{user, token}`; the token is not shown again. `409` when cedar doesn't let this server act for users |

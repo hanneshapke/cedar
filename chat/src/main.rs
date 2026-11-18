@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use cedar_chat::api::{self, AppState};
 use cedar_chat::config::Config;
-use cedar_chat::{notify, schedule, update};
+use cedar_chat::{notify, schedule, slack, update};
 use cedar_chat::store::Store;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -40,6 +40,8 @@ async fn main() -> Result<()> {
     let notifier = notify::start(state.clone(), stop.clone());
     // A newer release, for the page's banner (see update.rs).
     let updates = update::start(state.clone(), stop.clone());
+    // Slack, when its app is set up: messages to the app become conversations (see slack.rs).
+    let slack = slack::start(state.clone(), stop.clone());
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await.with_context(|| format!("binding {bind_addr}"))?;
     tracing::info!("open http://{bind_addr}");
@@ -61,6 +63,7 @@ async fn main() -> Result<()> {
     }
     let _ = tokio::time::timeout(Duration::from_secs(2), notifier).await;
     let _ = tokio::time::timeout(Duration::from_secs(2), updates).await;
+    let _ = tokio::time::timeout(Duration::from_secs(2), slack).await;
     Ok(())
 }
 

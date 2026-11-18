@@ -87,7 +87,7 @@ pub async fn sync(state: &AppState, stop: &CancellationToken) -> Result<usize, A
 }
 
 /// The JSON of one SSE block's `data:` lines; `None` for a keep-alive comment or malformed data.
-fn parse_sse(block: &[u8]) -> Option<Value> {
+pub(crate) fn parse_sse(block: &[u8]) -> Option<Value> {
     let text = std::str::from_utf8(block).ok()?;
     let data: Vec<&str> = text
         .lines()
@@ -132,6 +132,11 @@ pub async fn handle(state: &AppState, notification: &Value) -> Result<(), AppErr
         });
         // No tab open is fine.
         let _ = state.notices.send((user, notice));
+        // A turn a Slack message started is answered in its thread.
+        if state.slack.is_some() {
+            let (state, turn) = (state.clone(), turn.clone());
+            tokio::spawn(async move { crate::slack::turn_finished(&state, &turn).await });
+        }
         // Out of the app too, unless a page marks it seen in the meantime (see `channels`).
         let state = state.clone();
         let turn_id = turn.id;

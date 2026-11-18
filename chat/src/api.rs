@@ -37,6 +37,7 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 mod agents;
+mod slack;
 mod users;
 use users::{create_user, delete_user, get_me, list_users, rename_user, rotate_user_token};
 pub mod hooks;
@@ -167,6 +168,7 @@ const UPDATE_JS: &str = include_str!("../static/update.js");
 const UPDATE_CSS: &str = include_str!("../static/update.css");
 /// The Phone page of Settings: the QR code and token the iOS and Android apps connect with; every UI loads it.
 const PAIRING_JS: &str = include_str!("../static/pairing.js");
+const SLACK_JS: &str = include_str!("../static/slack.js");
 /// The service worker that shows Web Push messages, served at the root so its scope is the whole site.
 const SW_JS: &str = include_str!("../static/sw.js");
 /// The plan, approval cards, folded reasoning, sources and citations; v3 and v4 load it.
@@ -286,6 +288,8 @@ pub struct AppState {
     /// (`?browser=1`). Google's redirect lands in that browser, not in the app, so the callback
     /// shows a page that says to go back to the app instead of loading the chat there.
     google_in_browser: Arc<std::sync::Mutex<Vec<String>>>,
+    /// The Slack app people talk to Cedar through, when one is set up (`slack`).
+    pub slack: Option<Arc<crate::slack::Slack>>,
 }
 
 /// How many "Connect Google" sign-ins started in the browser are remembered at once.
@@ -301,7 +305,8 @@ impl AppState {
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
         let primary = store.user();
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, primary, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default() })
+        let slack = cfg.slack.clone().map(crate::slack::Slack::new).transpose()?.map(Arc::new);
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, primary, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default(), slack })
     }
 }
 
@@ -385,6 +390,9 @@ pub fn router(state: AppState) -> Router {
         .route("/agents/{id}/run", post(agents::run_now))
         .route("/agents/{id}/trigger", post(agents::from_device))
         .route("/agents/{id}/hook/rotate", post(agents::rotate_hook))
+        .route("/slack", get(slack::get_slack))
+        .route("/slack/link", post(slack::link_slack))
+        .route("/slack/links/{team}/{slack_user}", axum::routing::delete(slack::unlink_slack))
         .route("/me", get(get_me))
         .route("/users", get(list_users).post(create_user))
         .route("/users/{id}", axum::routing::patch(rename_user).delete(delete_user))
@@ -491,6 +499,7 @@ pub fn router(state: AppState) -> Router {
         .route("/update.js", get(|| async { asset(JS, UPDATE_JS) }))
         .route("/update.css", get(|| async { asset(CSS, UPDATE_CSS) }))
         .route("/pairing.js", get(|| async { asset(JS, PAIRING_JS) }))
+        .route("/slack.js", get(|| async { asset(JS, SLACK_JS) }))
         .route("/sw.js", get(|| async { asset(JS, SW_JS) }))
         .route("/trust-view.js", get(|| async { asset(JS, TRUST_VIEW_JS) }))
         .route("/trust-view.css", get(|| async { asset(CSS, TRUST_VIEW_CSS) }))
@@ -1344,7 +1353,7 @@ fn clean_attachments(attachments: Vec<Attachment>) -> Result<(Vec<Attachment>, V
 }
 
 /// A user message or a schedule's prompt: trimmed, non-empty, and not too long for cedar.
-fn clean_message(what: &str, content: &str) -> Result<String, AppError> {
+pub(crate) fn clean_message(what: &str, content: &str) -> Result<String, AppError> {
     let content = content.trim();
     if content.is_empty() {
         return Err(AppError::BadRequest(format!("{what} must not be empty")));
@@ -1439,12 +1448,44 @@ async fn send_message(
     let locale = i18n::clean_locale(body.locale.as_deref()).map_err(AppError::BadRequest)?;
     // Whether the model takes them is cedar's call (its registry says), relayed as it answers.
     let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
+    let message = NewMessage { content: &content, model: requested, reasoning, plan, locale, attachments, infos };
+    let turn = post_message(&state, ConversationRef::Id(&id), message).await?;
+    Ok((StatusCode::CREATED, Json(turn)))
+}
+
+/// A message to a conversation, already checked: what [`post_message`] sends.
+#[derive(Default)]
+pub(crate) struct NewMessage<'a> {
+    pub content: &'a str,
+    pub model: Option<String>,
+    pub reasoning: Option<String>,
+    pub plan: Option<String>,
+    pub locale: Option<String>,
+    pub attachments: Vec<Attachment>,
+    pub infos: Vec<AttachmentInfo>,
+}
+
+/// Which conversation a message goes to: one the client named, or one already looked up.
+pub(crate) enum ConversationRef<'a> {
+    Id(&'a str),
+    Found(Uuid),
+}
+
+/// Send a message to one of `state`'s user's conversations as a new turn: a cedar run that
+/// continues the conversation's last one, with someone reading along (the run may wait for its
+/// plan to be agreed to and risky calls to be approved). The page and Slack (`slack`) both send
+/// messages this way. `409` while the conversation's last response is still going.
+pub(crate) async fn post_message(state: &AppState, conversation: ConversationRef<'_>, message: NewMessage<'_>) -> Result<Turn, AppError> {
+    let NewMessage { content, model: requested, reasoning, plan, locale, attachments, infos } = message;
     let prefs = state.store.preferences().await?;
 
     let _guard = state.send_lock.lock().await;
-    let conversation = find_conversation(&state, &id).await?;
-    let turns = settled_turns(&state, &conversation).await?;
-    let settings = RunSettings::resolve(&state, &prefs, requested, reasoning, conversation.tools.clone()).await;
+    let conversation = match conversation {
+        ConversationRef::Id(id) => find_conversation(state, id).await?,
+        ConversationRef::Found(id) => state.store.get_conversation(id).await?.ok_or(AppError::NotFound("conversation not found"))?,
+    };
+    let turns = settled_turns(state, &conversation).await?;
+    let settings = RunSettings::resolve(state, &prefs, requested, reasoning, conversation.tools.clone()).await;
     let model = settings.model.as_deref();
     // Someone is reading along, so the run may ask: agree to its plan, approve a risky call.
     let options = |parent| RunOptions {
@@ -1458,14 +1499,14 @@ async fn send_message(
     // Continue the previous run, so the agent keeps the whole conversation (tool calls and
     // earlier attachments included) and the files in its sandbox workspace.
     let run = match turns.last() {
-        None => state.cedar.create_run(&content, &options(None)).await?,
-        Some(last) => match state.cedar.create_run(&content, &options(Some(last.run_id))).await {
+        None => state.cedar.create_run(content, &options(None)).await?,
+        Some(last) => match state.cedar.create_run(content, &options(Some(last.run_id))).await {
             // cedar no longer has the previous run (deleted, or a reset database). Start over,
             // carrying what this service remembers of the conversation in the prompt. Earlier
             // attachments went with the run; only this message's come along.
             Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => {
                 tracing::warn!(run_id = %last.run_id, "previous run is gone from cedar; resending history as text");
-                let run_prompt = prompt::compose(&exchanges(&turns), &content, state.cfg.history_max_bytes);
+                let run_prompt = prompt::compose(&exchanges(&turns), content, state.cfg.history_max_bytes);
                 state.cedar.create_run(&run_prompt, &options(None)).await?
             }
             other => other?,
@@ -1473,9 +1514,9 @@ async fn send_message(
     };
     let turn = state
         .store
-        .insert_turn(conversation.id, run.id, &content, &run.status, model, settings.reasoning.as_deref(), &infos)
+        .insert_turn(conversation.id, run.id, content, &run.status, model, settings.reasoning.as_deref(), &infos)
         .await?;
-    Ok((StatusCode::CREATED, Json(turn)))
+    Ok(turn)
 }
 
 // -- settings and tools ---------------------------------------------------------------------
