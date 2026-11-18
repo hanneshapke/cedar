@@ -35,6 +35,8 @@ struct FakeCedar {
     refuse_runs: Mutex<Option<(StatusCode, &'static str)>>,
     /// Every `POST /v1/runs` body.
     bodies: Mutex<Vec<Value>>,
+    /// cedar's `model_selection` setting, once set; a cedar from before it reports none.
+    model_selection: Mutex<Option<bool>>,
     /// Admin calls: (route, body).
     admin_calls: Mutex<Vec<(String, Value)>>,
     /// When set, the admin routes refuse the key, as cedar does for a key not in CEDAR_ADMIN_KEYS.
@@ -475,8 +477,12 @@ fn registry() -> Vec<Value> {
     ]
 }
 
-async fn models() -> Json<Value> {
-    Json(json!({ "models": registry() }))
+async fn models(State(s): State<Shared>) -> Json<Value> {
+    let mut body = json!({ "models": registry() });
+    if let Some(on) = *s.model_selection.lock().unwrap() {
+        body["model_selection"] = json!(on);
+    }
+    Json(body)
 }
 
 async fn tools() -> Json<Value> {
@@ -739,6 +745,10 @@ impl Harness {
                     }
                     if body["max_image_side"] == 1 {
                         return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "max_image_side must be between 256 and 8192");
+                    }
+                    if let Some(on) = body["model_selection"].as_bool() {
+                        *s.model_selection.lock().unwrap() = Some(on);
+                        return Json(json!({ "model_selection": on })).into_response();
                     }
                     Json(json!({ "max_image_side": body["max_image_side"], "defaults": { "max_image_side": 1568 } })).into_response()
                 }),
@@ -2160,6 +2170,55 @@ async fn admin_call(h: &Harness, method: Method, uri: &str, admin: Option<&str>,
     .unwrap();
     let (status, _, text) = h.call_full(req).await;
     (status, serde_json::from_str(&text).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn while_model_selection_is_off_cedar_chooses_the_model() {
+    let h = Harness::new(&[]).await;
+    // A cedar from before the setting: users choose, and the pickers are there.
+    let (_, listed) = h.json(Method::GET, "/api/models", None).await;
+    assert_eq!(listed["selection"], true);
+    let (status, _) = h.json(Method::PUT, "/api/settings", Some(json!({ "model": "model-b" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, conversation) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let msgs = format!("/api/conversations/{}/messages", conversation["id"].as_str().unwrap());
+    let last_body = || h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+
+    // Whoever may manage the models may turn choosing them off (no admin token is set up here).
+    let (status, saved) = h.json(Method::PUT, "/api/integrations/model-selection", Some(json!({ "enabled": false }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved, json!({ "selection": false }));
+    assert_eq!(h.json(Method::GET, "/api/models", None).await.1["selection"], false);
+
+    // Neither what a message names nor the saved default reaches cedar: it chooses.
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "hi", "model": "model-a", "reasoning": "high" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    assert_eq!((turn["model"].clone(), turn["reasoning"].clone()), (Value::Null, Value::Null));
+    let sent = last_body();
+    assert!(sent.get("model").is_none() && sent.get("reasoning").is_none(), "{sent}");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("hello"));
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "more" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    assert!(last_body().get("model").is_none(), "the saved default is not named either");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("more"));
+
+    // On again, the saved default and a message's own choice go through as before.
+    let (_, saved) = h.json(Method::PUT, "/api/integrations/model-selection", Some(json!({ "enabled": true }))).await;
+    assert_eq!(saved, json!({ "selection": true }));
+    let (_, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "again" }))).await;
+    assert_eq!(last_body()["model"], "model-b");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("again"));
+    h.json(Method::POST, &msgs, Some(json!({ "content": "and again", "model": "model-a", "reasoning": "high" }))).await;
+    assert_eq!((last_body()["model"].clone(), last_body()["reasoning"].clone()), (json!("model-a"), json!("high")));
+
+    let (status, _) = h.json(Method::PUT, "/api/integrations/model-selection", Some(json!({ "enabled": "yes" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // CHAT_MODELS_ACCESS=admins: the switch needs the admin token like the models do.
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin"), ("CHAT_MODELS_ACCESS", "admins")]).await;
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/model-selection", None, Some(json!({ "enabled": true }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/model-selection", Some("admin"), Some(json!({ "enabled": true }))).await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]

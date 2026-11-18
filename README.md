@@ -75,8 +75,8 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/compact` | Turn a conversation into one self-contained prompt (see [below](#compacting-a-run-into-a-prompt)). Body: `{"run_id"}` or `{"transcript"}`, plus `"model"?`. Returns `{prompt, model, model_id, usage}`. |
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes, pollable}]}], sources}`. `pollable` marks the tools that can be [called outside a run](#calling-a-tool-outside-a-run), and `sources` lists what else can (`url`, unless `WEB_FETCH` is off). |
 | `POST /v1/tools/{name}/call` | Call one pollable tool, or the `url` source, without starting a run: `{"input": {...}}` → `{output, is_error, json?, truncated}`. `400` for a tool that isn't pollable, `404` for one that isn't offered. See [Calling a tool outside a run](#calling-a-tool-outside-a-run). |
-| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, context_window, is_default, price}]}` (see [Models](#models)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch, import_attachments}`, or `null` with `RECORDS=off`). |
+| `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, context_window, is_default, price}], model_selection}` (see [Models](#models)). `model_selection` is whether users choose the model themselves; off, cedar chooses for a run that names none (see [Which model a run gets](#which-model-a-run-gets)). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, model_selection, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `model_selection` is whether users choose the model, see [Which model a run gets](#which-model-a-run-gets); `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch, import_attachments}`, or `null` with `RECORDS=off`). |
 | `POST /v1/runs/{id}/feedback` | Your verdict on a finished run: `{"rating": "up" \| "down" \| null}`. Promotes or archives what the run learned (see [Memory](#memory)); returns `{rating, archived}`. `409` while the run is still going. |
 | `GET /v1/memory` | What your runs remember about you, oldest first: `{items: [...], profile, limits}`. Each item is `{id, short_id, kind, text, subject, relation, topics, source, support, hedged, sensitive, pinned, mentions, meta, run_id, valid_from, valid_until, created_at, updated_at, superseded_by, archived_at, recall_count, last_recalled_at}`; `?kind=fact,episode` narrows it, `?archived=true` lists the archive (superseded, expired and forgotten rows) instead, `?q=` searches. `run_id` is the run that saved it, `null` for one added by hand or once that run is deleted. See [Memory](#memory). |
 | `POST /v1/memory` | Remember something by hand: `{"text", "kind"?, "pinned"?, "valid_until"?, "subject"?, "relation"?, "topics"?}`. Returns `201` with the item, or `200` with the existing one when the same thing is already remembered. `409` with `MEMORY=off`; `400` for empty text, more than 500 characters, a kind that isn't `fact`, `preference`, `instruction` or `temporary`, or text that looks like a secret or an identifier. |
@@ -94,7 +94,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `DELETE /v1/records/{name}` | Delete one set with its records. `204`; `404` if it isn't yours. |
 | `DELETE /v1/records` | Delete every set your runs keep. `204`. |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked, plus `storage`, whether a key can be saved at all (`CEDAR_SECRET_KEY`). Never returns a key. |
-| `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes", "sandbox_runtime", "run_timeout_secs"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). `sandbox_runtime` is what runs new sandboxes: `docker` (default) or `openshell` (see [OpenShell sandboxes](#openshell-sandboxes-opt-in)), refused on Windows and when the OpenShell gateway doesn't answer. `run_timeout_secs` is the longest a run may take, time spent waiting for the client not counted (60–86400; default `RUN_TIMEOUT_SECS`), from the next run. A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, sandbox_runtime, run_timeout_secs, openshell_supported, defaults}`. |
+| `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes", "sandbox_runtime", "run_timeout_secs", "model_selection"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). `sandbox_runtime` is what runs new sandboxes: `docker` (default) or `openshell` (see [OpenShell sandboxes](#openshell-sandboxes-opt-in)), refused on Windows and when the OpenShell gateway doesn't answer. `run_timeout_secs` is the longest a run may take, time spent waiting for the client not counted (60–86400; default `RUN_TIMEOUT_SECS`), from the next run. `model_selection` is whether users choose the model of a run (`true`) or cedar does (`false`, the default; see [Which model a run gets](#which-model-a-run-gets)). A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, sandbox_runtime, run_timeout_secs, model_selection, openshell_supported, defaults}`. |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
 | `GET /v1/admin/models/{id}/stats` | Admin: what the model's server reports about itself, read now from `/metrics` beside its API with the model's key. A llama.cpp server started with `--metrics` (the one `cedar-llama` and the desktop app run always is) gives `{"available": true, "server": "llama.cpp", "generated_tokens", "generation_tokens_per_second", "prompt_tokens", "prompt_tokens_per_second", "requests_processing", "requests_deferred", "max_context_tokens"}`, the speeds being averages since it started; any other server gives `{"available": false}`. `404` for a model that isn't registered. |
 | `PUT /v1/admin/models/{id}` | Admin: register a model or change it (`{"base_url", "model", "label"?, "api_key"?, "reasoning_levels"?, "default_reasoning"?, "multimodal"?, "detect_images"?, "images_hint"?, "max_tokens"?, "context_window"?, "is_default"?, "price"?}`; checked by listing the server's models first). An absent `api_key` keeps the saved one, `""` removes it; absent `label`, `reasoning_levels`, `default_reasoning`, `multimodal`, `max_tokens` and `price` keep what is saved, and `"price": null` removes the price. An absent `context_window` keeps the saved one, or for a new entry (or a changed model or address) asks the server; `null` asks it again. With `"detect_images": true` and no `multimodal`, cedar works out whether the model reads images, once: from `images_hint` if given, else by sending the model one small image (answered: yes; refused: no); an entry whose model and address are unchanged keeps its value. The reply then carries `images_checked` (`list`, `tested`, or `failed` when the model could not be asked and was saved as text only). Returns the entry as `GET /v1/admin/models` shows it. |
@@ -1100,7 +1100,8 @@ setting for the model server: a fresh cedar has no model, says so at startup and
   `low`, `medium` and `high`. An entry with no levels refuses any `reasoning`;
 - `price`: `{"input_usd_per_m", "output_usd_per_m"}`, what the model costs in US dollars per
   million tokens; with it, each `usage` event carries `cost_usd`. None unless set;
-- `is_default`: the entry a run gets when it names no model. The first entry registered is the
+- `is_default`: the entry a run gets when it names no model and users choose models (see
+  [Which model a run gets](#which-model-a-run-gets)). The first entry registered is the
   default; removing the default hands it to the first remaining entry.
 
 Saving an entry checks the address by listing the server's models (`GET <base_url>/models`); the
@@ -1110,6 +1111,39 @@ or one already going; a run whose model was removed fails at its next call. A mo
 by an earlier version of cedar (through the old `/v1/admin/integrations/llm` route) is turned into
 the entry `default` once, at startup, and the old rows are removed; `LLM_BASE_URL`, `LLM_API_KEY`,
 `LLM_MODEL` and `ALLOWED_MODELS` in the environment are ignored with a warning.
+
+#### Which model a run gets
+
+A run that names a `model` (or a `reasoning` level, which belongs to a model) gets what it names;
+without a `model`, that is the default entry, or its parent's for a continuation. What a run that
+names neither gets depends on the `model_selection` setting (`PUT /v1/admin/settings`, or
+Settings → Advanced settings → *Choose the model yourself* in the chat):
+
+- **On**: the same as above, the parent's model for a continuation, else the default entry. The
+  chat shows its model pickers.
+- **Off** (the default): cedar chooses, and the run's `model_auto` is `true`.
+  - With one model registered, it is used for everything.
+  - With several, cedar reads their sizes off their names (the model name, else the label, else
+    the id): the parameter count, as in `qwen3:4b`, `gemma-3-270m-it`, `Llama-3.3-70B-Instruct`,
+    `mixtral-8x7b` or `gemma-3n-E4B`. A name without a count (most hosted models) ranks above
+    every counted one, and below other such names when it says it is the small one of its family
+    (`mini`, `nano`, `flash`, `haiku`, `lite`, …). Models of the same size are told apart by the
+    default flag, so models that all look alike leave the default one for everything.
+  - **The biggest model** makes the plan and works through a run that follows one, compacts a
+    conversation (`POST /v1/compact`), answers the tools that ask a model themselves
+    (`search_products`, `plan_trip`), and takes complex tool calls: running code or writing
+    files in the sandbox (`bash`, `run_python`, `write_file`, `generate_pdf`, `generate_chart`),
+    the `browser`, `propose_plan`, and every call that changes something outside the sandbox
+    (sending mail, creating events, posting to Slack). It also takes over a task that is still
+    going after 4 turns.
+  - **The smallest model** gets everything else: everyday questions, searches, reading pages and
+    files, the weather, maps and stocks cards.
+  - A run starts on the smallest model unless it plans first. When that model asks for a complex
+    tool, its reply is dropped (its tokens still count, and the call is in the trace) and the turn
+    is asked again of the biggest model, which keeps the run from then on. Each model is sent its
+    own `default_reasoning`. `model_id` and `model` on the run are the model it last used, and
+    each `usage` event names the `model_id` of its call.
+  - A run with images stays among the models registered as `multimodal`.
 
 #### Context windows
 

@@ -1041,6 +1041,7 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
             "sandbox_idle_minutes": null,
             "sandbox_runtime": null,
             "run_timeout_secs": null,
+            "model_selection": false,
             "openshell_supported": cfg!(not(windows)),
             "server_os": std::env::consts::OS,
             "defaults": {
@@ -1048,6 +1049,7 @@ async fn attached_images_are_downscaled_to_the_admins_max_image_side() {
                 "max_image_side": 1568, "min_max_image_side": 256, "max_max_image_side": 8192,
                 "sandbox_idle_minutes": 10, "max_sandbox_idle_minutes": 1440,
                 "run_timeout_secs": 600, "min_run_timeout_secs": 60, "max_run_timeout_secs": 86400,
+                "model_selection": false,
             },
         })
     );
@@ -1403,7 +1405,7 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     );
     assert_eq!(
         app.get("/v1/models", KEY_A).await.1,
-        json!({ "models": [] })
+        json!({ "models": [], "model_selection": false })
     );
     let (code, body) = app
         .json(

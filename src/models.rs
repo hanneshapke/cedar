@@ -71,6 +71,10 @@ pub struct Run {
     pub model: String,
     /// The `reasoning_effort` sent with each request, if the run asked for one.
     pub reasoning: Option<String>,
+    /// cedar chooses the run's models by their size (see [`crate::routing`]): it named none
+    /// while the `model_selection` setting was off. `model_id`, `model` and `reasoning` are then
+    /// those of the model it last used.
+    pub model_auto: bool,
     pub max_turns: u32,
     pub turns: u32,
     pub final_text: Option<String>,
@@ -112,6 +116,9 @@ pub struct NewRun {
     pub model_id: String,
     pub model: String,
     pub reasoning: Option<String>,
+    /// cedar chooses the models as the run goes (see [`crate::routing`]); `model_id` is the one
+    /// it starts with.
+    pub model_auto: bool,
     pub max_turns: u32,
     /// Continue this run: its conversation, and its workspace if that hasn't expired.
     pub parent_id: Option<Uuid>,

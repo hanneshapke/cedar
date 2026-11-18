@@ -816,6 +816,16 @@ confirm; see [Community tools](../README.md#community-tools).
 
 ### Models
 
+**Which model answers.** Unless you turn on Settings → Advanced settings → *Choose the model
+yourself*, cedar picks the model for every message, and the chat shows no model picker: with one
+model registered it uses that one; with several it reads their sizes off their names (the
+parameter count, `8b`, `70b`) and has the bigger model plan, review and take complex tool calls
+and long tasks, and the smaller one answer everyday requests (see "Which model a run gets" in
+[cedar's README](../README.md#which-model-a-run-gets)). With the switch on, the send button's
+menu, the agent form and *Default model* on the Models page are back, and each message goes to
+the model you chose. Whoever may manage the models may flip the switch. The phone apps still
+show their pickers either way; while the switch is off, what they pick is not passed on.
+
 The **Models** list in that section shows every model cedar has registered: its label, the model
 name and the server it is on, whether an API key is saved, its reasoning levels, and which one is
 the default. **Add a model**, in the heading of the list, offers three ways, the same as the
@@ -928,7 +938,8 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PUT /api/settings` | Replace them (all but `locale`, which has its own route). Tool names are checked against cedar's `/v1/tools` and `model` against its `/v1/models`. A default model cedar no longer has is dropped when a message is sent, so cedar's own default applies |
 | `GET /api/pairing` | What the iOS and Android apps connect with (Settings → Phone): `{platform, server, on_tailnet, access_token, link, qr_svg, tailscale: {state, name, detail}}`. `server` (and `link`, `qr_svg`) is `null` unless `CHAT_PUBLIC_URL` is `https://`; `tailscale.state` is `missing`, `unavailable`, `logged_out`, `stopped`, `connecting`, `no_magic_dns`, `no_https` or `ready` |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
-| `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers |
+| `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers: `{models, selection}`. `selection` is cedar's `model_selection` setting: `false` (the default) means cedar chooses the model of every message, the pickers are hidden, and a `model` or `reasoning` sent with a message, saved in Settings or on an agent is not passed on |
+| `PUT /api/integrations/model-selection` | Turn choosing models on or off (`{"enabled": true \| false}`, cedar's `model_selection`); open to whoever may manage the models (`CHAT_MODELS_ACCESS`). Returns `{selection}`. The Advanced settings page's "Choose the model yourself" |
 | `GET /api/memory` | What cedar remembers about the user (`GET /v1/memory`): `{supported, items, limits}`, each item `{id, text, run_id, created_at, updated_at}` plus the `conversation_id` and `title` of the conversation it was saved in (`null` when there is none here). A cedar from before memory gives `supported: false` and no items. See [Memory](#memory) |
 | `POST /api/memory` | `{"text"}`: remember something by hand, relayed to `POST /v1/memory` |
 | `DELETE /api/memory/{id}` | Forget one memory (`404` if cedar has no such item) |
