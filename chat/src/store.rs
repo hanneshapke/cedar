@@ -1691,6 +1691,225 @@ impl Store {
     }
 }
 
+/// A Slack account linked to a person here (`slack`).
+#[derive(Debug, Clone, Serialize)]
+pub struct SlackLink {
+    pub team: String,
+    pub team_name: Option<String>,
+    pub slack_user: String,
+    pub name: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// The conversation a Slack thread is, and who started it.
+#[derive(Debug, Clone)]
+pub struct SlackThread {
+    pub conversation_id: Uuid,
+    pub team: String,
+    pub slack_user: String,
+    /// The person here whose conversation it is.
+    pub user_id: Uuid,
+}
+
+/// Where a turn a Slack message started is answered.
+#[derive(Debug, Clone)]
+pub struct SlackTurn {
+    pub turn_id: Uuid,
+    pub channel: String,
+    pub thread_ts: String,
+    pub message_ts: String,
+    pub answered: bool,
+}
+
+fn slack_turn_from_row(r: &SqliteRow) -> Result<SlackTurn> {
+    Ok(SlackTurn {
+        turn_id: Uuid::parse_str(r.try_get("turn_id")?)?,
+        channel: r.try_get("channel")?,
+        thread_ts: r.try_get("thread_ts")?,
+        message_ts: r.try_get("message_ts")?,
+        answered: r.try_get::<i64, _>("answered")? != 0,
+    })
+}
+
+impl Store {
+    // -- Slack ------------------------------------------------------------------------------
+
+    /// Across users: who a Slack account is here.
+    pub async fn slack_user(&self, team: &str, slack_user: &str) -> Result<Option<Uuid>> {
+        let id: Option<String> = sqlx::query_scalar("SELECT user_id FROM slack_links WHERE team = ? AND slack_user = ?")
+            .bind(team)
+            .bind(slack_user)
+            .fetch_optional(&self.pool)
+            .await?;
+        id.map(|id| Ok(Uuid::parse_str(&id)?)).transpose()
+    }
+
+    /// Make a Slack account this user's, whoever's it was.
+    pub async fn link_slack(&self, team: &str, team_name: Option<&str>, slack_user: &str, name: Option<&str>) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO slack_links (team, slack_user, user_id, name, team_name, created_at) VALUES (?, ?, ?, ?, ?, ?) \
+             ON CONFLICT (team, slack_user) DO UPDATE SET user_id = excluded.user_id, name = excluded.name, \
+             team_name = excluded.team_name, created_at = excluded.created_at",
+        )
+        .bind(team)
+        .bind(slack_user)
+        .bind(self.user.to_string())
+        .bind(name)
+        .bind(team_name)
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// This user's Slack accounts, oldest link first.
+    pub async fn slack_links(&self) -> Result<Vec<SlackLink>> {
+        let rows = sqlx::query("SELECT * FROM slack_links WHERE user_id = ? ORDER BY created_at, team, slack_user")
+            .bind(self.user.to_string())
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter()
+            .map(|r| {
+                Ok(SlackLink {
+                    team: r.try_get("team")?,
+                    team_name: r.try_get("team_name")?,
+                    slack_user: r.try_get("slack_user")?,
+                    name: r.try_get("name")?,
+                    created_at: to_dt(r.try_get("created_at")?),
+                })
+            })
+            .collect()
+    }
+
+    /// Unlink one of this user's Slack accounts. Its threads stay this user's conversations,
+    /// but nobody can continue them from Slack until the account is linked again.
+    pub async fn unlink_slack(&self, team: &str, slack_user: &str) -> Result<bool> {
+        let done = sqlx::query("DELETE FROM slack_links WHERE team = ? AND slack_user = ? AND user_id = ?")
+            .bind(team)
+            .bind(slack_user)
+            .bind(self.user.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(done.rows_affected() > 0)
+    }
+
+    /// Across users: the conversation a Slack thread is.
+    pub async fn slack_thread(&self, channel: &str, thread_ts: &str) -> Result<Option<SlackThread>> {
+        let row = sqlx::query(
+            "SELECT s.conversation_id, s.team, s.slack_user, c.user_id FROM slack_threads s \
+             JOIN conversations c ON c.id = s.conversation_id WHERE s.channel = ? AND s.thread_ts = ?",
+        )
+        .bind(channel)
+        .bind(thread_ts)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|r| {
+            Ok(SlackThread {
+                conversation_id: Uuid::parse_str(r.try_get("conversation_id")?)?,
+                team: r.try_get("team")?,
+                slack_user: r.try_get("slack_user")?,
+                user_id: Uuid::parse_str(r.try_get("user_id")?)?,
+            })
+        })
+        .transpose()
+    }
+
+    /// Make a Slack thread one of this user's conversations.
+    pub async fn add_slack_thread(&self, channel: &str, thread_ts: &str, conversation_id: Uuid, team: &str, slack_user: &str) -> Result<()> {
+        sqlx::query(
+            "INSERT OR REPLACE INTO slack_threads (channel, thread_ts, conversation_id, team, slack_user, created_at) \
+             SELECT ?, ?, id, ?, ?, ? FROM conversations WHERE id = ? AND user_id = ?",
+        )
+        .bind(channel)
+        .bind(thread_ts)
+        .bind(team)
+        .bind(slack_user)
+        .bind(now_ms())
+        .bind(conversation_id.to_string())
+        .bind(self.user.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Whether one of this user's conversations is a Slack thread.
+    pub async fn is_slack_conversation(&self, conversation_id: Uuid) -> Result<bool> {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM slack_threads s JOIN conversations c ON c.id = s.conversation_id \
+             WHERE s.conversation_id = ? AND c.user_id = ?",
+        )
+        .bind(conversation_id.to_string())
+        .bind(self.user.to_string())
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(n > 0)
+    }
+
+    /// Note that a Slack message started a turn, and where its answer goes.
+    pub async fn add_slack_turn(&self, turn_id: Uuid, channel: &str, thread_ts: &str, message_ts: &str) -> Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO slack_turns (turn_id, channel, thread_ts, message_ts) VALUES (?, ?, ?, ?)")
+            .bind(turn_id.to_string())
+            .bind(channel)
+            .bind(thread_ts)
+            .bind(message_ts)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Across users: where a turn is answered, if a Slack message started it.
+    pub async fn slack_turn(&self, turn_id: Uuid) -> Result<Option<SlackTurn>> {
+        let row = sqlx::query("SELECT * FROM slack_turns WHERE turn_id = ?").bind(turn_id.to_string()).fetch_optional(&self.pool).await?;
+        row.as_ref().map(slack_turn_from_row).transpose()
+    }
+
+    /// Across users: take the answering of a turn on. `true` once, for whoever takes it first, so
+    /// an answer is posted once even when two things learn that the run ended.
+    pub async fn claim_slack_answer(&self, turn_id: Uuid) -> Result<bool> {
+        let done = sqlx::query("UPDATE slack_turns SET answered = 1 WHERE turn_id = ? AND answered = 0")
+            .bind(turn_id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(done.rows_affected() > 0)
+    }
+
+    /// Across users: the Slack turns not answered yet, each with whose it is.
+    pub async fn unanswered_slack_turns(&self) -> Result<Vec<(SlackTurn, Uuid)>> {
+        let rows = sqlx::query(
+            "SELECT s.*, c.user_id FROM slack_turns s JOIN turns t ON t.id = s.turn_id \
+             JOIN conversations c ON c.id = t.conversation_id WHERE s.answered = 0",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(|r| Ok((slack_turn_from_row(r)?, Uuid::parse_str(r.try_get("user_id")?)?))).collect()
+    }
+
+    /// Across users: what was posted about a turn under `key`: its ts, and what it asked.
+    pub async fn slack_prompt(&self, turn_id: Uuid, key: &str) -> Result<Option<(String, Option<Value>)>> {
+        let row = sqlx::query("SELECT ts, data FROM slack_prompts WHERE turn_id = ? AND key = ?")
+            .bind(turn_id.to_string())
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.map(|r| {
+            let data: Option<String> = r.try_get("data")?;
+            Ok((r.try_get("ts")?, data.and_then(|d| serde_json::from_str(&d).ok())))
+        })
+        .transpose()
+    }
+
+    pub async fn set_slack_prompt(&self, turn_id: Uuid, key: &str, ts: &str, data: Option<&Value>) -> Result<()> {
+        sqlx::query("INSERT OR REPLACE INTO slack_prompts (turn_id, key, ts, data) VALUES (?, ?, ?, ?)")
+            .bind(turn_id.to_string())
+            .bind(key)
+            .bind(ts)
+            .bind(data.map(Value::to_string))
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
 /// A short title from the first line of a message.
 pub fn title_from(prompt: &str) -> String {
     const MAX_CHARS: usize = 60;

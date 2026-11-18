@@ -15,6 +15,12 @@ pub const SERPAPI_API_KEY: &str = "serpapi_api_key";
 /// A Slack app's bot token; the metadata names the workspace and the app's user.
 pub const SLACK_BOT_TOKEN: &str = "slack_bot_token";
 pub const GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
+/// A user's own Google account (see [`google_refresh_token_of`]): the refresh token, with the
+/// account's address and the granted scopes as metadata.
+pub const GOOGLE_USER_PREFIX: &str = "google_refresh_token:";
+pub fn google_refresh_token_of(user: &str) -> String {
+    format!("{GOOGLE_USER_PREFIX}{user}")
+}
 /// The Google OAuth client an admin saved: the value is the client secret, the metadata holds
 /// the client ID (which identifies the deployment and is not secret).
 pub const GOOGLE_CLIENT: &str = "google_client";

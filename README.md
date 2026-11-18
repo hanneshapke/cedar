@@ -124,9 +124,24 @@ are filed under the UUID alone, so they keep what is theirs when the service's k
 every service key can act for every user. A service key also gets one stream of all of them:
 `GET /v1/events?users=all` carries its own finished runs and every user's.
 
-What is not per user: the registered models, the server settings, the [integrations](#integrations)
-(one Google account, one Slack token: every user's runs can use them), the personal tools in
-`TOOLS_DIR`, and `MAX_CONCURRENT_RUNS`, which all users share.
+A user's runs never act for the server's Google account (the one an admin connects, or
+`GOOGLE_REFRESH_TOKEN`): that one is for the keys' own runs. Each user connects an account of
+their own, through the same OAuth client, and until they have, their runs are offered no Gmail,
+Calendar, Drive or Sheets tools and `GET /v1/tools` lists those groups as unavailable to them:
+
+| Route | What it does |
+| --- | --- |
+| `GET /v1/google` | The caller's own account: `{available, reason, services, connected, account?, scopes?, missing_scopes?, server}`. `available` is whether one can be connected here (the Google tools are on, a client is set up, `CEDAR_SECRET_KEY` is set), `reason` why not. For a key rather than a user, `server` is `true` and `connected` and `account` describe the server's account. |
+| `POST /v1/google/authorize` | Start connecting: `{"redirect_uri"}` → `{url}` to send the user's browser to. `409` for a key (its account is the server's, see the admin routes) and until a client is set up. |
+| `POST /v1/google/callback` | Finish with the `{"state", "code"}` Google sent to the redirect URI: `{account, own}`. The single-use `state` says whose account it is, so the service calls this as itself, without `X-Cedar-User`. A sign-in for the server's account (`own: false`) is only finished for an admin key. |
+| `DELETE /v1/google` | Disconnect the user's own account. `404` when none is connected. |
+
+The refresh tokens are kept like every other credential, encrypted with `CEDAR_SECRET_KEY`.
+Replacing or removing the OAuth client disconnects every user's account along with the server's.
+
+What is not per user: the registered models, the server settings, the other
+[integrations](#integrations) (the search keys, and the one Slack token, which every user's runs
+can use), the personal tools in `TOOLS_DIR`, and `MAX_CONCURRENT_RUNS`, which all users share.
 
 ### Choosing tools
 
@@ -1069,6 +1084,11 @@ a run that isn't interactive, a scheduled one included, posts without asking, so
 wrote in Slack reaches the model as information: the system prompt tells it not to take
 instructions from messages, but as with email, a channel anyone can post in is a way to try.
 
+The other way round, people can talk to Cedar *from* Slack: message the app or mention it in a
+channel, and the agent answers in the thread, with plans and approvals as buttons there. That is
+cedar-chat's part, since it keeps the conversations and the people; see
+[chat/README.md](chat/README.md#slack).
+
 ### Models
 
 The models runs can use live in a registry that admins manage through `PUT /v1/admin/models/{id}`,
@@ -1418,7 +1438,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - With the `slack_*` tools enabled (a Slack bot token is set or saved), the model reads the channels the Slack app was invited to and the workspace's list of people, so what your colleagues wrote there goes to your model server like the rest of a run, and what the model posts goes to Slack. The token stays in the cedar process. Set `SLACK=off`, or leave the tools out of a run's `tools`, if that is not acceptable.
 - With `compare_stocks` enabled, the ticker symbols the model looks up leave your machine for Yahoo Finance. Its chart and search APIs are public but unofficial: they need no key, but Yahoo may change or rate-limit them, and its terms limit them to personal use. Set `STOCKS=off` if that is not acceptable.
 - With `search_products` enabled (a Brave or Best Buy key is set or saved), the shopping requests the model makes leave your machine for Brave (and Best Buy, with its key), cedar fetches the shop and review pages they return from its own host, and the chat page loads product photos from the shops' servers. Pages can carry prompt injections like any fetched page; the tool hands the model their text as evidence and keeps only links and photos found on them. The keys are never passed into a container. Remove the keys or set `PRODUCTS=off` if that is not acceptable.
-- With Gmail or Calendar on, every run can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [agents](chat/README.md#agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
+- With Gmail or Calendar on, every run of whoever the connected account belongs to (the keys' runs for the server's account, a user's for their own; see [Acting for users](#acting-for-users)) can read that account's mail and calendar, and anything the tools return (email bodies, event descriptions, attendee addresses) is stored in cedar's database with the run and sent to the LLM server. Emails are written by other people and can carry prompt injections, which is why the default tools can't send, delete, or change anything: keep it that way, especially for [agents](chat/README.md#agents) that run unattended. Every API key's runs act for the same Google account. `GOOGLE_CLIENT_SECRET` and `GOOGLE_REFRESH_TOKEN` stay in the cedar process and are not logged.
 - Credentials saved through the [admin API](#integrations) are encrypted at rest with `CEDAR_SECRET_KEY` and only ever returned as their last four characters. Anyone holding an admin key can replace them, so give `CEDAR_ADMIN_KEYS` only to the chat server or to people who could edit cedar's environment anyway.
 - `fetch_url` and `download_file` make requests from the cedar host to URLs the model chooses. They refuse non-public addresses (see [Tools](#tools)), but they do let the agent send data to any public site in a URL, and fetched pages can carry prompt injections. Set `WEB_FETCH=off` if that is not acceptable.
 - A run's `callback_url` is a request from the cedar host too, to a URL the API client chooses. It carries only the run's id and final status, never its text, and refuses non-public addresses unless `WEBHOOK_ALLOW_PRIVATE` is on. A `callback_secret` is stored in cedar's database as given (it signs the calls; it is not a credential for anything else) and never returned.

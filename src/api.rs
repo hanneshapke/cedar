@@ -130,7 +130,6 @@ impl AppState {
             approvals: cfg.tool_approvals.clone(),
             approval_timeout: cfg.approval_timeout,
             waits: Arc::default(),
-            tools: integrations.tools(),
             store: store.clone(),
             tool_timeout: cfg.tool_timeout,
             tool_output_max_bytes: cfg.tool_output_max_bytes,
@@ -217,6 +216,9 @@ pub fn router_with(
         .route("/events", get(stream_notifications))
         .route("/compact", post(compact_conversation))
         .route("/tools", get(list_tools))
+        .route("/google", get(get_own_google).delete(delete_own_google))
+        .route("/google/authorize", post(authorize_own_google))
+        .route("/google/callback", post(own_google_callback))
         .route("/tools/{name}/call", post(call_tool))
         .route("/models", get(list_models))
         .route("/defaults", get(defaults))
@@ -584,7 +586,7 @@ async fn create_run(
     let tools = match req.tools {
         None => parent.as_ref().and_then(|p| p.tools.clone()),
         Some(mut tools) => {
-            let current = state.integrations.tools().load_full();
+            let current = state.integrations.tools_for(&owner.0).await;
             current
                 .validate_selection(&tools)
                 .map_err(AppError::BadRequest)?;
@@ -668,8 +670,11 @@ async fn create_run(
 // -- tools and integrations -----------------------------------------------------------------
 
 /// The tool groups a run can switch on or off, with what this server offers in each.
-async fn list_tools(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let tools = state.integrations.tools().load_full();
+async fn list_tools(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Json<serde_json::Value> {
+    let tools = state.integrations.tools_for(&owner.0).await;
     let mut catalog = tools.catalog(&state.integrations.unavailable_reasons());
     // What can be called outside a run besides the tools marked `pollable`.
     catalog["sources"] = match state.cfg.web_fetch {
@@ -698,7 +703,7 @@ async fn call_tool(
     if !body.input.is_object() && !body.input.is_null() {
         return Err(AppError::BadRequest("input must be an object".into()));
     }
-    let tools = state.integrations.tools().load_full();
+    let tools = state.integrations.tools_for(&owner.0).await;
     let called = state
         .polls
         .call(
@@ -1510,8 +1515,67 @@ async fn authorize_google(
     ApiJson(body): ApiJson<AuthorizeBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin(admin)?;
-    let url = state.integrations.google_authorize(&body.redirect_uri)?;
+    let url = state.integrations.google_authorize(&body.redirect_uri, None)?;
     Ok(Json(json!({ "url": url })))
+}
+
+/// `GET /v1/google`: the caller's own Google account, the one their runs act for.
+async fn get_own_google(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    Ok(Json(state.integrations.google_status_for(&owner.0).await?))
+}
+
+/// Only a user a service key acts for has an account of their own; a key's runs use the
+/// server's, which the admin routes manage.
+fn own_account(owner: &Owner) -> Result<&str, AppError> {
+    if Owner::is_user(&owner.0) {
+        Ok(&owner.0)
+    } else {
+        Err(AppError::Conflict(
+            "this key's runs use the server's Google account; an admin connects it (/v1/admin/integrations/google)".into(),
+        ))
+    }
+}
+
+/// `POST /v1/google/authorize`: start connecting the user's own Google account.
+async fn authorize_own_google(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(body): ApiJson<AuthorizeBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user = own_account(&owner)?;
+    let url = state
+        .integrations
+        .google_authorize(&body.redirect_uri, Some(user))?;
+    Ok(Json(json!({ "url": url })))
+}
+
+/// `POST /v1/google/callback`: finish a sign-in with what Google sent back. The `state` names
+/// whose account it is, so the service in front can carry it back without knowing who that is
+/// (the browser comes back from Google without the user's token). The server's account still
+/// takes an admin key.
+async fn own_google_callback(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<CallbackBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    Ok(Json(
+        state
+            .integrations
+            .google_callback(&body.state, &body.code, admin.0)
+            .await?,
+    ))
+}
+
+/// `DELETE /v1/google`: disconnect the user's own Google account.
+async fn delete_own_google(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<StatusCode, AppError> {
+    state.integrations.remove_google_for(own_account(&owner)?).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -1530,7 +1594,7 @@ async fn google_callback(
     Ok(Json(
         state
             .integrations
-            .google_callback(&body.state, &body.code)
+            .google_callback(&body.state, &body.code, true)
             .await?,
     ))
 }

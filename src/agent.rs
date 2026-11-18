@@ -19,12 +19,11 @@ use crate::sandbox::{Reach, Runtime, Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
 use crate::tools::{
-    question_text, ToolContext, ToolModel, ToolSet, ToolView, ASK_USER, RECORDS_SAVE, REMEMBER,
+    question_text, ToolContext, ToolModel, ToolView, ASK_USER, RECORDS_SAVE, REMEMBER,
 };
 use crate::trace;
 use crate::waits::{Answer, Waits};
 use anyhow::{anyhow, Result};
-use arc_swap::ArcSwap;
 use chrono::Utc;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -35,9 +34,6 @@ use tokio_util::sync::CancellationToken;
 pub struct AgentEnv {
     /// The clients of the registered models; a run uses the one for its `model_id`.
     pub llm: Arc<LlmRouter>,
-    /// The current tools. Swapped when an admin changes an integration; a run keeps the set it
-    /// started with.
-    pub tools: Arc<ArcSwap<ToolSet>>,
     pub store: Store,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
@@ -167,7 +163,8 @@ pub async fn run_agent(
             tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "could not apply the connections this key always allows");
         }
     }
-    let tool_set = env.tools.load_full();
+    // The owner's tools: a user's act for the Google account they connected themselves.
+    let tool_set = env.integrations.tools_for(&run.owner).await;
     // Picks up MCP servers that weren't reachable (or not tried) when earlier runs started.
     tokio::select! {
         biased;

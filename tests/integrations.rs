@@ -1990,3 +1990,144 @@ async fn a_model_that_refuses_the_image_is_text_only_and_one_that_cannot_be_aske
     assert_eq!(saved["multimodal"], false);
     assert_eq!(*asked.lock().unwrap(), 0);
 }
+
+// -- a user's own Google account ----------------------------------------------------------------
+
+const ALICE: &str = "0190a7c0-0000-7000-8000-00000000000a";
+const BOB: &str = "0190a7c0-0000-7000-8000-00000000000b";
+
+/// One request with the service key `KEY_A`, for `user` when given.
+async fn for_user(app: &TestApp, method: Method, uri: &str, user: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+    let mut req = axum::http::Request::builder().method(method).uri(uri).header("authorization", format!("Bearer {KEY_A}"));
+    if let Some(user) = user {
+        req = req.header("x-cedar-user", user);
+    }
+    let body = match body {
+        Some(v) => {
+            req = req.header("content-type", "application/json");
+            axum::body::Body::from(v.to_string())
+        }
+        None => axum::body::Body::empty(),
+    };
+    let resp = app.router.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+    let status = resp.status();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+/// Connect a Google account as `user` (or, with `None`, the server's as the admin): the URL to
+/// go to, then what Google sends back.
+async fn connect_google(app: &TestApp, user: Option<&str>) {
+    let (code, body) = match user {
+        Some(_) => for_user(app, Method::POST, "/v1/google/authorize", user, Some(json!({ "redirect_uri": "http://chat.local/cb" }))).await,
+        None => app.json(Method::POST, "/v1/admin/integrations/google/authorize", Some(KEY_B), Some(json!({ "redirect_uri": "http://chat.local/cb" }))).await,
+    };
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let state = state_param(body["url"].as_str().unwrap());
+    // Carried back by the service itself, without the user: the state says whose it is.
+    let (code, body) = match user {
+        Some(_) => for_user(app, Method::POST, "/v1/google/callback", None, Some(json!({ "state": state, "code": "good-code" }))).await,
+        None => app.json(Method::POST, "/v1/admin/integrations/google/callback", Some(KEY_B), Some(json!({ "state": state, "code": "good-code" }))).await,
+    };
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["account"], "ana@example.com");
+}
+
+#[tokio::test]
+async fn each_user_connects_a_google_account_of_their_own() {
+    let (token_url, _mock) = start_google().await;
+    let token_url: &'static str = Box::leak(token_url.into_boxed_str());
+    let app = TestApp::with_env(
+        vec![Step::Reply(text("for alice")), Step::Reply(text("for bob"))],
+        &admin_env(&[
+            ("CEDAR_SERVICE_KEYS", KEY_A),
+            ("GMAIL", "on"),
+            ("CALENDAR", "off"),
+            ("GOOGLE_CLIENT_ID", "client-1"),
+            ("GOOGLE_CLIENT_SECRET", "client-secret"),
+            ("GOOGLE_TOKEN_URL", token_url),
+        ]),
+    )
+    .await;
+    let gmail = |catalog: &Value| group(catalog, "gmail")["available"].as_bool().unwrap();
+
+    // The admin connects the server's account: the key's runs have Gmail, a user's don't.
+    connect_google(&app, None).await;
+    assert!(gmail(&for_user(&app, Method::GET, "/v1/tools", None, None).await.1));
+    let (_, catalog) = for_user(&app, Method::GET, "/v1/tools", Some(ALICE), None).await;
+    assert!(!gmail(&catalog));
+    assert_eq!(group(&catalog, "gmail")["reason"], "No Google account is connected");
+    let (code, status) = for_user(&app, Method::GET, "/v1/google", Some(ALICE), None).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!((status["available"].as_bool(), status["connected"].as_bool(), status["server"].as_bool()), (Some(true), Some(false), Some(false)));
+    // The key itself has no account of its own to connect: its runs use the server's.
+    let (_, status) = for_user(&app, Method::GET, "/v1/google", None, None).await;
+    assert_eq!((status["server"].as_bool(), status["connected"].as_bool(), status["account"].as_str()), (Some(true), Some(true), Some("ana@example.com")));
+    assert_eq!(for_user(&app, Method::POST, "/v1/google/authorize", None, Some(json!({ "redirect_uri": "http://chat.local/cb" }))).await.0, StatusCode::CONFLICT);
+    assert_eq!(for_user(&app, Method::DELETE, "/v1/google", None, None).await.0, StatusCode::CONFLICT);
+
+    // Alice connects hers: she has Gmail, Bob still doesn't.
+    connect_google(&app, Some(ALICE)).await;
+    assert!(gmail(&for_user(&app, Method::GET, "/v1/tools", Some(ALICE), None).await.1));
+    assert!(!gmail(&for_user(&app, Method::GET, "/v1/tools", Some(BOB), None).await.1));
+    let (_, status) = for_user(&app, Method::GET, "/v1/google", Some(ALICE), None).await;
+    assert_eq!((status["connected"].as_bool(), status["account"].as_str()), (Some(true), Some("ana@example.com")));
+    assert!(!status.to_string().contains("rt-secret"));
+    assert!(!status["missing_scopes"].as_array().unwrap().is_empty());
+    assert_eq!(for_user(&app, Method::GET, "/v1/google", Some(BOB), None).await.1["connected"], false);
+
+    // The model is offered what its run's owner has.
+    let offered = |request: &Value| request["tools"].as_array().unwrap().iter().any(|t| t["name"].as_str().unwrap().starts_with("gmail_"));
+    for user in [ALICE, BOB] {
+        let (code, run) = for_user(&app, Method::POST, "/v1/runs", Some(user), Some(json!({ "prompt": "check my mail" }))).await;
+        assert_eq!(code, StatusCode::ACCEPTED, "{run}");
+        let uri = format!("/v1/runs/{}", run["id"].as_str().unwrap());
+        for _ in 0..500 {
+            if for_user(&app, Method::GET, &uri, Some(user), None).await.1["status"] == "completed" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+    let requests = app.llm.requests();
+    assert_eq!(requests.iter().map(offered).collect::<Vec<_>>(), [true, false]);
+
+    // A sign-in for the server's account isn't finished by a key that is no admin, and the
+    // attempt doesn't use it up.
+    let (_, body) = app.json(Method::POST, "/v1/admin/integrations/google/authorize", Some(KEY_B), Some(json!({ "redirect_uri": "http://chat.local/cb" }))).await;
+    let state = state_param(body["url"].as_str().unwrap());
+    let finish = json!({ "state": state, "code": "good-code" });
+    assert_eq!(for_user(&app, Method::POST, "/v1/google/callback", None, Some(finish.clone())).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(app.json(Method::POST, "/v1/admin/integrations/google/callback", Some(KEY_B), Some(finish)).await.0, StatusCode::OK);
+
+    // Disconnecting is one's own too, and leaves the server's account alone.
+    assert_eq!(for_user(&app, Method::DELETE, "/v1/google", Some(BOB), None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(for_user(&app, Method::DELETE, "/v1/google", Some(ALICE), None).await.0, StatusCode::NO_CONTENT);
+    assert!(!gmail(&for_user(&app, Method::GET, "/v1/tools", Some(ALICE), None).await.1));
+    assert!(gmail(&for_user(&app, Method::GET, "/v1/tools", None, None).await.1));
+}
+
+/// The accounts were connected through the client; a different client, or none, ends them.
+#[tokio::test]
+async fn changing_the_google_client_disconnects_every_users_account() {
+    let (token_url, _mock) = start_google().await;
+    let token_url: &'static str = Box::leak(token_url.into_boxed_str());
+    let app = TestApp::with_env(vec![], &admin_env(&[("CEDAR_SERVICE_KEYS", KEY_A), ("GMAIL", "on"), ("GOOGLE_TOKEN_URL", token_url)])).await;
+    // Before a client is set up, a user is told why they can't connect.
+    let (_, status) = for_user(&app, Method::GET, "/v1/google", Some(ALICE), None).await;
+    assert_eq!(status["available"], false);
+    assert!(status["reason"].as_str().unwrap().contains("OAuth client"), "{status}");
+    assert_eq!(for_user(&app, Method::POST, "/v1/google/authorize", Some(ALICE), Some(json!({ "redirect_uri": "http://chat.local/cb" }))).await.0, StatusCode::CONFLICT);
+
+    let (code, body) = app.json(Method::PUT, "/v1/admin/integrations/google/client", Some(KEY_B), Some(json!({ "client_id": "client-1", "client_secret": "s" }))).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    connect_google(&app, Some(ALICE)).await;
+    assert_eq!(for_user(&app, Method::GET, "/v1/google", Some(ALICE), None).await.1["connected"], true);
+
+    assert_eq!(app.json(Method::DELETE, "/v1/admin/integrations/google/client", Some(KEY_B), None).await.0, StatusCode::NO_CONTENT);
+    let (_, status) = for_user(&app, Method::GET, "/v1/google", Some(ALICE), None).await;
+    assert_eq!((status["available"].as_bool(), status["connected"].as_bool()), (Some(false), Some(false)));
+    assert_eq!(group(&for_user(&app, Method::GET, "/v1/tools", Some(ALICE), None).await.1, "gmail")["available"], false);
+}

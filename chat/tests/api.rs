@@ -78,6 +78,8 @@ struct FakeCedar {
     not_service: Mutex<bool>,
     /// Every query `GET /v1/events` was opened with.
     stream_queries: Mutex<Vec<String>>,
+    /// The users who connected a Google account of their own (`/v1/google`).
+    google_accounts: Mutex<Vec<String>>,
     /// Whose memories and records were deleted for good (`DELETE /v1/memory`, `/v1/records`).
     wiped: Mutex<Vec<(&'static str, Option<String>)>>,
 }
@@ -653,7 +655,41 @@ async fn authorize(State(s): State<Shared>, Json(body): Json<Value>) -> axum::re
     Json(json!({ "url": format!("https://accounts.example/auth?state=st-1&redirect_uri={}", body["redirect_uri"].as_str().unwrap()) })).into_response()
 }
 
+/// A user's own Google account (`/v1/google`): the key itself has none, its runs use the server's.
+async fn own_google(State(s): State<Shared>, headers: HeaderMap) -> Json<Value> {
+    match user_of(&headers) {
+        None => Json(json!({ "available": false, "server": true, "services": ["gmail"], "connected": false })),
+        Some(user) => {
+            let connected = s.google_accounts.lock().unwrap().contains(&user);
+            Json(json!({ "available": true, "server": false, "services": ["gmail"], "connected": connected, "account": connected.then_some("ada@example.com") }))
+        }
+    }
+}
+
+async fn authorize_own(headers: HeaderMap, Json(body): Json<Value>) -> axum::response::Response {
+    match user_of(&headers) {
+        None => cedar_error(StatusCode::CONFLICT, "conflict", "this key's runs use the server's Google account"),
+        Some(user) => Json(json!({ "url": format!("https://accounts.example/auth?state=own-{user}&redirect_uri={}", body["redirect_uri"].as_str().unwrap()) })).into_response(),
+    }
+}
+
+async fn delete_own_google(State(s): State<Shared>, headers: HeaderMap) -> axum::response::Response {
+    let user = user_of(&headers).unwrap_or_default();
+    let mut accounts = s.google_accounts.lock().unwrap();
+    let before = accounts.len();
+    accounts.retain(|u| *u != user);
+    if accounts.len() == before {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "no Google account is connected");
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
 async fn callback(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    // A user's own sign-in: the state says whose, and nobody has to be an admin.
+    if let Some(user) = body["state"].as_str().and_then(|st| st.strip_prefix("own-")) {
+        s.google_accounts.lock().unwrap().push(user.to_string());
+        return Json(json!({ "account": "ada@example.com", "own": true })).into_response();
+    }
     if let Some(refused) = admin(&s, "callback", body.clone()).await {
         return refused;
     }
@@ -785,6 +821,9 @@ impl Harness {
             )
             .route("/v1/admin/integrations/google/authorize", post(authorize))
             .route("/v1/admin/integrations/google/callback", post(callback))
+            .route("/v1/google/callback", post(callback))
+            .route("/v1/google/authorize", post(authorize_own))
+            .route("/v1/google", get(own_google).delete(delete_own_google))
             .route(
                 "/v1/admin/marketplace/{name}/install",
                 post(|State(s): State<Shared>, Path(name): Path<String>, Json(body): Json<Value>| async move {
@@ -4496,6 +4535,12 @@ async fn each_user_has_their_own_conversations_agents_settings_and_cedar_owner()
     let (_, found) = as_user(&h, Method::GET, "/api/conversations/search?q=question", "access", false, None).await;
     assert_eq!(found["conversations"].as_array().unwrap().len(), 1, "{found}");
 
+    // Pairing a phone hands out the caller's own token, never the shared one to someone else.
+    let (_, pairing) = as_user(&h, Method::GET, "/api/pairing", &ada, false, None).await;
+    assert_eq!(pairing["access_token"], ada.as_str());
+    assert!(!pairing.to_string().contains("\"access\""), "{pairing}");
+    assert_eq!(as_user(&h, Method::GET, "/api/pairing", "access", false, None).await.1["access_token"], "access");
+
     // Settings are a person's own.
     let (status, _) = as_user(&h, Method::PUT, "/api/settings/locale", &ada, false, Some(json!({ "locale": "de" }))).await;
     assert!(status.is_success(), "{status}");
@@ -4570,4 +4615,40 @@ async fn without_a_service_key_there_is_only_the_primary_user() {
     assert_eq!(h.sync().await, 1);
     assert_eq!(*h.cedar.run_users.lock().unwrap(), [None]);
     assert_eq!(as_user(&h, Method::GET, "/api/inbox", "access", false, None).await.1["unread"], 1);
+}
+
+/// A user connects a Google account of their own, without the admin token; the primary user's
+/// is the server's.
+#[tokio::test]
+async fn a_user_connects_their_own_google_account() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin"), ("CHAT_PUBLIC_URL", "https://chat.example")]).await;
+    let (_, made) = as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": "Ada" }))).await;
+    let (ada, ada_id) = (made["token"].as_str().unwrap().to_string(), made["user"]["id"].as_str().unwrap().to_string());
+
+    let (status, own) = as_user(&h, Method::GET, "/api/google", "access", false, None).await;
+    assert_eq!((status, own["server"].as_bool()), (StatusCode::OK, Some(true)));
+    assert_eq!(as_user(&h, Method::POST, "/api/google/connect", "access", false, None).await.0, StatusCode::CONFLICT);
+    let (_, own) = as_user(&h, Method::GET, "/api/google", &ada, false, None).await;
+    assert_eq!((own["server"].as_bool(), own["connected"].as_bool()), (Some(false), Some(false)));
+
+    let (status, connect) = as_user(&h, Method::POST, "/api/google/connect", &ada, false, None).await;
+    assert_eq!(status, StatusCode::OK, "{connect}");
+    let url = connect["url"].as_str().unwrap();
+    assert!(url.ends_with("redirect_uri=https://chat.example/api/oauth/google/callback"), "{url}");
+    // Google sends the browser back with no token; the state is hers.
+    let req = Request::builder().uri(format!("/api/oauth/google/callback?state=own-{ada_id}&code=c")).body(Body::empty()).unwrap();
+    let (status, headers, _) = h.call_full(req).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(headers["location"], "/?integrations=connected&own=1");
+    let (_, own) = as_user(&h, Method::GET, "/api/google", &ada, false, None).await;
+    assert_eq!((own["connected"].as_bool(), own["account"].as_str()), (Some(true), Some("ada@example.com")));
+
+    assert_eq!(as_user(&h, Method::DELETE, "/api/google", &ada, false, None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(as_user(&h, Method::GET, "/api/google", &ada, false, None).await.1["connected"], false);
+
+    // Removing a user disconnects the account they had connected.
+    let req = Request::builder().uri(format!("/api/oauth/google/callback?state=own-{ada_id}&code=c")).body(Body::empty()).unwrap();
+    h.call_full(req).await;
+    assert_eq!(as_user(&h, Method::DELETE, &format!("/api/users/{ada_id}"), "access", true, None).await.0, StatusCode::NO_CONTENT);
+    assert!(h.cedar.google_accounts.lock().unwrap().is_empty());
 }

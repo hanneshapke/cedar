@@ -37,6 +37,7 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 mod agents;
+mod slack;
 mod users;
 use users::{create_user, delete_user, get_me, list_users, rename_user, rotate_user_token};
 pub mod hooks;
@@ -167,6 +168,7 @@ const UPDATE_JS: &str = include_str!("../static/update.js");
 const UPDATE_CSS: &str = include_str!("../static/update.css");
 /// The Phone page of Settings: the QR code and token the iOS and Android apps connect with; every UI loads it.
 const PAIRING_JS: &str = include_str!("../static/pairing.js");
+const SLACK_JS: &str = include_str!("../static/slack.js");
 /// The service worker that shows Web Push messages, served at the root so its scope is the whole site.
 const SW_JS: &str = include_str!("../static/sw.js");
 /// The plan, approval cards, folded reasoning, sources and citations; v3 and v4 load it.
@@ -286,6 +288,8 @@ pub struct AppState {
     /// (`?browser=1`). Google's redirect lands in that browser, not in the app, so the callback
     /// shows a page that says to go back to the app instead of loading the chat there.
     google_in_browser: Arc<std::sync::Mutex<Vec<String>>>,
+    /// The Slack app people talk to Cedar through, when one is set up (`slack`).
+    pub slack: Option<Arc<crate::slack::Slack>>,
 }
 
 /// How many "Connect Google" sign-ins started in the browser are remembered at once.
@@ -301,7 +305,8 @@ impl AppState {
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
         let primary = store.user();
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, primary, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default() })
+        let slack = cfg.slack.clone().map(crate::slack::Slack::new).transpose()?.map(Arc::new);
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, primary, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default(), slack })
     }
 }
 
@@ -385,6 +390,9 @@ pub fn router(state: AppState) -> Router {
         .route("/agents/{id}/run", post(agents::run_now))
         .route("/agents/{id}/trigger", post(agents::from_device))
         .route("/agents/{id}/hook/rotate", post(agents::rotate_hook))
+        .route("/slack", get(slack::get_slack))
+        .route("/slack/link", post(slack::link_slack))
+        .route("/slack/links/{team}/{slack_user}", axum::routing::delete(slack::unlink_slack))
         .route("/me", get(get_me))
         .route("/users", get(list_users).post(create_user))
         .route("/users/{id}", axum::routing::patch(rename_user).delete(delete_user))
@@ -414,6 +422,8 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/models/{id}/stats", get(get_model_stats))
         .route("/integrations/settings", get(get_server_settings).put(put_server_settings))
         .route("/integrations/model-selection", put(put_model_selection))
+        .route("/google", get(get_own_google).delete(delete_own_google))
+        .route("/google/connect", post(connect_own_google))
         .route("/integrations/google", axum::routing::delete(delete_google))
         .route("/integrations/google/client", put(put_google_client).delete(delete_google_client))
         .route("/integrations/google/connect", post(connect_google))
@@ -490,6 +500,7 @@ pub fn router(state: AppState) -> Router {
         .route("/update.js", get(|| async { asset(JS, UPDATE_JS) }))
         .route("/update.css", get(|| async { asset(CSS, UPDATE_CSS) }))
         .route("/pairing.js", get(|| async { asset(JS, PAIRING_JS) }))
+        .route("/slack.js", get(|| async { asset(JS, SLACK_JS) }))
         .route("/sw.js", get(|| async { asset(JS, SW_JS) }))
         .route("/trust-view.js", get(|| async { asset(JS, TRUST_VIEW_JS) }))
         .route("/trust-view.css", get(|| async { asset(CSS, TRUST_VIEW_CSS) }))
@@ -640,8 +651,19 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
 
 /// Settings -> Phone: the address, token and QR code the iOS and Android apps connect with, and
 /// whether Tailscale is ready to serve the chat to them (see `pairing`).
-async fn get_pairing(Scoped(state): Scoped) -> Json<pairing::Pairing> {
-    Json(pairing::pairing(&state).await)
+async fn get_pairing(Scoped(state): Scoped, headers: HeaderMap) -> Json<pairing::Pairing> {
+    // The primary user's phone gets the shared token; anyone else's gets the token they signed
+    // in with, never the shared one.
+    let token = if state.user() == state.primary {
+        state.cfg.access_token.clone()
+    } else {
+        headers
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.split_once(' '))
+            .map(|(_, token)| token.trim().to_string())
+    };
+    Json(pairing::pairing(&state, token).await)
 }
 
 // -- updates --------------------------------------------------------------------------------
@@ -1332,7 +1354,7 @@ fn clean_attachments(attachments: Vec<Attachment>) -> Result<(Vec<Attachment>, V
 }
 
 /// A user message or a schedule's prompt: trimmed, non-empty, and not too long for cedar.
-fn clean_message(what: &str, content: &str) -> Result<String, AppError> {
+pub(crate) fn clean_message(what: &str, content: &str) -> Result<String, AppError> {
     let content = content.trim();
     if content.is_empty() {
         return Err(AppError::BadRequest(format!("{what} must not be empty")));
@@ -1429,12 +1451,44 @@ async fn send_message(
     let locale = i18n::clean_locale(body.locale.as_deref()).map_err(AppError::BadRequest)?;
     // Whether the model takes them is cedar's call (its registry says), relayed as it answers.
     let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
+    let message = NewMessage { content: &content, model: requested, reasoning, plan, locale, attachments, infos };
+    let turn = post_message(&state, ConversationRef::Id(&id), message).await?;
+    Ok((StatusCode::CREATED, Json(turn)))
+}
+
+/// A message to a conversation, already checked: what [`post_message`] sends.
+#[derive(Default)]
+pub(crate) struct NewMessage<'a> {
+    pub content: &'a str,
+    pub model: Option<String>,
+    pub reasoning: Option<String>,
+    pub plan: Option<String>,
+    pub locale: Option<String>,
+    pub attachments: Vec<Attachment>,
+    pub infos: Vec<AttachmentInfo>,
+}
+
+/// Which conversation a message goes to: one the client named, or one already looked up.
+pub(crate) enum ConversationRef<'a> {
+    Id(&'a str),
+    Found(Uuid),
+}
+
+/// Send a message to one of `state`'s user's conversations as a new turn: a cedar run that
+/// continues the conversation's last one, with someone reading along (the run may wait for its
+/// plan to be agreed to and risky calls to be approved). The page and Slack (`slack`) both send
+/// messages this way. `409` while the conversation's last response is still going.
+pub(crate) async fn post_message(state: &AppState, conversation: ConversationRef<'_>, message: NewMessage<'_>) -> Result<Turn, AppError> {
+    let NewMessage { content, model: requested, reasoning, plan, locale, attachments, infos } = message;
     let prefs = state.store.preferences().await?;
 
     let _guard = state.send_lock.lock().await;
-    let conversation = find_conversation(&state, &id).await?;
-    let turns = settled_turns(&state, &conversation).await?;
-    let settings = RunSettings::resolve(&state, &prefs, requested, reasoning, conversation.tools.clone()).await;
+    let conversation = match conversation {
+        ConversationRef::Id(id) => find_conversation(state, id).await?,
+        ConversationRef::Found(id) => state.store.get_conversation(id).await?.ok_or(AppError::NotFound("conversation not found"))?,
+    };
+    let turns = settled_turns(state, &conversation).await?;
+    let settings = RunSettings::resolve(state, &prefs, requested, reasoning, conversation.tools.clone()).await;
     let model = settings.model.as_deref();
     // Someone is reading along, so the run may ask: agree to its plan, approve a risky call.
     let options = |parent| RunOptions {
@@ -1448,14 +1502,14 @@ async fn send_message(
     // Continue the previous run, so the agent keeps the whole conversation (tool calls and
     // earlier attachments included) and the files in its sandbox workspace.
     let run = match turns.last() {
-        None => state.cedar.create_run(&content, &options(None)).await?,
-        Some(last) => match state.cedar.create_run(&content, &options(Some(last.run_id))).await {
+        None => state.cedar.create_run(content, &options(None)).await?,
+        Some(last) => match state.cedar.create_run(content, &options(Some(last.run_id))).await {
             // cedar no longer has the previous run (deleted, or a reset database). Start over,
             // carrying what this service remembers of the conversation in the prompt. Earlier
             // attachments went with the run; only this message's come along.
             Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => {
                 tracing::warn!(run_id = %last.run_id, "previous run is gone from cedar; resending history as text");
-                let run_prompt = prompt::compose(&exchanges(&turns), &content, state.cfg.history_max_bytes);
+                let run_prompt = prompt::compose(&exchanges(&turns), content, state.cfg.history_max_bytes);
                 state.cedar.create_run(&run_prompt, &options(None)).await?
             }
             other => other?,
@@ -1463,9 +1517,9 @@ async fn send_message(
     };
     let turn = state
         .store
-        .insert_turn(conversation.id, run.id, &content, &run.status, model, settings.reasoning.as_deref(), &infos)
+        .insert_turn(conversation.id, run.id, content, &run.status, model, settings.reasoning.as_deref(), &infos)
         .await?;
-    Ok((StatusCode::CREATED, Json(turn)))
+    Ok(turn)
 }
 
 // -- settings and tools ---------------------------------------------------------------------
@@ -2129,13 +2183,40 @@ async fn uninstall_tool(Scoped(state): Scoped, headers: HeaderMap, Path(name): P
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// The Google account the caller connected themselves, which their own runs act for. The
+/// primary user has none of their own (`server: true`): theirs is the server's, under
+/// Settings -> Server.
+async fn get_own_google(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
+    Ok(Json(state.cedar.own_google().await?))
+}
+
+/// Start connecting the caller's own Google account; no admin token needed. Google comes back
+/// to the same callback as the server's account does.
+async fn connect_own_google(Scoped(state): Scoped, headers: HeaderMap, Query(params): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
+    let url = state.cedar.own_google_authorize(&redirect_uri(&state, &headers)).await?;
+    remember_browser_sign_in(&state, &params, &url);
+    Ok(Json(json!({ "url": url })))
+}
+
+async fn delete_own_google(Scoped(state): Scoped) -> Result<StatusCode, AppError> {
+    state.cedar.remove_own_google().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn connect_google(Scoped(state): Scoped, headers: HeaderMap, Query(params): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     let url = state.cedar.google_authorize(&redirect_uri(&state, &headers)).await?;
+    remember_browser_sign_in(&state, &params, &url);
+    Ok(Json(json!({ "url": url })))
+}
+
+/// Note a sign-in the desktop app sent to the default browser (`?browser=1`), so the callback
+/// shows that browser a page of its own.
+fn remember_browser_sign_in(state: &AppState, params: &HashMap<String, String>, url: &str) {
     // The desktop app opens Google's page in the default browser: its embedded web view can't
     // offer every way to sign in (passkeys and Sign in with Apple, for one).
     if params.contains_key("browser") {
-        if let Some(s) = google_state(&url) {
+        if let Some(s) = google_state(url) {
             let mut pending = state.google_in_browser.lock().unwrap_or_else(|e| e.into_inner());
             if pending.len() >= GOOGLE_IN_BROWSER_MAX {
                 pending.remove(0);
@@ -2143,7 +2224,6 @@ async fn connect_google(Scoped(state): Scoped, headers: HeaderMap, Query(params)
             pending.push(s);
         }
     }
-    Ok(Json(json!({ "url": url })))
 }
 
 /// The `state` parameter of Google's sign-in URL.
@@ -2169,7 +2249,7 @@ async fn google_callback(State(state): State<AppState>, Query(params): Query<Has
     });
     let outcome = match (params.get("state"), params.get("code"), params.get("error")) {
         (_, _, Some(error)) => Err(format!("Google sign-in was not completed ({error})")),
-        (Some(s), Some(code), None) => state.cedar.google_callback(s, code).await.map(|_| ()).map_err(|e| e.to_string()),
+        (Some(s), Some(code), None) => state.cedar.google_callback(s, code).await.map(|done| done["own"] == true).map_err(|e| e.to_string()),
         _ => Err("the sign-in response from Google is incomplete".to_string()),
     };
     if let Err(message) = &outcome {
@@ -2180,16 +2260,19 @@ async fn google_callback(State(state): State<AppState>, Query(params): Query<Has
     }
     let mut url = reqwest::Url::parse("http://local/").expect("static URL");
     match outcome {
-        Ok(()) => url.query_pairs_mut().append_pair("integrations", "connected"),
+        // The page reopens Settings where the account is shown: a user's own under Tools, the
+        // server's under Server.
+        Ok(true) => url.query_pairs_mut().append_pair("integrations", "connected").append_pair("own", "1"),
+        Ok(false) => url.query_pairs_mut().append_pair("integrations", "connected"),
         Err(message) => url.query_pairs_mut().append_pair("integrations", "error").append_pair("message", &message),
     };
     Redirect::to(&format!("/?{}", url.query().unwrap_or_default())).into_response()
 }
 
 /// What the browser shows after a "Connect Google" the desktop app started there.
-fn google_done_page(outcome: &Result<(), String>) -> Response {
+fn google_done_page(outcome: &Result<bool, String>) -> Response {
     let (title, detail) = match outcome {
-        Ok(()) => ("Google account connected".to_string(), "You can close this tab and go back to Cedar.".to_string()),
+        Ok(_) => ("Google account connected".to_string(), "You can close this tab and go back to Cedar.".to_string()),
         Err(message) => ("Google was not connected".to_string(), format!("{}. Close this tab and try again in Cedar.", html_escape(message))),
     };
     let html = format!(

@@ -39,6 +39,9 @@ subtle = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time", "io-util", "io-std", "process"] }
 tokio-util = "0.7"
+# Slack's Socket Mode (see `slack`): events come over a WebSocket this service opens, so Slack
+# needs no public address to reach it.
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
