@@ -37,6 +37,8 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 mod agents;
+mod users;
+use users::{create_user, delete_user, get_me, list_users, rename_user, rotate_user_token};
 pub mod hooks;
 
 const MAX_BODY_BYTES: usize = 128 * 1024;
@@ -245,8 +247,13 @@ const V4: Ui = Ui {
 #[derive(Clone)]
 pub struct AppState {
     pub cfg: Arc<Config>,
+    /// The database and cedar, for one user: the primary user in the state the server starts
+    /// with, and whoever a request or a piece of background work is for in the copy
+    /// [`AppState::as_user`] makes for it.
     pub store: Store,
     pub cedar: CedarClient,
+    /// The primary user: whoever presents `CHAT_ACCESS_TOKEN`. Its cedar runs are the key's own.
+    pub primary: Uuid,
     /// SHA-256 of the access token, if one is required.
     token_digest: Option<[u8; 32]>,
     /// SHA-256 of the admin token; `None` hides the Integrations settings.
@@ -260,10 +267,10 @@ pub struct AppState {
     pub hook_limits: Arc<hooks::Limits>,
     /// Live notices for the open tabs (`GET /api/events`): a finished response, as `notify` learns
     /// of one from cedar.
-    pub notices: broadcast::Sender<Value>,
+    pub notices: broadcast::Sender<(Uuid, Value)>,
     /// Messages for the Cedar desktop app (`GET /api/notifications/desktop/events`), as
     /// `channels` sends them.
-    pub desktop: broadcast::Sender<Value>,
+    pub desktop: broadcast::Sender<(Uuid, Value)>,
     /// For Pushover and the push services (`channels`).
     pub http: reqwest::Client,
     /// The APNs connection and its provider token (`channels`).
@@ -293,7 +300,41 @@ impl AppState {
         let (desktop, _) = broadcast::channel(channels::DESKTOP_BUFFER);
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default() })
+        let primary = store.user();
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, primary, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default() })
+    }
+}
+
+impl AppState {
+    /// This state for `user`: what it stores and asks cedar for is theirs. Each of the two tags
+    /// its notices with the user, so a tab only hears of its own.
+    pub fn as_user(&self, user: Uuid) -> Self {
+        Self { store: self.store.as_user(user), cedar: self.cedar.as_user((user != self.primary).then_some(user)), ..self.clone() }
+    }
+
+    /// The user this state is for.
+    pub fn user(&self) -> Uuid {
+        self.store.user()
+    }
+}
+
+/// Who a request is from, as [`require_token`] worked out.
+#[derive(Debug, Clone, Copy)]
+struct CurrentUser(Uuid);
+
+/// The state for the user the request is from. Every handler behind the access token takes this
+/// rather than `State<AppState>`, so that nothing it does can touch another user's data.
+pub(crate) struct Scoped(pub(crate) AppState);
+
+impl FromRequestParts<AppState> for Scoped {
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut axum::http::request::Parts, state: &AppState) -> Result<Self, AppError> {
+        match parts.extensions.get::<CurrentUser>() {
+            Some(CurrentUser(user)) => Ok(Scoped(state.as_user(*user))),
+            // A route outside `require_token` asked for a user's state: a mistake in the router.
+            None => Err(AppError::Internal(anyhow::anyhow!("no user on a request that needs one"))),
+        }
     }
 }
 
@@ -344,6 +385,10 @@ pub fn router(state: AppState) -> Router {
         .route("/agents/{id}/run", post(agents::run_now))
         .route("/agents/{id}/trigger", post(agents::from_device))
         .route("/agents/{id}/hook/rotate", post(agents::rotate_hook))
+        .route("/me", get(get_me))
+        .route("/users", get(list_users).post(create_user))
+        .route("/users/{id}", axum::routing::patch(rename_user).delete(delete_user))
+        .route("/users/{id}/token", post(rotate_user_token))
         .route("/settings", get(get_settings).put(put_settings))
         .route("/settings/locale", put(put_locale))
         .route("/pairing", get(get_pairing))
@@ -493,20 +538,30 @@ fn asset(content_type: &'static str, body: impl IntoResponse) -> Response {
     ([(CONTENT_TYPE, content_type), (CACHE_CONTROL, "no-cache")], body).into_response()
 }
 
-async fn require_token(State(state): State<AppState>, req: Request, next: Next) -> Result<Response, AppError> {
-    if let Some(expected) = &state.token_digest {
-        let presented = req
-            .headers()
-            .get(AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.split_once(' '))
-            .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
-            .map(|(_, token)| Sha256::digest(token.trim().as_bytes()));
-        match presented {
-            Some(digest) if bool::from(digest.as_slice().ct_eq(expected)) => {}
-            _ => return Err(AppError::Unauthorized),
-        }
-    }
+/// Who is asking. The shared access token (`CHAT_ACCESS_TOKEN`) is the primary user's, and so is
+/// a request with no token when none is set; any other token is looked up among the users' own.
+async fn require_token(State(state): State<AppState>, mut req: Request, next: Next) -> Result<Response, AppError> {
+    let presented: Option<[u8; 32]> = req
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split_once(' '))
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+        .map(|(_, token)| Sha256::digest(token.trim().as_bytes()).into());
+    let user = match (&state.token_digest, presented) {
+        (Some(expected), Some(digest)) if bool::from(digest.as_slice().ct_eq(expected)) => state.primary,
+        (None, None) => state.primary,
+        // Found by the token's hash: a user's token is random and long, so the lookup gives
+        // nothing away that guessing wouldn't.
+        (expected, Some(digest)) => match state.store.user_by_token(&hex::encode(digest)).await? {
+            Some(user) => user.id,
+            // A server with no access token takes anyone, whatever token an app still sends.
+            None if expected.is_none() => state.primary,
+            None => return Err(AppError::Unauthorized),
+        },
+        (Some(_), None) => return Err(AppError::Unauthorized),
+    };
+    req.extensions_mut().insert(CurrentUser(user));
     Ok(next.run(req).await)
 }
 
@@ -584,19 +639,19 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
 
 /// Settings -> Phone: the address, token and QR code the iOS and Android apps connect with, and
 /// whether Tailscale is ready to serve the chat to them (see `pairing`).
-async fn get_pairing(State(state): State<AppState>) -> Json<pairing::Pairing> {
+async fn get_pairing(Scoped(state): Scoped) -> Json<pairing::Pairing> {
     Json(pairing::pairing(&state).await)
 }
 
 // -- updates --------------------------------------------------------------------------------
 
 /// The update banner: this version, the latest release, and how far an install got.
-async fn get_update(State(state): State<AppState>) -> Json<update::Status> {
+async fn get_update(Scoped(state): Scoped) -> Json<update::Status> {
     Json(update::status(&state, state.admin_digest.is_some()))
 }
 
 /// "Check now": looks the latest release up (at most once a minute) and answers like `GET`.
-async fn check_update(State(state): State<AppState>) -> Json<update::Status> {
+async fn check_update(Scoped(state): Scoped) -> Json<update::Status> {
     if let Err(e) = update::check(&state, false).await {
         tracing::warn!(error = %format!("{e:#}"), "update check failed");
     }
@@ -604,7 +659,7 @@ async fn check_update(State(state): State<AppState>) -> Json<update::Status> {
 }
 
 /// The banner's Update: hands the latest release to the root `cedar-update` unit (admin only).
-async fn install_update(State(state): State<AppState>, headers: HeaderMap) -> Result<(StatusCode, Json<update::Status>), AppError> {
+async fn install_update(Scoped(state): Scoped, headers: HeaderMap) -> Result<(StatusCode, Json<update::Status>), AppError> {
     if state.admin_digest.is_none() {
         return Err(AppError::Forbidden("updates are installed by hand here (CHAT_ADMIN_TOKEN is not set)".into()));
     }
@@ -624,7 +679,7 @@ struct ConversationList {
     conversations: Vec<Conversation>,
 }
 
-async fn list_conversations(State(state): State<AppState>) -> Result<Json<ConversationList>, AppError> {
+async fn list_conversations(Scoped(state): Scoped) -> Result<Json<ConversationList>, AppError> {
     Ok(Json(ConversationList { conversations: state.store.list_conversations(MAX_CONVERSATIONS).await? }))
 }
 
@@ -642,7 +697,7 @@ struct SearchResults {
 /// The conversations that have every word of `q` in their title or messages, most recently
 /// active first, chats and scheduled runs alike: the search box of every client (the web pages,
 /// the desktop app, the iOS and Android apps). An empty `q` finds nothing.
-async fn search_conversations(State(state): State<AppState>, ApiQuery(query): ApiQuery<SearchQuery>) -> Result<Json<SearchResults>, AppError> {
+async fn search_conversations(Scoped(state): Scoped, ApiQuery(query): ApiQuery<SearchQuery>) -> Result<Json<SearchResults>, AppError> {
     if query.q.chars().count() > MAX_SEARCH_CHARS {
         return Err(AppError::BadRequest(format!("q is longer than {MAX_SEARCH_CHARS} characters")));
     }
@@ -665,7 +720,7 @@ fn clean_title(title: Option<String>) -> Result<Option<String>, AppError> {
 }
 
 async fn create_conversation(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     ApiJson(body): ApiJson<TitleBody>,
 ) -> Result<(StatusCode, Json<Conversation>), AppError> {
     let title = clean_title(body.title)?;
@@ -684,7 +739,7 @@ struct ConversationDetail {
 }
 
 async fn get_conversation(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path(id): Path<String>,
 ) -> Result<Json<ConversationDetail>, AppError> {
     let conversation = find_conversation(&state, &id).await?;
@@ -698,7 +753,7 @@ async fn get_conversation(
 }
 
 async fn rename_conversation(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path(id): Path<String>,
     ApiJson(body): ApiJson<TitleBody>,
 ) -> Result<Json<Conversation>, AppError> {
@@ -708,7 +763,7 @@ async fn rename_conversation(
     Ok(Json(Conversation { title: Some(title), ..conversation }))
 }
 
-async fn delete_conversation(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, AppError> {
+async fn delete_conversation(Scoped(state): Scoped, Path(id): Path<String>) -> Result<StatusCode, AppError> {
     let conversation = find_conversation(&state, &id).await?;
     let mut turns = Vec::new();
     for turn in state.store.list_turns(conversation.id).await? {
@@ -734,15 +789,15 @@ struct StarredList {
 
 /// Starred conversations, most recently starred first: chats and scheduled runs alike, so every
 /// client (the web pages, the desktop app, the iOS app) shows the same list.
-async fn list_starred(State(state): State<AppState>) -> Result<Json<StarredList>, AppError> {
+async fn list_starred(Scoped(state): Scoped) -> Result<Json<StarredList>, AppError> {
     Ok(Json(StarredList { conversations: state.store.list_starred(MAX_CONVERSATIONS).await? }))
 }
 
-async fn star_conversation(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
+async fn star_conversation(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
     set_starred(&state, &id, true).await
 }
 
-async fn unstar_conversation(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
+async fn unstar_conversation(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
     set_starred(&state, &id, false).await
 }
 
@@ -756,7 +811,7 @@ async fn set_starred(state: &AppState, id: &str, starred: bool) -> Result<Json<C
 
 /// The conversation has been looked at: its finished responses leave the inbox. Unfinished
 /// turns are refreshed first, so a response the page just watched end counts as seen.
-async fn mark_seen(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
+async fn mark_seen(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Conversation>, AppError> {
     let conversation = find_conversation(&state, &id).await?;
     refresh_all(&state, state.store.list_turns(conversation.id).await?).await;
     state.store.mark_seen(conversation.id).await?;
@@ -771,20 +826,20 @@ struct Inbox {
 }
 
 /// Finished responses nobody has looked at, newest first, scheduled runs included.
-async fn inbox(State(state): State<AppState>) -> Result<Json<Inbox>, AppError> {
+async fn inbox(Scoped(state): Scoped) -> Result<Json<Inbox>, AppError> {
     Ok(Json(Inbox { items: state.store.inbox(MAX_INBOX).await?, unread: state.store.count_unseen().await? }))
 }
 
 /// Server-Sent Events for the page: a `turn.finished` event for every response that ends, as
 /// cedar tells this service. It has no replay; the page reads `/api/inbox` when it connects.
-async fn notice_events(State(state): State<AppState>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
-    relay(state.notices.subscribe(), state.shutdown.clone())
+async fn notice_events(Scoped(state): Scoped) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    relay(state.notices.subscribe(), state.user(), state.shutdown.clone())
 }
 
 /// Server-Sent Events for the Cedar desktop app: a `notification` event for every message
 /// sent by the `desktop` method, which the app shows in Notification Center (a toast on Windows). Connecting is what
 /// sets the method up; the first time, it also becomes the default if none was chosen.
-async fn desktop_events(State(state): State<AppState>) -> Result<Sse<impl Stream<Item = Result<SseEvent, Infallible>>>, AppError> {
+async fn desktop_events(Scoped(state): Scoped) -> Result<Sse<impl Stream<Item = Result<SseEvent, Infallible>>>, AppError> {
     // Listening before saving, so a test send right after the app connects reaches it.
     let rx = state.desktop.subscribe();
     let mut settings = state.store.notification_settings().await?;
@@ -793,24 +848,26 @@ async fn desktop_events(State(state): State<AppState>) -> Result<Sse<impl Stream
     }
     settings.desktop_connected_at = Some(Utc::now());
     state.store.set_notification_settings(&settings).await?;
-    Ok(relay(rx, state.shutdown.clone()))
+    Ok(relay(rx, state.user(), state.shutdown.clone()))
 }
 
-/// A broadcast channel of JSON, as Server-Sent Events named by each value's `type`, until
-/// `shutdown` is cancelled.
-fn relay(rx: broadcast::Receiver<Value>, shutdown: CancellationToken) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
-    Sse::new(relay_stream(rx, shutdown)).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+/// What a broadcast channel of JSON has for `user`, as Server-Sent Events named by each value's
+/// `type`, until `shutdown` is cancelled.
+fn relay(rx: broadcast::Receiver<(Uuid, Value)>, user: Uuid, shutdown: CancellationToken) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    Sse::new(relay_stream(rx, user, shutdown)).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
 }
 
-fn relay_stream(rx: broadcast::Receiver<Value>, shutdown: CancellationToken) -> impl Stream<Item = Result<SseEvent, Infallible>> {
-    futures_util::stream::unfold((rx, shutdown), |(mut rx, shutdown)| async move {
+fn relay_stream(rx: broadcast::Receiver<(Uuid, Value)>, user: Uuid, shutdown: CancellationToken) -> impl Stream<Item = Result<SseEvent, Infallible>> {
+    futures_util::stream::unfold((rx, shutdown), move |(mut rx, shutdown)| async move {
         loop {
             let received = tokio::select! {
                 _ = shutdown.cancelled() => return None,
                 received = rx.recv() => received,
             };
             match received {
-                Ok(notice) => {
+                // Someone else's.
+                Ok((to, _)) if to != user => continue,
+                Ok((_, notice)) => {
                     let event = SseEvent::default()
                         .event(notice["type"].as_str().unwrap_or("notice"))
                         .data(notice.to_string());
@@ -844,7 +901,7 @@ async fn reach(state: &AppState) -> Result<Reach, AppError> {
 }
 
 /// The page subscribes a browser with the server's public key, so the keys are made here.
-async fn get_notifications(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn get_notifications(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
     channels::ensure_vapid(&state.store).await?;
     Ok(Json(notification_status(&state).await?))
 }
@@ -919,7 +976,7 @@ fn short(what: &str, value: String) -> Result<String, AppError> {
     Ok(value)
 }
 
-async fn put_notifications(State(state): State<AppState>, ApiJson(body): ApiJson<NotificationsBody>) -> Result<Json<Value>, AppError> {
+async fn put_notifications(Scoped(state): Scoped, ApiJson(body): ApiJson<NotificationsBody>) -> Result<Json<Value>, AppError> {
     let mut settings = state.store.notification_settings().await?;
     if let Some(m) = &body.default_method {
         settings.default_method = Method::parse(m).ok_or_else(|| AppError::BadRequest(format!("default_method must be none, {}, not {m:?}", Method::NAMES)))?;
@@ -1030,7 +1087,7 @@ struct TestBody {
 
 /// Send a test message by `method` with the saved settings. The outcome is recorded like a
 /// real delivery and returned: `{ok, detail}`, as a 502 when it failed.
-async fn test_notification(State(state): State<AppState>, ApiJson(body): ApiJson<TestBody>) -> Result<Json<Value>, AppError> {
+async fn test_notification(Scoped(state): Scoped, ApiJson(body): ApiJson<TestBody>) -> Result<Json<Value>, AppError> {
     let method = Method::parse(&body.method).ok_or_else(|| AppError::BadRequest(format!("unknown method {:?}", body.method)))?;
     if method == Method::None {
         return Err(AppError::BadRequest("pick a method to test".into()));
@@ -1071,7 +1128,7 @@ struct SubscriptionKeys {
 
 /// A browser turned push on: keep its subscription. The server's public key is returned with
 /// the settings for the page to subscribe with (`GET /api/notifications` has it too).
-async fn subscribe_push(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<SubscriptionBody>) -> Result<Json<Value>, AppError> {
+async fn subscribe_push(Scoped(state): Scoped, headers: HeaderMap, ApiJson(body): ApiJson<SubscriptionBody>) -> Result<Json<Value>, AppError> {
     if !(body.endpoint.starts_with("https://") || body.endpoint.starts_with("http://")) || body.endpoint.len() > 2048 {
         return Err(AppError::BadRequest("the subscription's endpoint must be a URL".into()));
     }
@@ -1093,12 +1150,12 @@ struct UnsubscribeBody {
 }
 
 /// The browser turned push off itself: forget its endpoint.
-async fn unsubscribe_push(State(state): State<AppState>, ApiJson(body): ApiJson<UnsubscribeBody>) -> Result<Json<Value>, AppError> {
+async fn unsubscribe_push(Scoped(state): Scoped, ApiJson(body): ApiJson<UnsubscribeBody>) -> Result<Json<Value>, AppError> {
     state.store.delete_push_subscription_by_endpoint(&body.endpoint).await?;
     notification_status(&state).await.map(Json)
 }
 
-async fn delete_push_subscription(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+async fn delete_push_subscription(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let id = parse_id(&id, "subscription not found")?;
     if !state.store.delete_push_subscription(id).await? {
         return Err(AppError::NotFound("subscription not found"));
@@ -1117,7 +1174,7 @@ struct ApnsDeviceBody {
 }
 
 /// The iOS app registered for push: keep its device token.
-async fn register_apns_device(State(state): State<AppState>, ApiJson(body): ApiJson<ApnsDeviceBody>) -> Result<Json<Value>, AppError> {
+async fn register_apns_device(Scoped(state): Scoped, ApiJson(body): ApiJson<ApnsDeviceBody>) -> Result<Json<Value>, AppError> {
     let token = body.token.trim().to_ascii_lowercase();
     if token.len() < 32 || token.len() > 256 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(AppError::BadRequest("the device token must be the hex APNs gave the app".into()));
@@ -1136,12 +1193,12 @@ struct UnregisterApnsBody {
 }
 
 /// The app turned push off, or left for another server: forget its token.
-async fn unregister_apns_device(State(state): State<AppState>, ApiJson(body): ApiJson<UnregisterApnsBody>) -> Result<Json<Value>, AppError> {
+async fn unregister_apns_device(Scoped(state): Scoped, ApiJson(body): ApiJson<UnregisterApnsBody>) -> Result<Json<Value>, AppError> {
     state.store.delete_apns_device_by_token(&body.token.trim().to_ascii_lowercase()).await?;
     notification_status(&state).await.map(Json)
 }
 
-async fn delete_apns_device(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+async fn delete_apns_device(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let id = parse_id(&id, "device not found")?;
     if !state.store.delete_apns_device(id).await? {
         return Err(AppError::NotFound("device not found"));
@@ -1167,7 +1224,7 @@ const MAX_ANDROID_TOKEN_CHARS: usize = 2048;
 
 /// The Android app registered for push: keep its token or endpoint. Returns the settings with
 /// the phone as `device` (and its id as `device_id`, as for an iPhone).
-async fn register_android_device(State(state): State<AppState>, ApiJson(body): ApiJson<AndroidDeviceBody>) -> Result<Json<Value>, AppError> {
+async fn register_android_device(Scoped(state): Scoped, ApiJson(body): ApiJson<AndroidDeviceBody>) -> Result<Json<Value>, AppError> {
     let transport = body.transport.trim().to_ascii_lowercase();
     let token = body.token.trim().to_string();
     match transport.as_str() {
@@ -1200,12 +1257,12 @@ struct UnregisterAndroidBody {
 }
 
 /// The app turned push off, or left for another server: forget its token or endpoint.
-async fn unregister_android_device(State(state): State<AppState>, ApiJson(body): ApiJson<UnregisterAndroidBody>) -> Result<Json<Value>, AppError> {
+async fn unregister_android_device(Scoped(state): Scoped, ApiJson(body): ApiJson<UnregisterAndroidBody>) -> Result<Json<Value>, AppError> {
     state.store.delete_android_device_by_token(body.token.trim()).await?;
     notification_status(&state).await.map(Json)
 }
 
-async fn delete_android_device(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+async fn delete_android_device(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let id = parse_id(&id, "device not found")?;
     if !state.store.delete_android_device(id).await? {
         return Err(AppError::NotFound("device not found"));
@@ -1357,7 +1414,7 @@ fn exchanges(turns: &[Turn]) -> Vec<Exchange<'_>> {
 }
 
 async fn send_message(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path(id): Path<String>,
     ApiJson(body): ApiJson<MessageBody>,
 ) -> Result<(StatusCode, Json<Turn>), AppError> {
@@ -1509,7 +1566,7 @@ async fn clean_tools(state: &AppState, tools: Option<Vec<String>>) -> Result<Opt
 
 /// The saved defaults, plus cedar's own (`defaults`: its model, system prompt and turn limit, or
 /// `null` if cedar can't be reached) so the page can show what an unset field means.
-async fn get_settings(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn get_settings(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
     let prefs = state.store.preferences().await?;
     let defaults = match state.cedar.defaults().await {
         Ok(d) => d,
@@ -1523,7 +1580,7 @@ async fn get_settings(State(state): State<AppState>) -> Result<Json<Value>, AppE
     Ok(Json(body))
 }
 
-async fn put_settings(State(state): State<AppState>, ApiJson(body): ApiJson<SettingsBody>) -> Result<Json<Preferences>, AppError> {
+async fn put_settings(Scoped(state): Scoped, ApiJson(body): ApiJson<SettingsBody>) -> Result<Json<Preferences>, AppError> {
     let system = body.system.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
     if system.as_ref().is_some_and(|s| s.len() > MAX_SYSTEM_BYTES) {
         return Err(AppError::BadRequest(format!("system is longer than {MAX_SYSTEM_BYTES} bytes")));
@@ -1556,7 +1613,7 @@ struct LocaleBody {
 
 /// Save the user's language: what scheduled runs and notifications use, and what the pages and
 /// apps start in on a device that hasn't picked one.
-async fn put_locale(State(state): State<AppState>, ApiJson(body): ApiJson<LocaleBody>) -> Result<Json<Preferences>, AppError> {
+async fn put_locale(Scoped(state): Scoped, ApiJson(body): ApiJson<LocaleBody>) -> Result<Json<Preferences>, AppError> {
     let locale = i18n::clean_locale(body.locale.as_deref()).map_err(AppError::BadRequest)?;
     let mut prefs = state.store.preferences().await?;
     prefs.locale = locale;
@@ -1575,12 +1632,12 @@ struct SettingsBody {
 }
 
 /// cedar's tool groups, for the Tools settings and the composer's tools menu.
-async fn list_tools(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn list_tools(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
     Ok(Json(state.cedar.tools().await?))
 }
 
 /// The models cedar has registered, for the pickers.
-async fn list_models(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn list_models(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
     Ok(Json(json!({ "models": state.cedar.models().await? })))
 }
 
@@ -1590,7 +1647,7 @@ async fn list_models(State(state): State<AppState>) -> Result<Json<Value>, AppEr
 /// each item with the `conversation_id` and `title` of the conversation it was saved in, when
 /// that still exists here. `?archived=true`, `?kind=` and `?q=` go through to cedar. A cedar from
 /// before memory gives `supported: false` and no items.
-async fn list_memory(State(state): State<AppState>, Query(q): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
+async fn list_memory(Scoped(state): Scoped, Query(q): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
     let mut query: Vec<(&str, &str)> = q.iter().filter(|(k, _)| ["archived", "kind", "q"].contains(&k.as_str())).map(|(k, v)| (k.as_str(), v.as_str())).collect();
     // Without a kind, the rows about the user: what the phone apps, which predate kinds, list.
     if !q.contains_key("kind") && !q.contains_key("archived") {
@@ -1619,7 +1676,7 @@ struct MemoryBody {
     valid_until: Option<String>,
 }
 
-async fn add_memory(State(state): State<AppState>, ApiJson(body): ApiJson<MemoryBody>) -> Result<Json<Value>, AppError> {
+async fn add_memory(Scoped(state): Scoped, ApiJson(body): ApiJson<MemoryBody>) -> Result<Json<Value>, AppError> {
     let mut req = json!({ "text": body.text });
     if let Some(kind) = body.kind {
         req["kind"] = json!(kind);
@@ -1649,7 +1706,7 @@ fn deserialize_some<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Option<Str
     Option::<String>::deserialize(d).map(Some)
 }
 
-async fn patch_memory(State(state): State<AppState>, Path(id): Path<String>, ApiJson(body): ApiJson<MemoryChange>) -> Result<Json<Value>, AppError> {
+async fn patch_memory(Scoped(state): Scoped, Path(id): Path<String>, ApiJson(body): ApiJson<MemoryChange>) -> Result<Json<Value>, AppError> {
     let id = Uuid::parse_str(&id).map_err(|_| AppError::NotFound("memory not found"))?;
     let mut req = json!({});
     if let Some(v) = body.text {
@@ -1670,12 +1727,12 @@ async fn patch_memory(State(state): State<AppState>, Path(id): Path<String>, Api
     Ok(Json(state.cedar.patch_memory(id, &req).await?))
 }
 
-async fn memory_history(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+async fn memory_history(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let id = Uuid::parse_str(&id).map_err(|_| AppError::NotFound("memory not found"))?;
     Ok(Json(state.cedar.memory_history(id).await?))
 }
 
-async fn get_memory_profile(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn get_memory_profile(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
     Ok(Json(state.cedar.memory_profile().await?.unwrap_or_else(|| json!({ "profile": null }))))
 }
 
@@ -1685,21 +1742,21 @@ struct ProfileBody {
     text: String,
 }
 
-async fn put_memory_profile(State(state): State<AppState>, ApiJson(body): ApiJson<ProfileBody>) -> Result<Json<Value>, AppError> {
+async fn put_memory_profile(Scoped(state): Scoped, ApiJson(body): ApiJson<ProfileBody>) -> Result<Json<Value>, AppError> {
     Ok(Json(state.cedar.set_memory_profile(&body.text).await?))
 }
 
-async fn export_memory(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn export_memory(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
     Ok(Json(state.cedar.memory_export().await?))
 }
 
-async fn delete_memory(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, AppError> {
+async fn delete_memory(Scoped(state): Scoped, Path(id): Path<String>) -> Result<StatusCode, AppError> {
     let id = Uuid::parse_str(&id).map_err(|_| AppError::NotFound("memory not found"))?;
     state.cedar.delete_memory(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn delete_all_memory(State(state): State<AppState>) -> Result<StatusCode, AppError> {
+async fn delete_all_memory(Scoped(state): Scoped) -> Result<StatusCode, AppError> {
     state.cedar.delete_all_memory().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1708,7 +1765,7 @@ async fn delete_all_memory(State(state): State<AppState>) -> Result<StatusCode, 
 
 /// Settings -> Records: the record sets cedar's runs keep for the user, `{supported, sets,
 /// limits}`. A cedar from before records gives `supported: false` and no sets.
-async fn list_records(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
+async fn list_records(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
     let Some(mut body) = state.cedar.records().await? else {
         return Ok(Json(json!({ "supported": false, "sets": [], "limits": null })));
     };
@@ -1717,7 +1774,7 @@ async fn list_records(State(state): State<AppState>) -> Result<Json<Value>, AppE
 
 /// One set with its records, each with the `conversation_id` and `title` of the conversation
 /// whose run saved it last, when that still exists here.
-async fn get_record_set(State(state): State<AppState>, Path(name): Path<String>) -> Result<Json<Value>, AppError> {
+async fn get_record_set(Scoped(state): Scoped, Path(name): Path<String>) -> Result<Json<Value>, AppError> {
     let mut body = state.cedar.record_set(&set_name(&name)?).await?;
     let mut records = body["records"].as_array().cloned().unwrap_or_default();
     let runs: Vec<Uuid> = records.iter().filter_map(|r| r["run_id"].as_str()?.parse().ok()).collect();
@@ -1730,12 +1787,12 @@ async fn get_record_set(State(state): State<AppState>, Path(name): Path<String>)
     Ok(Json(json!({ "set": body["set"].take(), "records": records })))
 }
 
-async fn delete_record_set(State(state): State<AppState>, Path(name): Path<String>) -> Result<StatusCode, AppError> {
+async fn delete_record_set(Scoped(state): Scoped, Path(name): Path<String>) -> Result<StatusCode, AppError> {
     state.cedar.delete_record_set(&set_name(&name)?).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn delete_all_records(State(state): State<AppState>) -> Result<StatusCode, AppError> {
+async fn delete_all_records(Scoped(state): Scoped) -> Result<StatusCode, AppError> {
     state.cedar.delete_all_records().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1757,7 +1814,7 @@ struct ToolsBody {
 }
 
 async fn set_conversation_tools(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path(id): Path<String>,
     ApiJson(body): ApiJson<ToolsBody>,
 ) -> Result<Json<Conversation>, AppError> {
@@ -1811,7 +1868,7 @@ fn redirect_uri(state: &AppState, headers: &HeaderMap) -> String {
     format!("{}{GOOGLE_CALLBACK_PATH}", loopback.as_deref().unwrap_or(&state.cfg.public_url))
 }
 
-async fn get_integrations(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+async fn get_integrations(Scoped(state): Scoped, headers: HeaderMap) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     let mut status = state.cedar.integrations().await?;
     // To register with the Google OAuth client.
@@ -1827,7 +1884,7 @@ struct GoogleClientBody {
 }
 
 async fn put_google_client(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     headers: HeaderMap,
     ApiJson(body): ApiJson<GoogleClientBody>,
 ) -> Result<Json<Value>, AppError> {
@@ -1837,7 +1894,7 @@ async fn put_google_client(
     Ok(Json(status))
 }
 
-async fn delete_google_client(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+async fn delete_google_client(Scoped(state): Scoped, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_google_client().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -1850,7 +1907,7 @@ struct BraveKeyBody {
 }
 
 async fn put_brave_key(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     headers: HeaderMap,
     ApiJson(body): ApiJson<BraveKeyBody>,
 ) -> Result<Json<Value>, AppError> {
@@ -1858,14 +1915,14 @@ async fn put_brave_key(
     Ok(Json(state.cedar.set_brave_key(&body.api_key).await?))
 }
 
-async fn get_models(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+async fn get_models(Scoped(state): Scoped, headers: HeaderMap) -> Result<Json<Value>, AppError> {
     require_models_access(&state, &headers)?;
     Ok(Json(state.cedar.models_admin().await?))
 }
 
 /// The models a server lists (`{base_url, api_key?, id?}`, cedar's body, passed through), so the
 /// form offers names it serves.
-async fn list_server_models(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
+async fn list_server_models(Scoped(state): Scoped, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
     require_models_access(&state, &headers)?;
     if !body.is_object() {
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
@@ -1877,7 +1934,7 @@ async fn list_server_models(State(state): State<AppState>, headers: HeaderMap, A
 /// reasoning_levels?, default_reasoning?, multimodal?, max_tokens?, is_default?, price?}`) and
 /// goes through as it is; cedar checks it and the server it names.
 async fn put_model(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     headers: HeaderMap,
     Path(id): Path<String>,
     ApiJson(body): ApiJson<Value>,
@@ -1891,7 +1948,7 @@ async fn put_model(
 
 /// What a model's server reports about itself, for its row in Settings: cedar's `{available,
 /// ...}`, with llama.cpp's speed and token counts when the server offers them.
-async fn get_model_stats(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+async fn get_model_stats(Scoped(state): Scoped, headers: HeaderMap, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     require_models_access(&state, &headers)?;
     Ok(Json(state.cedar.model_stats(&id).await?))
 }
@@ -1899,14 +1956,14 @@ async fn get_model_stats(State(state): State<AppState>, headers: HeaderMap, Path
 /// cedar's server-wide settings (`{max_image_side, sandbox_idle_minutes, defaults}`): the longer
 /// side attached images are downscaled to, and how long an idle conversation's sandbox runs
 /// before it is paused.
-async fn get_server_settings(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+async fn get_server_settings(Scoped(state): Scoped, headers: HeaderMap) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     Ok(Json(state.cedar.server_settings().await?))
 }
 
 /// Change cedar's server-wide settings; the body (`{max_image_side?, sandbox_idle_minutes?, sandbox_runtime?, run_timeout_secs?}`)
 /// goes through as it is.
-async fn put_server_settings(State(state): State<AppState>, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
+async fn put_server_settings(Scoped(state): Scoped, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     if !body.is_object() {
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
@@ -1914,20 +1971,20 @@ async fn put_server_settings(State(state): State<AppState>, headers: HeaderMap, 
     Ok(Json(state.cedar.set_server_settings(&body).await?))
 }
 
-async fn delete_model(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, AppError> {
+async fn delete_model(Scoped(state): Scoped, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, AppError> {
     require_models_access(&state, &headers)?;
     state.cedar.remove_model(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn delete_brave_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+async fn delete_brave_key(Scoped(state): Scoped, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_brave_key().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn put_bestbuy_key(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     headers: HeaderMap,
     ApiJson(body): ApiJson<BraveKeyBody>,
 ) -> Result<Json<Value>, AppError> {
@@ -1935,14 +1992,14 @@ async fn put_bestbuy_key(
     Ok(Json(state.cedar.set_bestbuy_key(&body.api_key).await?))
 }
 
-async fn delete_bestbuy_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+async fn delete_bestbuy_key(Scoped(state): Scoped, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_bestbuy_key().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn put_serpapi_key(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     headers: HeaderMap,
     ApiJson(body): ApiJson<BraveKeyBody>,
 ) -> Result<Json<Value>, AppError> {
@@ -1950,14 +2007,14 @@ async fn put_serpapi_key(
     Ok(Json(state.cedar.set_serpapi_key(&body.api_key).await?))
 }
 
-async fn delete_serpapi_key(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+async fn delete_serpapi_key(Scoped(state): Scoped, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_serpapi_key().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn put_slack_token(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     headers: HeaderMap,
     ApiJson(body): ApiJson<BraveKeyBody>,
 ) -> Result<Json<Value>, AppError> {
@@ -1965,7 +2022,7 @@ async fn put_slack_token(
     Ok(Json(state.cedar.set_slack_token(&body.api_key).await?))
 }
 
-async fn delete_slack_token(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+async fn delete_slack_token(Scoped(state): Scoped, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_slack_token().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -1979,7 +2036,7 @@ fn path_name(value: &str, upper: bool) -> Result<&str, AppError> {
     if ok { Ok(value) } else { Err(AppError::BadRequest(format!("{value:?} is not a tool or secret name"))) }
 }
 
-async fn get_personal_tools(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+async fn get_personal_tools(Scoped(state): Scoped, headers: HeaderMap) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     Ok(Json(state.cedar.personal_tools().await?))
 }
@@ -1991,7 +2048,7 @@ struct ToolSecretBody {
 }
 
 async fn put_tool_secret(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     headers: HeaderMap,
     Path((name, secret)): Path<(String, String)>,
     ApiJson(body): ApiJson<ToolSecretBody>,
@@ -2000,13 +2057,13 @@ async fn put_tool_secret(
     Ok(Json(state.cedar.set_tool_secret(path_name(&name, false)?, path_name(&secret, true)?, &body.value).await?))
 }
 
-async fn delete_tool_secret(State(state): State<AppState>, headers: HeaderMap, Path((name, secret)): Path<(String, String)>) -> Result<StatusCode, AppError> {
+async fn delete_tool_secret(Scoped(state): Scoped, headers: HeaderMap, Path((name, secret)): Path<(String, String)>) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_tool_secret(path_name(&name, false)?, path_name(&secret, true)?).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn setup_tool(State(state): State<AppState>, headers: HeaderMap, Path(name): Path<String>) -> Result<Json<Value>, AppError> {
+async fn setup_tool(Scoped(state): Scoped, headers: HeaderMap, Path(name): Path<String>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     Ok(Json(state.cedar.setup_tool(path_name(&name, false)?).await?))
 }
@@ -2017,14 +2074,14 @@ struct MarketplaceQuery {
     refresh: bool,
 }
 
-async fn get_marketplace(State(state): State<AppState>, headers: HeaderMap, Query(q): Query<MarketplaceQuery>) -> Result<Json<Value>, AppError> {
+async fn get_marketplace(Scoped(state): Scoped, headers: HeaderMap, Query(q): Query<MarketplaceQuery>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     Ok(Json(state.cedar.marketplace(q.refresh).await?))
 }
 
 /// Install or update a community tool. The body is cedar's (`{accept: {network, secrets, pip,
 /// health_data}}`) and goes through as it is; cedar checks it against the release.
-async fn install_tool(State(state): State<AppState>, headers: HeaderMap, Path(name): Path<String>, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
+async fn install_tool(Scoped(state): Scoped, headers: HeaderMap, Path(name): Path<String>, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     if !body.is_object() {
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
@@ -2032,13 +2089,13 @@ async fn install_tool(State(state): State<AppState>, headers: HeaderMap, Path(na
     Ok(Json(state.cedar.install_tool(path_name(&name, false)?, &body).await?))
 }
 
-async fn uninstall_tool(State(state): State<AppState>, headers: HeaderMap, Path(name): Path<String>) -> Result<StatusCode, AppError> {
+async fn uninstall_tool(Scoped(state): Scoped, headers: HeaderMap, Path(name): Path<String>) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.uninstall_tool(path_name(&name, false)?).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn connect_google(State(state): State<AppState>, headers: HeaderMap, Query(params): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
+async fn connect_google(Scoped(state): Scoped, headers: HeaderMap, Query(params): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     let url = state.cedar.google_authorize(&redirect_uri(&state, &headers)).await?;
     // The desktop app opens Google's page in the default browser: its embedded web view can't
@@ -2061,7 +2118,7 @@ fn google_state(url: &str) -> Option<String> {
     url.query_pairs().find(|(k, _)| k == "state").map(|(_, v)| v.into_owned())
 }
 
-async fn delete_google(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, AppError> {
+async fn delete_google(Scoped(state): Scoped, headers: HeaderMap) -> Result<StatusCode, AppError> {
     require_admin(&state, &headers)?;
     state.cedar.remove_google().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -2127,7 +2184,7 @@ struct Compacted {
 }
 
 /// Have the model turn the conversation so far into one prompt, for scheduling it.
-async fn compact_conversation(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Compacted>, AppError> {
+async fn compact_conversation(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Compacted>, AppError> {
     let conversation = find_conversation(&state, &id).await?;
     let turns = settled_turns(&state, &conversation).await?;
     let last = turns
@@ -2154,7 +2211,7 @@ async fn compact_conversation(State(state): State<AppState>, Path(id): Path<Stri
 /// The conversation as it would be contributed, with why it can't be, if it can't (see
 /// `contrib::preview`). `?reasoning=1` and `?fetched=1` include what is left out by default.
 async fn contribution_preview(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path(id): Path<String>,
     ApiQuery(opts): ApiQuery<contrib::Options>,
 ) -> Result<Json<contrib::Preview>, AppError> {
@@ -2173,7 +2230,7 @@ struct SendBody {
 
 /// Send the bundle the dialog holds to the corpus; answers with the receipt.
 async fn send_contribution(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path(id): Path<String>,
     ApiJson(body): ApiJson<SendBody>,
 ) -> Result<(StatusCode, Json<Contribution>), AppError> {
@@ -2187,23 +2244,23 @@ struct ContributionList {
     contributions: Vec<Contribution>,
 }
 
-async fn list_contributions(State(state): State<AppState>) -> Result<Json<ContributionList>, AppError> {
+async fn list_contributions(Scoped(state): Scoped) -> Result<Json<ContributionList>, AppError> {
     Ok(Json(ContributionList { contributions: state.store.list_contributions().await? }))
 }
 
 /// Ask the corpus what became of the contributions (their screening and release status).
-async fn refresh_contributions(State(state): State<AppState>) -> Result<Json<ContributionList>, AppError> {
+async fn refresh_contributions(Scoped(state): Scoped) -> Result<Json<ContributionList>, AppError> {
     Ok(Json(ContributionList { contributions: contrib::refresh_statuses(&state, 50).await? }))
 }
 
-async fn withdraw_contribution(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Contribution>, AppError> {
+async fn withdraw_contribution(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Contribution>, AppError> {
     if id.len() > 100 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
         return Err(AppError::NotFound("no such contribution"));
     }
     Ok(Json(contrib::withdraw(&state, &id).await?))
 }
 
-async fn get_contribution_settings(State(state): State<AppState>) -> Result<Json<contrib::SettingsView>, AppError> {
+async fn get_contribution_settings(Scoped(state): Scoped) -> Result<Json<contrib::SettingsView>, AppError> {
     let settings = state.store.contribution_settings().await?;
     Ok(Json(contrib::settings_view(&state, settings)))
 }
@@ -2226,7 +2283,7 @@ struct ContributionSettingsBody {
 }
 
 async fn put_contribution_settings(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     ApiJson(body): ApiJson<ContributionSettingsBody>,
 ) -> Result<Json<contrib::SettingsView>, AppError> {
     let mut settings = state.store.contribution_settings().await?;
@@ -2267,7 +2324,7 @@ struct RatingBody {
 }
 
 /// The person's thumbs on a response.
-async fn rate_turn(State(state): State<AppState>, Path(id): Path<String>, ApiJson(body): ApiJson<RatingBody>) -> Result<Json<Turn>, AppError> {
+async fn rate_turn(Scoped(state): Scoped, Path(id): Path<String>, ApiJson(body): ApiJson<RatingBody>) -> Result<Json<Turn>, AppError> {
     if body.rating.is_some_and(|r| r != 1 && r != -1) {
         return Err(AppError::BadRequest("rating must be 1, -1 or null".into()));
     }
@@ -2413,7 +2470,7 @@ async fn with_turns(state: &AppState, runs: Vec<ScheduleRun>) -> Result<Vec<RunD
     Ok(out)
 }
 
-async fn list_schedules(State(state): State<AppState>) -> Result<Json<ScheduleList>, AppError> {
+async fn list_schedules(Scoped(state): Scoped) -> Result<Json<ScheduleList>, AppError> {
     let mut schedules = Vec::new();
     for schedule in state.store.list_time_schedules().await? {
         let last = state.store.list_schedule_runs(schedule.id, 1).await?;
@@ -2424,7 +2481,7 @@ async fn list_schedules(State(state): State<AppState>) -> Result<Json<ScheduleLi
 }
 
 async fn create_schedule(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     ApiJson(body): ApiJson<ScheduleBody>,
 ) -> Result<(StatusCode, Json<Schedule>), AppError> {
     let title = clean_title(body.title)?.ok_or_else(|| AppError::BadRequest("title must not be empty".into()))?;
@@ -2472,14 +2529,14 @@ async fn create_schedule(
     Ok((StatusCode::CREATED, Json(schedule)))
 }
 
-async fn get_schedule(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<ScheduleDetail>, AppError> {
+async fn get_schedule(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<ScheduleDetail>, AppError> {
     let schedule = find_schedule(&state, &id).await?;
     let runs = with_turns(&state, state.store.list_schedule_runs(schedule.id, MAX_SCHEDULE_RUNS).await?).await?;
     Ok(Json(ScheduleDetail { schedule, runs }))
 }
 
 async fn update_schedule(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path(id): Path<String>,
     ApiJson(body): ApiJson<ScheduleBody>,
 ) -> Result<Json<Schedule>, AppError> {
@@ -2533,14 +2590,14 @@ async fn update_schedule(
     Ok(Json(schedule))
 }
 
-async fn delete_schedule(State(state): State<AppState>, Path(id): Path<String>) -> Result<StatusCode, AppError> {
+async fn delete_schedule(Scoped(state): Scoped, Path(id): Path<String>) -> Result<StatusCode, AppError> {
     let schedule = find_schedule(&state, &id).await?;
     remove_schedule(&state, &schedule).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// Start a run right now, outside the schedule. Doesn't move the next scheduled run.
-async fn run_schedule_now(State(state): State<AppState>, Path(id): Path<String>) -> Result<(StatusCode, Json<RunDetail>), AppError> {
+async fn run_schedule_now(Scoped(state): Scoped, Path(id): Path<String>) -> Result<(StatusCode, Json<RunDetail>), AppError> {
     let schedule = find_schedule(&state, &id).await?;
     Ok((StatusCode::ACCEPTED, Json(start_now(&state, &schedule).await?)))
 }
@@ -2554,7 +2611,7 @@ async fn latest_run(state: &AppState, raw_id: &str) -> Result<Option<Uuid>, AppE
     Ok(state.store.list_turns(conversation.id).await?.last().map(|t| t.run_id))
 }
 
-async fn list_files(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<serde_json::Value>, AppError> {
+async fn list_files(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<serde_json::Value>, AppError> {
     match latest_run(&state, &id).await? {
         Some(run_id) => Ok(Json(state.cedar.list_files(run_id).await?)),
         None => Ok(Json(json!({ "workspace_id": null, "files": [], "truncated": false }))),
@@ -2562,7 +2619,7 @@ async fn list_files(State(state): State<AppState>, Path(id): Path<String>) -> Re
 }
 
 /// Relay a file download from cedar, keeping the headers that describe the file.
-async fn download_file(State(state): State<AppState>, Path((id, path)): Path<(String, String)>) -> Result<Response, AppError> {
+async fn download_file(Scoped(state): Scoped, Path((id, path)): Path<(String, String)>) -> Result<Response, AppError> {
     let run_id = latest_run(&state, &id).await?.ok_or(AppError::NotFound("no such file in the workspace"))?;
     let upstream = state.cedar.download_file(run_id, &path).await?;
     let mut headers = axum::http::HeaderMap::new();
@@ -2582,7 +2639,7 @@ struct EventsParams {
 
 /// Relay the cedar event stream for a turn's run: replay from `after`, then follow it live.
 async fn turn_events(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path(id): Path<String>,
     ApiQuery(params): ApiQuery<EventsParams>,
 ) -> Result<Response, AppError> {
@@ -2598,12 +2655,12 @@ async fn turn_events(
 
 /// The trace of a turn's run, for the expert view: every model call with what it was sent and
 /// what came back, beside the run's conversation and events.
-async fn turn_trace(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+async fn turn_trace(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let turn = find_turn(&state, &id).await?;
     Ok(Json(state.cedar.trace(turn.run_id).await?))
 }
 
-async fn cancel_turn(State(state): State<AppState>, Path(id): Path<String>) -> Result<(StatusCode, Json<Turn>), AppError> {
+async fn cancel_turn(Scoped(state): Scoped, Path(id): Path<String>) -> Result<(StatusCode, Json<Turn>), AppError> {
     let turn = refresh(&state, find_turn(&state, &id).await?).await?;
     if cedar::is_terminal(&turn.status) {
         return Err(AppError::Conflict(format!("the response already {}", turn.status)));
@@ -2615,7 +2672,7 @@ async fn cancel_turn(State(state): State<AppState>, Path(id): Path<String>) -> R
 /// Agree to the plan a turn's run is waiting on (`{"steps": [{id, title}, ...]}`); cedar checks
 /// the steps and says whether the run is waiting.
 async fn approve_plan(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path(id): Path<String>,
     ApiJson(body): ApiJson<PlanBody>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
@@ -2632,7 +2689,7 @@ struct PlanBody {
 
 /// Answer an approval a turn's run is waiting on: `allow`, `allow_always` or `deny`.
 async fn decide_approval(
-    State(state): State<AppState>,
+    Scoped(state): Scoped,
     Path((id, approval_id)): Path<(String, String)>,
     ApiJson(body): ApiJson<ApprovalBody>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
@@ -2660,9 +2717,13 @@ mod tests {
     async fn event_streams_end_when_the_server_shuts_down() {
         let (tx, rx) = broadcast::channel(4);
         let shutdown = CancellationToken::new();
-        let mut stream = Box::pin(relay_stream(rx, shutdown.clone()));
-        tx.send(json!({"type": "turn.finished"})).unwrap();
-        assert!(stream.next().await.is_some());
+        let (me, other) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut stream = Box::pin(relay_stream(rx, me, shutdown.clone()));
+        // Another user's notice is passed over.
+        tx.send((other, json!({"type": "turn.finished", "title": "theirs"}))).unwrap();
+        tx.send((me, json!({"type": "turn.finished", "title": "mine"}))).unwrap();
+        let first = tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await.unwrap();
+        assert!(format!("{first:?}").contains("mine"), "{first:?}");
         shutdown.cancel();
         let end = tokio::time::timeout(std::time::Duration::from_secs(1), stream.next()).await;
         assert!(matches!(end, Ok(None)), "the stream kept going after shutdown");

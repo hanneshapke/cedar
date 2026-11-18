@@ -29,7 +29,14 @@ pub struct CedarClient {
     http: reqwest::Client,
     base_url: String,
     api_key: String,
+    /// The user the requests are for (`X-Cedar-User`); `None` for this service's own key, which
+    /// is also who the primary user's runs, memories and records belong to.
+    user: Option<Uuid>,
 }
+
+/// The header that names the user a request is for. cedar takes it from a key in its
+/// `CEDAR_SERVICE_KEYS` only.
+pub const USER_HEADER: &str = "x-cedar-user";
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// A tool called outside a run may start a container first, and may have to wait for a slot.
@@ -52,7 +59,12 @@ impl CedarClient {
     pub fn new(base_url: &str, api_key: &str) -> anyhow::Result<Self> {
         // No overall timeout on the client: event streams stay open for the whole run.
         let http = reqwest::Client::builder().connect_timeout(Duration::from_secs(10)).build()?;
-        Ok(Self { http, base_url: base_url.trim_end_matches('/').to_string(), api_key: api_key.to_string() })
+        Ok(Self { http, base_url: base_url.trim_end_matches('/').to_string(), api_key: api_key.to_string(), user: None })
+    }
+
+    /// The same client, for `user`'s runs, memories and records (`None`: the key's own).
+    pub fn as_user(&self, user: Option<Uuid>) -> Self {
+        Self { user, ..self.clone() }
     }
 
     fn url(&self, path: &str) -> String {
@@ -60,6 +72,10 @@ impl CedarClient {
     }
 
     async fn send(&self, req: reqwest::RequestBuilder) -> Result<reqwest::Response, AppError> {
+        let req = match self.user {
+            Some(user) => req.header(USER_HEADER, user.to_string()),
+            None => req,
+        };
         let resp = req
             .bearer_auth(&self.api_key)
             .send()
@@ -468,8 +484,19 @@ impl CedarClient {
     }
 
     /// Open the key's stream of finished runs (`GET /v1/events`), from after notification `after`.
-    pub async fn notifications(&self, after: i64) -> Result<reqwest::Response, AppError> {
-        self.send(self.http.get(self.url("/events")).query(&[("after", after)])).await
+    /// With `users`, every user's are in it too (`?users=all`), which cedar gives a service key.
+    pub async fn notifications(&self, after: i64, users: bool) -> Result<reqwest::Response, AppError> {
+        let mut req = self.http.get(self.url("/events")).query(&[("after", after)]);
+        if users {
+            req = req.query(&[("users", "all")]);
+        }
+        self.send(req).await
+    }
+
+    /// Whether cedar lets this client act for its user: one small request as them. `Forbidden`
+    /// when this service's key is not in cedar's `CEDAR_SERVICE_KEYS`.
+    pub async fn check_user(&self) -> Result<(), AppError> {
+        self.send(self.http.get(self.url("/runs")).query(&[("limit", 1)]).timeout(REQUEST_TIMEOUT)).await.map(|_| ())
     }
 
     /// Ask cedar to compact a finished run's conversation into one self-contained prompt.

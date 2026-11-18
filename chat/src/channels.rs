@@ -557,7 +557,7 @@ pub async fn send(state: &AppState, settings: &NotificationSettings, method: Met
 fn send_desktop(state: &AppState, message: &Message) -> Result<String, String> {
     let mut payload = serde_json::to_value(message).map_err(|e| e.to_string())?;
     payload["type"] = json!("notification");
-    match state.desktop.send(payload) {
+    match state.desktop.send((state.user(), payload)) {
         Ok(_) => Ok("handed to the Cedar app".into()),
         Err(_) => Err("the Cedar app for macOS is not listening; is it running?".into()),
     }

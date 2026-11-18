@@ -151,7 +151,7 @@ impl AppState {
             cfg.max_concurrent_runs,
             cfg.run_timeout,
         );
-        let auth = AuthKeys::with_admins(&cfg.api_keys, &cfg.admin_keys);
+        let auth = AuthKeys::with_roles(&cfg.api_keys, &cfg.admin_keys, &cfg.service_keys);
         let webhooks = Arc::new(Webhooks::new(
             store.clone(),
             hub.clone(),
@@ -1636,6 +1636,8 @@ async fn delete_run(
 #[derive(Deserialize)]
 struct EventsParams {
     after: Option<i64>,
+    /// `all`, from a service key: the finished runs of every user it may act for, and its own.
+    users: Option<String>,
 }
 
 async fn stream_events(
@@ -1666,13 +1668,25 @@ async fn stream_events(
 }
 
 /// `GET /v1/events`: the key's finished runs as Server-Sent Events, from after `after` (or the
-/// `Last-Event-ID` header) onwards, live. See [`sse::notification_stream`].
+/// `Last-Event-ID` header) onwards, live. See [`sse::notification_stream`]. With `?users=all`, a
+/// service key gets its users' as well, in one stream.
 async fn stream_notifications(
     State(state): State<AppState>,
     Extension(owner): Extension<Owner>,
+    Extension(service): Extension<crate::auth::Service>,
     ApiQuery(params): ApiQuery<EventsParams>,
     headers: HeaderMap,
-) -> Sse<impl Stream<Item = Result<axum::response::sse::Event, Infallible>>> {
+) -> Result<Sse<impl Stream<Item = Result<axum::response::sse::Event, Infallible>>>, AppError> {
+    let users = match params.users.as_deref() {
+        None => false,
+        Some("all") if service.0 => true,
+        Some("all") => {
+            return Err(AppError::Forbidden(
+                "this API key may not follow users' runs (see CEDAR_SERVICE_KEYS)",
+            ))
+        }
+        Some(_) => return Err(AppError::BadRequest("users must be \"all\"".into())),
+    };
     let after = params
         .after
         .or_else(|| {
@@ -1683,7 +1697,13 @@ async fn stream_notifications(
         })
         .unwrap_or(0)
         .max(0);
-    sse::notification_stream(state.store.clone(), state.hub.clone(), owner.0, after)
+    Ok(sse::notification_stream(
+        state.store.clone(),
+        state.hub.clone(),
+        owner.0,
+        users,
+        after,
+    ))
 }
 
 // -- compaction -----------------------------------------------------------------------------

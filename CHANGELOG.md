@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The groundwork for more than one person on a server.** cedar-chat now has users: `POST /api/users` (with the admin token) adds one and answers with their own access token, and everything a person makes is theirs alone, here (conversations, agents, settings, notification devices, contribution receipts) and in cedar (runs, traces, memories, records). cedar takes the user from an `X-Cedar-User` header, which only a key in the new `CEDAR_SERVICE_KEYS` may send, and gives such a key one stream of every user's finished runs (`GET /v1/events?users=all`). A server with one user changes nothing: what was there belongs to the primary user, who is still whoever has `CHAT_ACCESS_TOKEN`, and whose runs and memories stay under cedar-chat's own key. Models, integrations (the Google account, Slack) and personal tools are still shared by everyone on the server, and users are managed over the API only.
 - **The phone apps are released only when they change.** Cedar, the Android app and the iOS app share `major.minor` and now count patch versions on their own: a release ships the platforms whose version it bumps (`scripts/bump-version.sh` picks the ones that changed), each under its own tag (`v…`, `android-v…`, `ios-v…`). So 0.11.2 on the desktop next to 0.11.0 on a phone is the same Cedar 0.11, and a desktop fix no longer sends an unchanged app to TestFlight.
 
 ## 0.10.1

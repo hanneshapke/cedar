@@ -592,18 +592,22 @@ impl Store {
 
     // -- notifications ----------------------------------------------------------------------
 
-    /// An owner's notifications with `id > after`, oldest first. Deleted runs' are gone.
+    /// An owner's notifications with `id > after`, oldest first. Deleted runs' are gone. With
+    /// `users`, those of every user a service key acted for as well: their owner is a UUID
+    /// (36 characters), where a key's is its 16-character hash.
     pub async fn notifications_after(
         &self,
         owner: &str,
+        users: bool,
         after: i64,
         limit: u32,
     ) -> Result<Vec<Notification>> {
         let rows = sqlx::query(&format!(
             "SELECT {NOTIFICATION_COLS} FROM run_notifications n JOIN runs r ON r.id = n.run_id \
-             WHERE n.owner = ? AND n.id > ? ORDER BY n.id LIMIT ?"
+             WHERE (n.owner = ? OR (? AND length(n.owner) = 36)) AND n.id > ? ORDER BY n.id LIMIT ?"
         ))
         .bind(owner)
+        .bind(users)
         .bind(after)
         .bind(limit as i64)
         .fetch_all(&self.pool)
@@ -1344,12 +1348,12 @@ mod tests {
             None
         );
         // The notification is in the owner's stream, and nothing is queued for delivery.
-        let notes = store.notifications_after("a", 0, 10).await.unwrap();
+        let notes = store.notifications_after("a", false, 0, 10).await.unwrap();
         assert_eq!(notes.len(), 1);
         assert_eq!((notes[0].id, notes[0].run_id, notes[0].seq), (finished.notification, run.id, 2));
         assert_eq!((notes[0].kind, notes[0].stop_reason.as_deref()), ("run.completed", Some("end_turn")));
-        assert!(store.notifications_after("a", finished.notification, 10).await.unwrap().is_empty());
-        assert!(store.notifications_after("b", 0, 10).await.unwrap().is_empty());
+        assert!(store.notifications_after("a", false, finished.notification, 10).await.unwrap().is_empty());
+        assert!(store.notifications_after("b", false, 0, 10).await.unwrap().is_empty());
         assert!(store.due_deliveries(10).await.unwrap().is_empty());
         assert_eq!(store.next_delivery_at().await.unwrap(), None);
 
@@ -1418,7 +1422,7 @@ mod tests {
         store.finish_run(own.id, completed("ok")).await.unwrap();
         assert!(store.delete_finished_run(own.id).await.unwrap());
         assert_eq!(store.delivery_status(own.id).await.unwrap(), None);
-        assert_eq!(store.notifications_after("a", 0, 10).await.unwrap().len(), 2);
+        assert_eq!(store.notifications_after("a", false, 0, 10).await.unwrap().len(), 2);
     }
 
     #[tokio::test]

@@ -192,6 +192,7 @@ sudo install -d -m 0755 /etc/cedar
 sudo tee /etc/cedar/cedar.env >/dev/null <<EOF
 CEDAR_API_KEYS=$CEDAR_KEY
 CEDAR_ADMIN_KEYS=$CEDAR_KEY           # lets the chat UI register models and save keys
+CEDAR_SERVICE_KEYS=$CEDAR_KEY         # lets the chat UI have more than one user (chat/README.md#users)
 CEDAR_SECRET_KEY=$SECRET_KEY
 BIND_ADDR=127.0.0.1:8080
 DATABASE_URL=sqlite:///var/lib/cedar/cedar.db
