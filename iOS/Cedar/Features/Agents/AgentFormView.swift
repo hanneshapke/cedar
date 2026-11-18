@@ -69,7 +69,8 @@ struct AgentFormView: View {
                 if draft.canTest { tryIt }
                 if draft.byEvent { limits }
                 tools
-                model
+                // While the server picks the model, an agent has none of its own to choose.
+                if app.modelSelection { model }
                 notify
                 if let error {
                     Section {

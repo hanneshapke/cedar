@@ -90,6 +90,9 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var conversations by mutableStateOf<List<Conversation>>(emptyList())
         private set
     var models by mutableStateOf<List<ModelInfo>>(emptyList())
+
+    /** Whether people choose the model (see [dev.cedar.core.ModelList]); off, the server does and the pickers are hidden. */
+    var modelSelection by mutableStateOf(true)
         private set
 
     /** How many finished responses nobody has looked at (the bell in the web UI). */
@@ -355,6 +358,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             agentForm = null
             hookSecrets.clear()
             models = emptyList()
+            modelSelection = true
             modelsLoaded = false
             serverHasMemory = false
             serverHasContributions = false
@@ -583,7 +587,9 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             }
             if (!modelsLoaded) {
                 modelsLoaded = true
-                models = runCatching { client.models() }.getOrDefault(emptyList())
+                val list = runCatching { client.modelList() }.getOrNull()
+                models = list?.models.orEmpty()
+                modelSelection = list?.selection ?: true
                 val config = runCatching { client.config() }.getOrNull()
                 serverHasMemory = config?.memory ?: false
                 serverHasRecords = config?.records ?: false

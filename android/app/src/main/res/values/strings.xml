@@ -56,6 +56,7 @@
     <string name="reasoning_default">Default</string>
     <string name="models_footnote_empty">The AI models your server offers are listed once it is reachable.</string>
     <string name="models_footnote">Which AI answers your messages, and how hard it thinks before answering. Tools, the turn limit and the system prompt follow the server’s Settings.</string>
+    <string name="models_footnote_auto">Cedar picks the AI model for each message: a bigger one for planning and complex tasks, a smaller one for everyday requests. To choose yourself, turn on “Choose the model yourself” under Advanced settings in the web chat.</string>
     <string name="plan">Plan</string>
     <string name="plan_mode_server">Server setting</string>
     <string name="plan_mode_tool">When Cedar thinks it helps</string>

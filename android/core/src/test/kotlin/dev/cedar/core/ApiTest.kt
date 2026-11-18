@@ -157,6 +157,9 @@ class ApiTest {
         assertEquals(listOf("low", "high"), models.models[0].reasoningLevels)
         assertTrue(models.models[0].isDefault)
         assertEquals("bare", models.models[1].label)
+        // A server from before the setting has people choose the model; a newer one says.
+        assertTrue(models.selection)
+        assertTrue(!CedarJson.decodeFromString(ModelList.serializer(), """{"models":[],"selection":false}""").selection)
     }
 
     @Test

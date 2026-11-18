@@ -823,8 +823,9 @@ parameter count, `8b`, `70b`) and has the bigger model plan, review and take com
 and long tasks, and the smaller one answer everyday requests (see "Which model a run gets" in
 [cedar's README](../README.md#which-model-a-run-gets)). With the switch on, the send button's
 menu, the agent form and *Default model* on the Models page are back, and each message goes to
-the model you chose. Whoever may manage the models may flip the switch. The phone apps still
-show their pickers either way; while the switch is off, what they pick is not passed on.
+the model you chose. Whoever may manage the models may flip the switch. The phone apps
+follow the same switch: while it is off, their Settings and agent form show no model picker, and
+a note says where to turn it on.
 
 The **Models** list in that section shows every model cedar has registered: its label, the model
 name and the server it is on, whether an API key is saved, its reasoning levels, and which one is

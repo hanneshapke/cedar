@@ -497,8 +497,23 @@ struct ModelInfo: Decodable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// `GET /api/models`. `selection` is whether people choose the model themselves (the server's
+/// "Choose the model yourself" setting). Off, cedar picks the model of every message by the
+/// models' sizes, ignores a model or reasoning level sent to it, and the pickers stay hidden. A
+/// server from before the setting doesn't say, and has people choose.
 struct ModelList: Decodable, Sendable {
     let models: [ModelInfo]
+    let selection: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case models, selection
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        models = try c.decodeIfPresent([ModelInfo].self, forKey: .models) ?? []
+        selection = try c.decodeIfPresent(Bool.self, forKey: .selection) ?? true
+    }
 }
 
 /// A conversation as cedar-chat keeps it: its title, the model it last used, and whether a

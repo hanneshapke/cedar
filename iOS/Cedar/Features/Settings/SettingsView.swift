@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var draft = ServerSettings(serverURL: "", accessToken: "", model: "", reasoning: "")
     @State private var check: CheckState = .idle
     @State private var models: [ModelInfo] = []
+    /// Whether people choose the model (see `ModelList`), as the server last said.
+    @State private var modelSelection = true
     @State private var scanning = false
     /// Set by a scan, so the connection is tested once the scanner is gone.
     @State private var scanned = false
@@ -97,6 +99,7 @@ struct SettingsView: View {
                 started = true
                 draft = app.settings
                 models = app.models
+                modelSelection = app.modelSelection
             }
             .onAppear { tailscaleInstalled = TailscaleApp.isInstalled }
             .task { await readNotificationStatus() }
@@ -252,7 +255,23 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
     private var model: some View {
+        if modelSelection || models.isEmpty {
+            modelPickers
+        } else {
+            // The server picks the model: there is nothing to choose here.
+            Section {
+                Text(L10n.string("Cedar picks the AI model for each message: a bigger one for planning and complex tasks, a smaller one for everyday requests. To choose yourself, turn on \u{201C}Choose the model yourself\u{201D} under Advanced settings in the web chat."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("AI Model")
+            }
+        }
+    }
+
+    private var modelPickers: some View {
         Section {
             Picker("AI Model", selection: $draft.model) {
                 Text("Server default").tag("")
@@ -465,7 +484,9 @@ struct SettingsView: View {
         do {
             let client = try ChatClient(settings: draft)
             try await client.verify()
-            models = (try? await client.models()) ?? []
+            let list = try? await client.modelList()
+            models = list?.models ?? []
+            modelSelection = list?.selection ?? true
             check = .ok(modelCount: models.count)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch {

@@ -82,9 +82,13 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
     val isActive: Boolean get() = pendingPrompt != null || turns.any { it.isActive }
     val canSend: Boolean get() = !isActive && !isAddingAttachments && draft.isNotBlank()
 
-    /** Whether the model new messages go to takes images: the one picked in Settings, or the server's default. PDFs go with any model. */
+    /**
+     * Whether the model new messages go to takes images: the one picked in Settings, or the server's default; while the
+     * server picks the model, whether any model does (an image then goes to one that takes it). PDFs go with any model.
+     */
     val acceptsImages: Boolean
         get() {
+            if (!app.modelSelection) return app.models.any { it.multimodal }
             val model = if (app.settings.model.isEmpty()) app.models.firstOrNull { it.isDefault } else app.models.firstOrNull { it.id == app.settings.model }
             return model?.multimodal ?: false
         }
@@ -294,8 +298,9 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
             }
             val turn = client.send(id, ChatClient.SendMessage(
                 content = text,
-                model = settings.model.ifEmpty { null },
-                reasoning = settings.reasoning.ifEmpty { null },
+                // While the server picks the model, a pick saved earlier is not sent.
+                model = settings.model.ifEmpty { null }.takeIf { app.modelSelection },
+                reasoning = settings.reasoning.ifEmpty { null }.takeIf { app.modelSelection },
                 plan = settings.plan.ifEmpty { null },
                 // The agent answers, and formats, in the user's locale.
                 locale = app.locale,

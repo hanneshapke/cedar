@@ -66,8 +66,12 @@ struct ChatClient: Sendable {
     }
 
     func models() async throws -> [ModelInfo] {
-        let list: ModelList = try await decode(makeRequest("api/models"))
-        return list.models
+        try await modelList().models
+    }
+
+    /// The models, and whether people choose among them (see `ModelList`).
+    func modelList() async throws -> ModelList {
+        try await decode(makeRequest("api/models"))
     }
 
     // MARK: Memory
