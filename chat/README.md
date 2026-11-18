@@ -330,11 +330,20 @@ traces, memories and records are filed under the user's id, so the Memory and Re
 theirs too. The primary user's stay where they always were, under this server's own key, which is
 why adding users changes nothing for a server that had one.
 
+The Google account under Settings → **Server** is the primary user's. Everyone else connects
+their own, without the admin token: Settings → **Tools** shows *Your Google account* with a
+**Connect Google** button, once an admin has saved the OAuth client. Until they do, their messages
+and agents have no Gmail, Calendar, Drive or Sheets tools; nobody's runs can read another person's
+mail. If the OAuth client is still in *Testing* in the Google Cloud console, each person's address
+has to be on its list of test users.
+
 Shared by everyone on the server, for now: the models and the server settings (with the default
-`CHAT_MODELS_ACCESS=users`, any user can change them), the integrations (every user's runs can use
-the one connected Google account and Slack token), the personal tools, and
-[pairing](#pairing-the-ios-and-android-apps), whose code carries `CHAT_ACCESS_TOKEN` and so signs
-a phone in as the primary user. There is no page for managing users yet.
+`CHAT_MODELS_ACCESS=users`, any user can change them), the other integrations (the search keys,
+and the Slack token, which every user's runs can use), and the personal tools. There is no page for
+managing users yet.
+
+[Pairing](#pairing-the-ios-and-android-apps) a phone hands it the token of whoever opened the
+page, so the phone is theirs; the shared `CHAT_ACCESS_TOKEN` is shown to the primary user only.
 
 ## Updates
 
@@ -995,7 +1004,10 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/users` | Admin: add a user, `{"name"}`. `201` with `{user, token}`; the token is not shown again. `409` when cedar doesn't let this server act for users |
 | `PATCH /api/users/{id}` | Admin: rename, `{"name"}` |
 | `POST /api/users/{id}/token` | Admin: a new token for the user, `{user, token}`; the old one stops working |
-| `DELETE /api/users/{id}` | Admin: remove a user with their conversations, agents, settings and devices here and their runs, memories and records in cedar. `409` for the primary user |
+| `DELETE /api/users/{id}` | Admin: remove a user with their conversations, agents, settings and devices here and their runs, memories, records and Google account in cedar. `409` for the primary user |
+| `GET /api/google` | The caller's own Google account, as cedar's `GET /v1/google` gives it: `{available, reason, services, connected, account?, missing_scopes?, server}`; `server: true` for the primary user, whose account is the server's |
+| `POST /api/google/connect` | Start connecting the caller's own account: `{url}` to go to (`?browser=1` from the desktop app, as for the server's). `409` for the primary user |
+| `DELETE /api/google` | Disconnect the caller's own account |
 | `GET /api/config` | `{auth_required, admin_enabled, models_access, memory, contributions}`; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), `contributions` is whether `CHAT_CONTRIBUTIONS_URL` is set, and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |

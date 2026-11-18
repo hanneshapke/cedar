@@ -370,9 +370,30 @@ impl CedarClient {
         resp["url"].as_str().map(String::from).ok_or_else(|| AppError::BadGateway("cedar returned no sign-in URL".into()))
     }
 
+    /// Finish a "Connect Google", the server's account or a user's own: the `state` cedar issued
+    /// says which, so this needs no user (Google sends the browser back without their token).
     pub async fn google_callback(&self, state: &str, code: &str) -> Result<Value, AppError> {
-        let req = self.http.post(self.url("/admin/integrations/google/callback")).json(&json!({ "state": state, "code": code }));
+        let req = self.http.post(self.url("/google/callback")).json(&json!({ "state": state, "code": code }));
         admin(self.json(req).await)
+    }
+
+    /// The Google account this client's user connected themselves: `{available, reason,
+    /// services, connected, account?, scopes?, missing_scopes?, server}`. `server` is set for the
+    /// key itself (the primary user), whose runs use the server's account.
+    pub async fn own_google(&self) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url("/google"))).await
+    }
+
+    /// Start connecting the user's own Google account: the URL to send their browser to.
+    pub async fn own_google_authorize(&self, redirect_uri: &str) -> Result<String, AppError> {
+        let req = self.http.post(self.url("/google/authorize")).json(&json!({ "redirect_uri": redirect_uri }));
+        let resp: Value = self.json(req).await?;
+        resp["url"].as_str().map(String::from).ok_or_else(|| AppError::BadGateway("cedar returned no sign-in URL".into()))
+    }
+
+    /// Disconnect the user's own Google account.
+    pub async fn remove_own_google(&self) -> Result<(), AppError> {
+        self.send(self.http.delete(self.url("/google")).timeout(REQUEST_TIMEOUT)).await.map(drop)
     }
 
     pub async fn remove_google(&self) -> Result<(), AppError> {

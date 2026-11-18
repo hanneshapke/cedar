@@ -68,14 +68,16 @@ fn host(url: &str) -> &str {
     authority.rsplit_once(':').map_or(authority, |(h, _)| h)
 }
 
-pub async fn pairing(state: &AppState) -> Pairing {
+/// `token` is what the phone signs in with: the access token of whoever asks, so the phone is
+/// theirs. The shared `CHAT_ACCESS_TOKEN` is the primary user's and is shown to nobody else.
+pub async fn pairing(state: &AppState, token: Option<String>) -> Pairing {
     let cfg = &state.cfg;
     let ts = tailscale_check(cfg.tailscale_cli.as_deref()).await;
     let server = cfg.public_url.starts_with("https://").then(|| cfg.public_url.clone());
     let on_tailnet = server.as_deref().is_some_and(|s| ts.name.as_deref().is_some_and(|n| host(s).eq_ignore_ascii_case(n)));
-    let link = server.as_deref().map(|s| cedar_pairing::connect::link(s, cfg.access_token.as_deref().unwrap_or_default()));
+    let link = server.as_deref().map(|s| cedar_pairing::connect::link(s, token.as_deref().unwrap_or_default()));
     let qr_svg = link.as_deref().and_then(|l| cedar_pairing::connect::qr_svg(l).ok());
-    Pairing { platform: std::env::consts::OS, server, on_tailnet, access_token: cfg.access_token.clone(), link, qr_svg, tailscale: ts }
+    Pairing { platform: std::env::consts::OS, server, on_tailnet, access_token: token, link, qr_svg, tailscale: ts }
 }
 
 #[cfg(test)]
