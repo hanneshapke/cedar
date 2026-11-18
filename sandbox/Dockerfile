@@ -34,6 +34,12 @@ COPY --chmod=0755 render_chart.py /usr/local/bin/cedar-render-chart
 COPY --chmod=0755 read_document.py /usr/local/bin/cedar-read-document
 COPY --chmod=0755 render_pages.py /usr/local/bin/cedar-render-pages
 
+# A general-purpose set for `run_python` and `bash`, so common work (arrays, tables, images,
+# scientific routines, HTTP and HTML parsing) needs no `pip install`: by default the sandbox is
+# offline and can't reach PyPI. OpenCV is the headless build, which skips the GUI libraries.
+# These are PyPI wheels, so scipy comes without the toolchain Debian's package pulls in.
+RUN pip install --no-cache-dir numpy pandas scipy opencv-python-headless requests beautifulsoup4 lxml
+
 # uid/gid 1000 must match the `--user` cedar passes to `docker run` (OpenShell runs the image's
 # USER). /workspace is created and owned by that user so the conversation's named volume mounted
 # there inherits the right ownership. It is not the image's working directory: OpenShell won't
