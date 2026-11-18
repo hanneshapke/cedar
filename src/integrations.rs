@@ -8,6 +8,11 @@
 //!
 //! Personal tools get their secrets here too, one per variable their manifest declares.
 //!
+//! Whose Google account a run acts for depends on whose run it is. A key's runs use the server's
+//! account, the one an admin connects (or the environment names). A user a service key acts for
+//! (`X-Cedar-User`) never does: they connect an account of their own through the same client
+//! (`/v1/google`), and until they have, their runs have no Google tools at all.
+//!
 //! The environment wins for the Brave, Best Buy and SerpApi keys, the Slack token, the Google
 //! client and the Google account: a credential set there is reported as such and can't be changed here. Models are only
 //! ever registered here.
@@ -23,7 +28,8 @@ use crate::models::{ModelEntry, Price};
 use crate::secrets::{self, SecretStore};
 use crate::store::Store;
 use crate::tools::custom::SavedSecrets;
-use crate::tools::{BestBuy, BraveSearch, Overrides, SearchFlights, SlackApi, Tool, ToolSet};
+use crate::auth::Owner;
+use crate::tools::{AccountTools, BestBuy, BraveSearch, Overrides, SearchFlights, SlackApi, Tool, ToolSet};
 use anyhow::{Context, Result};
 use arc_swap::{ArcSwap, ArcSwapOption};
 use base64::Engine;
@@ -56,12 +62,17 @@ pub struct Integrations {
     store: Store,
     secrets: Option<SecretStore>,
     tools: Arc<ArcSwap<ToolSet>>,
+    /// The same without the server's Google account: what a user's set starts from.
+    shared: ArcSwap<ToolSet>,
+    /// Each user's tool set as last put together (theirs alone when they have no account), and
+    /// the count of rebuilds it belongs to. Emptied when anything it was made from changes.
+    accounts: Mutex<(u64, HashMap<String, Arc<ToolSet>>)>,
     /// The Google OAuth client in use: the environment's, else the saved one, else none. Kept
     /// here so "Connect Google" and the tool catalog agree with the tools.
     google_client: ArcSwapOption<GoogleClientConfig>,
     http: reqwest::Client,
-    /// "Connect Google" attempts in flight: state → (redirect URI, issued at).
-    pending: Mutex<HashMap<String, (String, Instant)>>,
+    /// "Connect Google" attempts in flight, by their state.
+    pending: Mutex<HashMap<String, PendingSignIn>>,
     /// Serializes changes, so two admins can't interleave a save and a rebuild.
     changing: tokio::sync::Mutex<()>,
     /// The model clients, when this server drives them (see [`Self::attach_router`]).
@@ -70,6 +81,10 @@ pub struct Integrations {
     /// without a query.
     models: ArcSwap<Vec<ModelEntry>>,
 }
+
+/// A "Connect Google" under way: the redirect URI, when it was issued, and the user whose
+/// account it will be (`None` for the server's).
+type PendingSignIn = (String, Instant, Option<String>);
 
 /// What an admin sends to register or change a model (`PUT /v1/admin/models/{id}`).
 #[derive(Debug, Default, Deserialize)]
@@ -146,8 +161,14 @@ struct TokenResponse {
 impl Integrations {
     /// Starts with the tools the environment configures; [`Self::reload`] adds saved credentials.
     pub fn new(cfg: Arc<Config>, store: Store) -> Result<Self> {
-        let tools = ToolSet::from_config(&cfg)?;
+        let (shared, account) = ToolSet::build_parts(&cfg, &Overrides::default())?;
+        let tools = match &account {
+            Some(account) => shared.with_account(account),
+            None => shared.with_account(&AccountTools::none()),
+        };
         Ok(Self {
+            shared: ArcSwap::from_pointee(shared),
+            accounts: Mutex::default(),
             secrets: cfg
                 .secret_key
                 .as_ref()
@@ -212,9 +233,84 @@ impl Integrations {
             .google_oauth
             .clone()
             .or_else(|| overrides.google_client.clone());
-        let tools = ToolSet::build(&self.cfg, &overrides)?;
+        let (shared, account) = ToolSet::build_parts(&self.cfg, &overrides)?;
+        let tools = match &account {
+            Some(account) => shared.with_account(account),
+            None => shared.with_account(&AccountTools::none()),
+        };
         self.tools.store(Arc::new(tools));
+        self.shared.store(Arc::new(shared));
         self.google_client.store(client.map(Arc::new));
+        self.forget_account_tools(None);
+        Ok(())
+    }
+
+    /// Drop the tool sets put together for users: `user`'s, or everyone's after a rebuild.
+    fn forget_account_tools(&self, user: Option<&str>) {
+        let mut accounts = self.accounts.lock().unwrap();
+        accounts.0 += 1;
+        match user {
+            Some(user) => {
+                accounts.1.remove(user);
+            }
+            None => accounts.1.clear(),
+        }
+    }
+
+    /// The tools `owner`'s runs can use. A key's are the server's, its Google account included.
+    /// A user's are the shared ones plus those of the Google account they connected themselves;
+    /// the server's account is never theirs to use. A user's account that can't be read is
+    /// logged and left out.
+    pub async fn tools_for(&self, owner: &str) -> Arc<ToolSet> {
+        if !Owner::is_user(owner) {
+            return self.tools.load_full();
+        }
+        let built_at = {
+            let accounts = self.accounts.lock().unwrap();
+            if let Some(set) = accounts.1.get(owner) {
+                return set.clone();
+            }
+            accounts.0
+        };
+        let shared = self.shared.load_full();
+        let set = match self.user_account_tools(owner).await {
+            Ok(Some(account)) => Arc::new(shared.with_account(&account)),
+            Ok(None) => shared,
+            Err(e) => {
+                tracing::warn!(user = owner, error = %format!("{e:#}"), "ignoring a user's Google account");
+                shared
+            }
+        };
+        // Kept unless something changed meanwhile; then the next call puts it together again.
+        let mut accounts = self.accounts.lock().unwrap();
+        if accounts.0 == built_at {
+            accounts.1.insert(owner.to_string(), set.clone());
+        }
+        set
+    }
+
+    /// The Google tools of the account `user` connected, if they connected one and the server
+    /// still has the client it was connected through.
+    async fn user_account_tools(&self, user: &str) -> Result<Option<AccountTools>> {
+        let (Some(secrets), Some(client)) = (&self.secrets, self.google_oauth()) else {
+            return Ok(None);
+        };
+        let Some(refresh_token) = secrets.get(&secrets::google_refresh_token_of(user)).await?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(AccountTools::google(&self.cfg, &client, refresh_token)?))
+    }
+
+    /// Disconnect every user's Google account: the client they were connected through is gone.
+    async fn forget_user_accounts(&self, secrets: &SecretStore) -> Result<()> {
+        let names = secrets.names_with_prefix(secrets::GOOGLE_USER_PREFIX).await?;
+        for name in &names {
+            secrets.delete(name).await?;
+        }
+        if !names.is_empty() {
+            tracing::info!(accounts = names.len(), "users' Google accounts disconnected: the OAuth client changed");
+        }
         Ok(())
     }
 
@@ -1134,8 +1230,11 @@ impl Integrations {
                 &json!({ "client_id": client_id }),
             )
             .await?;
-        if !same_client && secrets.delete(secrets::GOOGLE_REFRESH_TOKEN).await? {
-            tracing::info!("Google account disconnected: the OAuth client changed");
+        if !same_client {
+            if secrets.delete(secrets::GOOGLE_REFRESH_TOKEN).await? {
+                tracing::info!("Google account disconnected: the OAuth client changed");
+            }
+            self.forget_user_accounts(secrets).await?;
         }
         self.reload().await?;
         tracing::info!(client_id, "Google OAuth client saved");
@@ -1188,6 +1287,7 @@ impl Integrations {
             return Err(AppError::NotFound("no Google OAuth client is saved"));
         }
         secrets.delete(secrets::GOOGLE_REFRESH_TOKEN).await?;
+        self.forget_user_accounts(secrets).await?;
         self.reload().await?;
         tracing::info!("Google OAuth client removed");
         Ok(())
@@ -1207,11 +1307,13 @@ impl Integrations {
         })
     }
 
-    /// Start "Connect Google": the URL to send the admin's browser to. Google sends it back to
-    /// `redirect_uri` with a code and the `state` returned here, which works once.
-    pub fn google_authorize(&self, redirect_uri: &str) -> Result<String, AppError> {
+    /// Start "Connect Google": the URL to send the browser to. Google sends it back to
+    /// `redirect_uri` with a code and the `state` returned here, which works once. With `user`,
+    /// the account becomes that user's own; without, the server's, which an admin connects.
+    pub fn google_authorize(&self, redirect_uri: &str, user: Option<&str>) -> Result<String, AppError> {
         let oauth = self.connectable_client()?;
-        self.writable(oauth.refresh_token.is_some())?;
+        // The environment's account is the server's; it doesn't keep a user from connecting theirs.
+        self.writable(user.is_none() && oauth.refresh_token.is_some())?;
         let redirect = reqwest::Url::parse(redirect_uri)
             .ok()
             .filter(|u| matches!(u.scheme(), "http" | "https") && redirect_uri.len() <= 500)
@@ -1222,13 +1324,16 @@ impl Integrations {
         let state = hex::encode(bytes);
         {
             let mut pending = self.pending.lock().unwrap();
-            pending.retain(|_, (_, at)| at.elapsed() < OAUTH_STATE_TTL);
+            pending.retain(|_, (_, at, _)| at.elapsed() < OAUTH_STATE_TTL);
             if pending.len() >= MAX_PENDING_STATES {
                 return Err(AppError::TooManyRequests(
                     "too many Google connections in progress; try again in a few minutes".into(),
                 ));
             }
-            pending.insert(state.clone(), (redirect.to_string(), Instant::now()));
+            pending.insert(
+                state.clone(),
+                (redirect.to_string(), Instant::now(), user.map(String::from)),
+            );
         }
         let url = reqwest::Url::parse_with_params(
             &oauth.auth_url,
@@ -1248,14 +1353,24 @@ impl Integrations {
         Ok(url.into())
     }
 
-    /// Finish "Connect Google": trade the code for a refresh token, save it, rebuild the tools.
-    pub async fn google_callback(&self, state: &str, code: &str) -> Result<Value, AppError> {
+    /// Finish "Connect Google": trade the code for a refresh token and save it as the account of
+    /// whoever started the sign-in, which the `state` remembers: a user's own, or the server's
+    /// (then the tools are rebuilt). The state is what authorizes finishing a user's sign-in,
+    /// whoever carries it back; the server's account also takes an admin (`admin`).
+    pub async fn google_callback(&self, state: &str, code: &str, admin: bool) -> Result<Value, AppError> {
         let oauth = self.connectable_client()?;
-        let secrets = self.writable(oauth.refresh_token.is_some())?;
-        let redirect_uri = {
+        let (redirect_uri, user) = {
             let mut pending = self.pending.lock().unwrap();
+            // Looked at before it is taken, so a caller who may not finish it doesn't use it up.
+            if let Some((_, _, None)) = pending.get(state) {
+                if !admin {
+                    return Err(AppError::Forbidden(
+                        "this API key may not manage integrations (see CEDAR_ADMIN_KEYS)",
+                    ));
+                }
+            }
             match pending.remove(state) {
-                Some((uri, at)) if at.elapsed() < OAUTH_STATE_TTL => uri,
+                Some((uri, at, user)) if at.elapsed() < OAUTH_STATE_TTL => (uri, user),
                 _ => {
                     return Err(AppError::BadRequest(
                         "this Google sign-in link is unknown, used, or expired; start again".into(),
@@ -1263,6 +1378,7 @@ impl Integrations {
                 }
             }
         };
+        let secrets = self.writable(user.is_none() && oauth.refresh_token.is_some())?;
         if code.is_empty() || code.len() > 2000 {
             return Err(AppError::BadRequest("code is missing or malformed".into()));
         }
@@ -1307,16 +1423,91 @@ impl Integrations {
             .unwrap_or_default();
 
         let _guard = self.changing.lock().await;
-        secrets
-            .put(
-                secrets::GOOGLE_REFRESH_TOKEN,
-                &refresh_token,
-                &json!({ "account": account, "scopes": scopes }),
-            )
-            .await?;
-        self.reload().await?;
-        tracing::info!(account = ?account, "Google account connected");
-        Ok(json!({ "account": account }))
+        let meta = json!({ "account": account, "scopes": scopes });
+        match &user {
+            Some(user) => {
+                secrets
+                    .put(&secrets::google_refresh_token_of(user), &refresh_token, &meta)
+                    .await?;
+                self.forget_account_tools(Some(user));
+                tracing::info!(user, "a user's Google account connected");
+            }
+            None => {
+                secrets
+                    .put(secrets::GOOGLE_REFRESH_TOKEN, &refresh_token, &meta)
+                    .await?;
+                self.reload().await?;
+                tracing::info!(account = ?account, "Google account connected");
+            }
+        }
+        // `own`: the account is the user's who started the sign-in, not the server's.
+        Ok(json!({ "account": account, "own": user.is_some() }))
+    }
+
+    /// A user's own Google account, for `GET /v1/google`: whether one can be connected here
+    /// (`available`, and why not), and the one that is. Never includes a secret. A key has no
+    /// account of its own: its runs use the server's, which `server` then says.
+    pub async fn google_status_for(&self, owner: &str) -> Result<Value> {
+        let services = self.google_services();
+        let client = self.google_oauth();
+        let unavailable = if services.is_empty() {
+            Some("Gmail, Calendar, Drive and Sheets are off on the server")
+        } else if client.is_none() {
+            Some("The server has no Google OAuth client yet; an admin sets one up")
+        } else if self.secrets.is_none() {
+            Some("Saving an account needs CEDAR_SECRET_KEY on the server")
+        } else {
+            None
+        };
+        let mut status = json!({
+            "available": unavailable.is_none(),
+            "reason": unavailable,
+            "services": services,
+            "connected": false,
+            "server": false,
+        });
+        if !Owner::is_user(owner) {
+            // What the key's runs use: the server's account, which only an admin changes.
+            status["server"] = json!(true);
+            status["available"] = json!(false);
+            status["reason"] = json!("This key's runs use the server's Google account, which an admin connects");
+            let server = self.status().await?;
+            status["connected"] = server["google"]["configured"].clone();
+            status["account"] = server["google"]["account"].clone();
+            return Ok(status);
+        }
+        let (Some(secrets), Some(client)) = (&self.secrets, client) else {
+            return Ok(status);
+        };
+        if let Some(meta) = secrets.meta(&secrets::google_refresh_token_of(owner)).await? {
+            let granted: Vec<&str> = meta["scopes"]
+                .as_array()
+                .map(|a| a.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            let missing: Vec<&str> = client
+                .scopes
+                .iter()
+                .map(String::as_str)
+                .filter(|s| s.starts_with("https://") && !granted.contains(s))
+                .collect();
+            status["connected"] = json!(true);
+            status["account"] = meta["account"].clone();
+            status["scopes"] = meta["scopes"].clone();
+            status["missing_scopes"] = json!(missing);
+        }
+        Ok(status)
+    }
+
+    /// Disconnect the Google account `user` connected.
+    pub async fn remove_google_for(&self, user: &str) -> Result<(), AppError> {
+        let secrets = self.writable(false)?;
+        let _guard = self.changing.lock().await;
+        if !secrets.delete(&secrets::google_refresh_token_of(user)).await? {
+            return Err(AppError::NotFound("no Google account is connected"));
+        }
+        self.forget_account_tools(Some(user));
+        tracing::info!(user, "a user's Google account disconnected");
+        Ok(())
     }
 
     pub async fn remove_google(&self) -> Result<(), AppError> {

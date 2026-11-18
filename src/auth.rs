@@ -25,6 +25,11 @@ impl Owner {
     pub fn user(id: Uuid) -> Self {
         Owner(id.as_hyphenated().to_string())
     }
+
+    /// Whether this is a user a service key acted for, rather than a key.
+    pub fn is_user(owner: &str) -> bool {
+        owner.len() == 36 && Uuid::parse_str(owner).is_ok()
+    }
 }
 
 /// Whether the request's key may act for users (it is in `CEDAR_SERVICE_KEYS`): name one in
