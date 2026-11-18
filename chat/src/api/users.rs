@@ -97,7 +97,8 @@ pub(super) async fn rotate_user_token(Scoped(state): Scoped, headers: HeaderMap,
     Ok(Json(json!({ "user": user, "token": token })))
 }
 
-/// Remove a user with everything of theirs: here, and their runs, memories and records in cedar
+/// Remove a user with everything of theirs: here, and their runs, memories, records and Google
+/// account in cedar
 /// (best effort: what cedar can't be asked to delete now stays there, out of anyone's reach).
 pub(super) async fn delete_user(Scoped(state): Scoped, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, AppError> {
     require_users_admin(&state, &headers)?;
@@ -113,6 +114,11 @@ pub(super) async fn delete_user(Scoped(state): Scoped, headers: HeaderMap, Path(
     }
     if let Err(e) = theirs.cedar.delete_all_memory().await {
         tracing::warn!(user_id = %user.id, error = %e, "could not delete the user's memories in cedar");
+    }
+    // Their Google account, if they connected one (404 when they didn't).
+    match theirs.cedar.remove_own_google().await {
+        Ok(()) | Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => {}
+        Err(e) => tracing::warn!(user_id = %user.id, error = %e, "could not disconnect the user's Google account in cedar"),
     }
     if let Err(e) = theirs.cedar.delete_all_records().await {
         tracing::warn!(user_id = %user.id, error = %e, "could not delete the user's records in cedar");

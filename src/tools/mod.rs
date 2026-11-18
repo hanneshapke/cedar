@@ -195,11 +195,61 @@ pub trait Tool: Send + Sync {
     }
 }
 
+/// The tools that act for one Google account: Gmail, Calendar, Drive and Sheets through the REST
+/// APIs, or the MCP servers that stand in for them. They share one [`GoogleOAuth`], and so one
+/// cached access token.
+pub struct AccountTools {
+    tools: Vec<Arc<dyn Tool>>,
+    remote: Vec<Arc<McpServer>>,
+}
+
+impl AccountTools {
+    /// No account: a set with it is the set itself.
+    pub fn none() -> Self {
+        Self { tools: Vec::new(), remote: Vec::new() }
+    }
+
+    /// The Google tools the server offers (`GMAIL`, `CALENDAR`, `DRIVE`, `SHEETS`), acting for
+    /// the account `refresh_token` belongs to, which `client` connected.
+    pub fn google(
+        cfg: &Config,
+        client: &crate::config::GoogleClientConfig,
+        refresh_token: String,
+    ) -> Result<Self> {
+        let creds = GoogleCredentials {
+            client_id: client.client_id.clone(),
+            client_secret: client.client_secret.clone(),
+            refresh_token,
+            token_url: client.token_url.clone(),
+        };
+        let auth = Arc::new(GoogleOAuth::new(creds)?);
+        let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
+        for api in &cfg.google_apis {
+            let made = match api.prefix.as_str() {
+                "gmail" => gmail::tools(api, auth.clone())?,
+                "calendar" => calendar::tools(api, auth.clone())?,
+                "drive" => drive::tools(api, auth.clone())?,
+                "sheets" => sheets::tools(api, auth.clone())?,
+                other => anyhow::bail!("no REST API tools for {other}"),
+            };
+            tools.extend(made.into_iter().map(Arc::from));
+        }
+        let mut remote = Vec::new();
+        for server in &cfg.mcp_servers {
+            remote.push(Arc::new(McpServer::new(server, auth.clone())?));
+        }
+        Ok(Self { tools, remote })
+    }
+}
+
 /// The tools available to every run.
 pub struct ToolSet {
-    tools: Vec<Box<dyn Tool>>,
+    tools: Vec<Arc<dyn Tool>>,
     /// MCP servers; their tools join the set once discovered (see [`Self::connect_remote`]).
-    remote: Vec<McpServer>,
+    remote: Vec<Arc<McpServer>>,
+    /// Where the tools that act for a Google account go among `tools` (see
+    /// [`Self::with_account`]): after the built-in ones, before Slack's and the personal ones.
+    account_at: usize,
     /// The names of the personal tools loaded from `TOOLS_DIR`, which form the `custom` group.
     custom: HashSet<String>,
 }
@@ -207,7 +257,8 @@ pub struct ToolSet {
 impl ToolSet {
     pub fn new(tools: Vec<Box<dyn Tool>>) -> Self {
         Self {
-            tools,
+            account_at: tools.len(),
+            tools: tools.into_iter().map(Arc::from).collect(),
             remote: Vec::new(),
             custom: HashSet::new(),
         }
@@ -246,41 +297,53 @@ impl ToolSet {
     /// the environment leaves unset. Gmail and Calendar tools need a refresh token from one or the
     /// other.
     pub fn build(cfg: &Config, overrides: &Overrides) -> Result<Self> {
+        let (shared, account) = Self::build_parts(cfg, overrides)?;
+        Ok(match account {
+            Some(account) => shared.with_account(&account),
+            None => shared,
+        })
+    }
+
+    /// What [`Self::build`] puts together, apart: the tools that are the same for everyone, and
+    /// those of the server's Google account, if it has one. A user with a Google account of
+    /// their own gets the first with their account's tools (see
+    /// [`crate::integrations::Integrations::tools_for`]).
+    pub fn build_parts(cfg: &Config, overrides: &Overrides) -> Result<(Self, Option<AccountTools>)> {
         let mut set = Self::standard();
         let brave_key = cfg
             .brave_api_key
             .as_ref()
             .or(overrides.brave_api_key.as_ref());
         if let Some(key) = brave_key {
-            set.tools.push(Box::new(BraveSearch::new(
+            set.tools.push(Arc::new(BraveSearch::new(
                 key.clone(),
                 cfg.brave_base_url.clone(),
             )?));
         }
         if cfg.web_fetch {
             let client = Arc::new(WebClient::new(cfg.web_fetch_allow_private)?);
-            set.tools.push(Box::new(FetchUrl(client.clone())));
-            set.tools.push(Box::new(DownloadFile(client)));
+            set.tools.push(Arc::new(FetchUrl(client.clone())));
+            set.tools.push(Arc::new(DownloadFile(client)));
         }
         if cfg.weather {
-            set.tools.push(Box::new(WeatherForecast::new(
+            set.tools.push(Arc::new(WeatherForecast::new(
                 cfg.weather_base_url.clone(),
                 cfg.weather_geocoding_base_url.clone(),
             )?));
         }
         if cfg.maps {
-            set.tools.push(Box::new(ShowMap::new(
+            set.tools.push(Arc::new(ShowMap::new(
                 cfg.weather_geocoding_base_url.clone(),
             )?));
         }
         if cfg.recipes {
-            set.tools.push(Box::new(ShowRecipe::new(
+            set.tools.push(Arc::new(ShowRecipe::new(
                 cfg.recipe_wikipedia_url.clone(),
                 cfg.recipe_commons_url.clone(),
             )?));
         }
         if cfg.transit {
-            set.tools.push(Box::new(PlanTrip::new(
+            set.tools.push(Arc::new(PlanTrip::new(
                 cfg.transit_base_url.clone(),
                 cfg.driving_base_url.clone(),
             )?));
@@ -290,13 +353,13 @@ impl ToolSet {
             .as_ref()
             .or(overrides.serpapi_api_key.as_ref());
         if let (true, Some(key)) = (cfg.flights, serpapi_key) {
-            set.tools.push(Box::new(SearchFlights::new(
+            set.tools.push(Arc::new(SearchFlights::new(
                 key.clone(),
                 cfg.flights_api_url.clone(),
             )?));
         }
         if cfg.stocks {
-            set.tools.push(Box::new(CompareStocks::new(
+            set.tools.push(Arc::new(CompareStocks::new(
                 cfg.stocks_chart_url.clone(),
                 cfg.stocks_news_url.clone(),
             )?));
@@ -315,29 +378,29 @@ impl ToolSet {
                 .transpose()?;
             let web = Arc::new(WebClient::new(cfg.web_fetch_allow_private)?);
             set.tools
-                .push(Box::new(SearchProducts::new(brave, bestbuy, web)));
+                .push(Arc::new(SearchProducts::new(brave, bestbuy, web)));
         }
         if cfg.follow_ups {
-            set.tools.push(Box::new(SuggestFollowUp));
+            set.tools.push(Arc::new(SuggestFollowUp));
         }
         if cfg.ask_user {
-            set.tools.push(Box::new(AskUser));
+            set.tools.push(Arc::new(AskUser));
         }
         if cfg.memory {
-            set.tools.push(Box::new(Remember));
-            set.tools.push(Box::new(Forget));
-            set.tools.push(Box::new(RecallTool));
+            set.tools.push(Arc::new(Remember));
+            set.tools.push(Arc::new(Forget));
+            set.tools.push(Arc::new(RecallTool));
         }
         if cfg.records {
-            set.tools.push(Box::new(RecordsList));
-            set.tools.push(Box::new(RecordsDescribe));
-            set.tools.push(Box::new(RecordsSave));
-            set.tools.push(Box::new(RecordsLookup));
-            set.tools.push(Box::new(RecordsDrop));
+            set.tools.push(Arc::new(RecordsList));
+            set.tools.push(Arc::new(RecordsDescribe));
+            set.tools.push(Arc::new(RecordsSave));
+            set.tools.push(Arc::new(RecordsLookup));
+            set.tools.push(Arc::new(RecordsDrop));
         }
         if cfg.browser.enabled {
             set.tools
-                .push(Box::new(BrowserTool::new(cfg.web_fetch_allow_private)));
+                .push(Arc::new(BrowserTool::new(cfg.web_fetch_allow_private)));
         }
         // The client from the environment wins over a saved one, as elsewhere; a refresh token
         // from the environment only ever belongs to the environment's client.
@@ -348,40 +411,52 @@ impl ToolSet {
         let refresh_token = oauth
             .and_then(|o| o.refresh_token.clone())
             .or_else(|| overrides.google_refresh_token.clone());
-        if let (Some(oauth), Some(refresh_token)) = (oauth, refresh_token) {
-            let creds = GoogleCredentials {
-                client_id: oauth.client_id.clone(),
-                client_secret: oauth.client_secret.clone(),
-                refresh_token,
-                token_url: oauth.token_url.clone(),
-            };
-            let auth = Arc::new(GoogleOAuth::new(creds)?);
-            for api in &cfg.google_apis {
-                let tools = match api.prefix.as_str() {
-                    "gmail" => gmail::tools(api, auth.clone())?,
-                    "calendar" => calendar::tools(api, auth.clone())?,
-                    "drive" => drive::tools(api, auth.clone())?,
-                    "sheets" => sheets::tools(api, auth.clone())?,
-                    other => anyhow::bail!("no REST API tools for {other}"),
-                };
-                set.tools.extend(tools);
+        let account = match (oauth, refresh_token) {
+            (Some(oauth), Some(refresh_token)) => {
+                Some(AccountTools::google(cfg, oauth, refresh_token)?)
             }
-            for server in &cfg.mcp_servers {
-                set.remote.push(McpServer::new(server, auth.clone())?);
-            }
-        }
+            _ => None,
+        };
+        set.account_at = set.tools.len();
         let slack_token = cfg
             .slack_bot_token
             .as_ref()
             .or(overrides.slack_bot_token.as_ref());
         if let (true, Some(token)) = (cfg.slack, slack_token) {
-            set.tools
-                .extend(slack::tools(token.clone(), cfg.slack_api_url.clone())?);
+            set.tools.extend(
+                slack::tools(token.clone(), cfg.slack_api_url.clone())?
+                    .into_iter()
+                    .map(Arc::from),
+            );
         }
         if let Some(dir) = &cfg.sandbox.tools_dir {
             set.load_custom(dir, &overrides.tool_secrets)?;
         }
-        Ok(set)
+        Ok((set, account))
+    }
+
+    /// This set with the tools of a Google account added, in the place they have always had.
+    /// The tools themselves are shared, so this is cheap: one set per account is fine. A tool
+    /// whose name the set already has (a personal tool named like one of Google's) is left out.
+    pub fn with_account(&self, account: &AccountTools) -> Self {
+        let taken: HashSet<&str> = self.tools.iter().map(|t| t.name()).collect();
+        let added: Vec<Arc<dyn Tool>> = account
+            .tools
+            .iter()
+            .filter(|t| !taken.contains(t.name()))
+            .cloned()
+            .collect();
+        let at = self.account_at.min(self.tools.len());
+        let mut tools = self.tools.clone();
+        tools.splice(at..at, added);
+        let mut remote = self.remote.clone();
+        remote.extend(account.remote.iter().cloned());
+        Self {
+            tools,
+            remote,
+            account_at: self.account_at,
+            custom: self.custom.clone(),
+        }
     }
 
     /// Add the personal tools in `dir` (see [`custom`]), each with its saved secrets. Names
@@ -395,7 +470,7 @@ impl ToolSet {
         let loaded = custom::load_dir(dir, &taken, secrets)?;
         for tool in loaded {
             self.custom.insert(tool.name().to_string());
-            self.tools.push(Box::new(tool));
+            self.tools.push(Arc::new(tool));
         }
         if !self.custom.is_empty() {
             let mut names: Vec<&str> = self.custom.iter().map(|s| s.as_str()).collect();

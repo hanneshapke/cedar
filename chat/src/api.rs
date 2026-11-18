@@ -413,6 +413,8 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/models/{id}", put(put_model).delete(delete_model))
         .route("/integrations/models/{id}/stats", get(get_model_stats))
         .route("/integrations/settings", get(get_server_settings).put(put_server_settings))
+        .route("/google", get(get_own_google).delete(delete_own_google))
+        .route("/google/connect", post(connect_own_google))
         .route("/integrations/google", axum::routing::delete(delete_google))
         .route("/integrations/google/client", put(put_google_client).delete(delete_google_client))
         .route("/integrations/google/connect", post(connect_google))
@@ -639,8 +641,19 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
 
 /// Settings -> Phone: the address, token and QR code the iOS and Android apps connect with, and
 /// whether Tailscale is ready to serve the chat to them (see `pairing`).
-async fn get_pairing(Scoped(state): Scoped) -> Json<pairing::Pairing> {
-    Json(pairing::pairing(&state).await)
+async fn get_pairing(Scoped(state): Scoped, headers: HeaderMap) -> Json<pairing::Pairing> {
+    // The primary user's phone gets the shared token; anyone else's gets the token they signed
+    // in with, never the shared one.
+    let token = if state.user() == state.primary {
+        state.cfg.access_token.clone()
+    } else {
+        headers
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.split_once(' '))
+            .map(|(_, token)| token.trim().to_string())
+    };
+    Json(pairing::pairing(&state, token).await)
 }
 
 // -- updates --------------------------------------------------------------------------------
@@ -2095,13 +2108,40 @@ async fn uninstall_tool(Scoped(state): Scoped, headers: HeaderMap, Path(name): P
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// The Google account the caller connected themselves, which their own runs act for. The
+/// primary user has none of their own (`server: true`): theirs is the server's, under
+/// Settings -> Server.
+async fn get_own_google(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
+    Ok(Json(state.cedar.own_google().await?))
+}
+
+/// Start connecting the caller's own Google account; no admin token needed. Google comes back
+/// to the same callback as the server's account does.
+async fn connect_own_google(Scoped(state): Scoped, headers: HeaderMap, Query(params): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
+    let url = state.cedar.own_google_authorize(&redirect_uri(&state, &headers)).await?;
+    remember_browser_sign_in(&state, &params, &url);
+    Ok(Json(json!({ "url": url })))
+}
+
+async fn delete_own_google(Scoped(state): Scoped) -> Result<StatusCode, AppError> {
+    state.cedar.remove_own_google().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn connect_google(Scoped(state): Scoped, headers: HeaderMap, Query(params): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
     let url = state.cedar.google_authorize(&redirect_uri(&state, &headers)).await?;
+    remember_browser_sign_in(&state, &params, &url);
+    Ok(Json(json!({ "url": url })))
+}
+
+/// Note a sign-in the desktop app sent to the default browser (`?browser=1`), so the callback
+/// shows that browser a page of its own.
+fn remember_browser_sign_in(state: &AppState, params: &HashMap<String, String>, url: &str) {
     // The desktop app opens Google's page in the default browser: its embedded web view can't
     // offer every way to sign in (passkeys and Sign in with Apple, for one).
     if params.contains_key("browser") {
-        if let Some(s) = google_state(&url) {
+        if let Some(s) = google_state(url) {
             let mut pending = state.google_in_browser.lock().unwrap_or_else(|e| e.into_inner());
             if pending.len() >= GOOGLE_IN_BROWSER_MAX {
                 pending.remove(0);
@@ -2109,7 +2149,6 @@ async fn connect_google(Scoped(state): Scoped, headers: HeaderMap, Query(params)
             pending.push(s);
         }
     }
-    Ok(Json(json!({ "url": url })))
 }
 
 /// The `state` parameter of Google's sign-in URL.
@@ -2135,7 +2174,7 @@ async fn google_callback(State(state): State<AppState>, Query(params): Query<Has
     });
     let outcome = match (params.get("state"), params.get("code"), params.get("error")) {
         (_, _, Some(error)) => Err(format!("Google sign-in was not completed ({error})")),
-        (Some(s), Some(code), None) => state.cedar.google_callback(s, code).await.map(|_| ()).map_err(|e| e.to_string()),
+        (Some(s), Some(code), None) => state.cedar.google_callback(s, code).await.map(|done| done["own"] == true).map_err(|e| e.to_string()),
         _ => Err("the sign-in response from Google is incomplete".to_string()),
     };
     if let Err(message) = &outcome {
@@ -2146,16 +2185,19 @@ async fn google_callback(State(state): State<AppState>, Query(params): Query<Has
     }
     let mut url = reqwest::Url::parse("http://local/").expect("static URL");
     match outcome {
-        Ok(()) => url.query_pairs_mut().append_pair("integrations", "connected"),
+        // The page reopens Settings where the account is shown: a user's own under Tools, the
+        // server's under Server.
+        Ok(true) => url.query_pairs_mut().append_pair("integrations", "connected").append_pair("own", "1"),
+        Ok(false) => url.query_pairs_mut().append_pair("integrations", "connected"),
         Err(message) => url.query_pairs_mut().append_pair("integrations", "error").append_pair("message", &message),
     };
     Redirect::to(&format!("/?{}", url.query().unwrap_or_default())).into_response()
 }
 
 /// What the browser shows after a "Connect Google" the desktop app started there.
-fn google_done_page(outcome: &Result<(), String>) -> Response {
+fn google_done_page(outcome: &Result<bool, String>) -> Response {
     let (title, detail) = match outcome {
-        Ok(()) => ("Google account connected".to_string(), "You can close this tab and go back to Cedar.".to_string()),
+        Ok(_) => ("Google account connected".to_string(), "You can close this tab and go back to Cedar.".to_string()),
         Err(message) => ("Google was not connected".to_string(), format!("{}. Close this tab and try again in Cedar.", html_escape(message))),
     };
     let html = format!(

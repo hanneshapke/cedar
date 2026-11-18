@@ -265,8 +265,57 @@ const cedarSettings = (() => {
     };
     for (const g of groups()) list.append(toolRow(g, changed));
     section.replaceChildren(list);
+    const own = await ownGoogleRow();
+    if (own && list.isConnected) list.before(own);
     const registry = await registryBlock();
     if (registry && list.isConnected) section.append(registry);
+  }
+
+  /** Above the tool list, for someone who is not the server's primary user: the Google account
+   *  their own messages act for, which they connect themselves (no admin token). `null` for the
+   *  primary user, whose account is the server's under Settings → Server, on a server without
+   *  Google, and on a chat server from before users had accounts of their own. */
+  async function ownGoogleRow() {
+    let g;
+    try { g = await deps.api('GET', '/google'); } catch { return null; }
+    if (g.server || !g.services?.length) return null;
+    const names = g.services.map((s) => s[0].toUpperCase() + s.slice(1));
+    const services = new Intl.ListFormat(cedarI18n.locale, { type: 'conjunction' }).format(names);
+    const { row, main, side } = integrationRow(tr('settings.google.own'), tr('settings.google.desc', { services }));
+    side.append(g.connected ? badge(g.account || tr('settings.google.connected'), 'ok') : badge(tr('settings.google.notConnected')));
+    if (g.missing_scopes?.length) {
+      const scopes = g.missing_scopes.map((s) => s.replace('https://www.googleapis.com/auth/', ''));
+      main.append(el('small', 'cedar-set-hint cedar-set-warn-text', tr('settings.google.missingScopes', { scopes: scopes.join(', ') })));
+    }
+    if (!g.available && !g.connected) {
+      main.append(el('small', 'cedar-set-hint', tr('settings.google.ownUnavailable')));
+      return row;
+    }
+    const again = () => { catalog = null; if (toolsSection) renderTools(toolsSection); };
+    if (g.connected) {
+      side.append(button(tr('settings.google.disconnect'), async () => {
+        if (!(await cedarConfirm(tr('settings.google.confirmDisconnect'), { ok: tr('settings.google.disconnect') }))) return;
+        try {
+          await deps.api('DELETE', '/google');
+          again();
+        } catch (err) { deps.toast(err.message); }
+      }));
+    }
+    if (g.available) {
+      side.append(button(g.connected ? tr('settings.google.reconnect') : tr('settings.google.connect'), async () => {
+        try {
+          if (window.__CEDAR_DESKTOP_APP__ === true) {
+            const { url } = await deps.api('POST', '/google/connect?browser=1');
+            location.assign(`/__cedar-app/open?url=${encodeURIComponent(url)}`);
+            deps.toast(tr('settings.google.continueInBrowser'));
+          } else {
+            const { url } = await deps.api('POST', '/google/connect');
+            location.assign(url);
+          }
+        } catch (err) { deps.toast(err.message); }
+      }, g.connected ? 'copy-btn' : 'primary'));
+    }
+    return row;
   }
 
   /** Under the tool list: the community registry's tools, with a link to it, to install from.
@@ -2236,7 +2285,7 @@ const cedarSettings = (() => {
     history.replaceState(null, '', location.pathname + location.hash);
     deps.toast(outcome === 'connected' ? tr('settings.google.connectedToast') : `Google: ${params.get('message') || tr('settings.google.notConnectedLower')}`);
     const btn = document.getElementById('settings-btn');
-    if (btn) { btn.dataset.page = 'server'; btn.click(); }
+    if (btn) { btn.dataset.page = params.get('own') ? 'tools' : 'server'; btn.click(); }
   }
 
   function bind() {
