@@ -53,6 +53,7 @@
     <string name="reasoning_default">Standard</string>
     <string name="models_footnote_empty">Die KI-Modelle, die dein Server anbietet, erscheinen, sobald er erreichbar ist.</string>
     <string name="models_footnote">Welche KI deine Nachrichten beantwortet und wie gründlich sie vorher nachdenkt. Werkzeuge, das Rundenlimit und der System-Prompt folgen den Einstellungen des Servers.</string>
+    <string name="models_footnote_auto">Cedar wählt das KI-Modell für jede Nachricht: ein leistungsstärkeres zum Planen und für komplexe Aufgaben, ein kleineres für alltägliche Anfragen. Um selbst zu wählen, aktiviere im Web-Chat unter „Erweiterte Einstellungen“ die Option „Modell selbst auswählen“.</string>
     <string name="plan">Plan</string>
     <string name="plan_mode_server">Server-Einstellung</string>
     <string name="plan_mode_tool">Wenn Cedar es für hilfreich hält</string>

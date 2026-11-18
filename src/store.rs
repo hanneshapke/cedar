@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
     turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
-    workspace_reused, tools, plan, interactive, locale, callback_url, rating, import_attachments, created_at, started_at, finished_at";
+    workspace_reused, tools, plan, interactive, locale, callback_url, rating, import_attachments, model_auto, created_at, started_at, finished_at";
 
 /// What `GET /v1/events` and the webhook worker read for a notification: the row joined with
 /// its run's final state.
@@ -52,6 +52,7 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
         model_id: r.try_get("model_id")?,
         model: r.try_get("model")?,
         reasoning: r.try_get("reasoning")?,
+        model_auto: r.try_get::<i64, _>("model_auto")? != 0,
         max_turns: r.try_get::<i64, _>("max_turns")? as u32,
         turns: r.try_get::<i64, _>("turns")? as u32,
         final_text: r.try_get("final_text")?,
@@ -370,8 +371,8 @@ impl Store {
 
         sqlx::query(
             "INSERT INTO runs (id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
-             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, locale, import_attachments, created_at) \
-             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, locale, import_attachments, model_auto, created_at) \
+             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -391,6 +392,7 @@ impl Store {
         .bind(new.interactive)
         .bind(&new.locale)
         .bind(new.import_attachments as i64)
+        .bind(new.model_auto as i64)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -512,6 +514,19 @@ impl Store {
             .execute(&self.pool)
             .await?;
         }
+        Ok(())
+    }
+
+    /// The model a run with `model_auto` goes on with (see [`crate::routing`]), and the
+    /// reasoning level it is sent.
+    pub async fn set_run_model(&self, id: Uuid, model_id: &str, model: &str, reasoning: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE runs SET model_id = ?, model = ?, reasoning = ? WHERE id = ?")
+            .bind(model_id)
+            .bind(model)
+            .bind(reasoning)
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -1229,6 +1244,7 @@ mod tests {
             interactive: false,
             locale: "en".into(),
             import_attachments: false,
+            model_auto: false,
         }
     }
 
@@ -1600,6 +1616,7 @@ mod tests {
             interactive: false,
             locale: "en".into(),
             import_attachments: false,
+            model_auto: false,
             ..new_run("a")
         };
         let run = store.insert_run_limited(&new, 5).await.unwrap().unwrap();

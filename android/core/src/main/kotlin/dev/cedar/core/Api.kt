@@ -300,8 +300,14 @@ data class ModelInfo(
     val label: String get() = rawLabel ?: model
 }
 
+/**
+ * `GET /api/models`. `selection` is whether people choose the model themselves (the server's
+ * "Choose the model yourself" setting). Off, cedar picks the model of every message by the
+ * models' sizes, ignores a model or reasoning level sent to it, and the pickers stay hidden. A
+ * server from before the setting doesn't say, and has people choose.
+ */
 @Serializable
-data class ModelList(val models: List<ModelInfo> = emptyList())
+data class ModelList(val models: List<ModelInfo> = emptyList(), val selection: Boolean = true)
 
 /**
  * A conversation as cedar-chat keeps it: its title, the model it last used, and whether a finished

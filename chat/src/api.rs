@@ -421,6 +421,7 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/models/{id}", put(put_model).delete(delete_model))
         .route("/integrations/models/{id}/stats", get(get_model_stats))
         .route("/integrations/settings", get(get_server_settings).put(put_server_settings))
+        .route("/integrations/model-selection", put(put_model_selection))
         .route("/google", get(get_own_google).delete(delete_own_google))
         .route("/google/connect", post(connect_own_google))
         .route("/integrations/google", axum::routing::delete(delete_google))
@@ -1404,11 +1405,13 @@ async fn clean_model_choice(
     Ok((model.map(|_| entry["id"].as_str().unwrap_or_default().to_string()), reasoning))
 }
 
-/// A saved default model, if cedar still has it. `None` lets cedar use its own default.
+/// A saved default model, if cedar still has it. `None` lets cedar use its own default. Also
+/// `None` while users don't choose models (cedar's `model_selection` is off): cedar then chooses.
 async fn still_registered(state: &AppState, model: Option<&str>) -> Option<String> {
     let model = model?;
-    match state.cedar.models().await {
-        Ok(models) => find_model(&models, model).map(|m| m["id"].as_str().unwrap_or(model).to_string()),
+    match state.cedar.model_listing().await {
+        Ok((_, false)) => None,
+        Ok((models, true)) => find_model(&models, model).map(|m| m["id"].as_str().unwrap_or(model).to_string()),
         // Can't tell: let cedar decide.
         Err(_) => Some(model.to_string()),
     }
@@ -1552,7 +1555,9 @@ fn clean_plan(plan: Option<String>) -> Result<Option<String>, AppError> {
 
 impl RunSettings {
     /// `model`, `reasoning` and `tools` win over the defaults. A default model that is no longer
-    /// registered is dropped (cedar then uses its own default).
+    /// registered is dropped (cedar then uses its own default). While users don't choose models
+    /// (cedar's `model_selection` is off), no model or level is named at all, whatever a
+    /// conversation, a schedule or the defaults saved earlier: cedar chooses.
     pub async fn resolve(
         state: &AppState,
         prefs: &Preferences,
@@ -1560,9 +1565,16 @@ impl RunSettings {
         reasoning: Option<String>,
         tools: Option<Vec<String>>,
     ) -> Self {
-        let model = match model {
-            Some(m) => Some(m),
-            None => still_registered(state, prefs.model.as_deref()).await,
+        let saved = |models: &[Value]| {
+            let saved = prefs.model.as_deref()?;
+            find_model(models, saved).map(|m| m["id"].as_str().unwrap_or(saved).to_string())
+        };
+        let (model, reasoning) = match (state.cedar.model_listing().await, model) {
+            (Ok((_, false)), _) => (None, None),
+            (_, Some(named)) => (Some(named), reasoning),
+            (Ok((models, _)), None) => (saved(&models), reasoning),
+            // Can't tell whether the saved default is still there: let cedar decide.
+            (Err(_), None) => (prefs.model.clone(), reasoning),
         };
         let tools = tools.or_else(|| prefs.tools.clone()).unwrap_or_else(|| vec!["*".to_string()]);
         Self {
@@ -1690,9 +1702,12 @@ async fn list_tools(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
     Ok(Json(state.cedar.tools().await?))
 }
 
-/// The models cedar has registered, for the pickers.
+/// The models cedar has registered, for the pickers, and whether there are pickers at all:
+/// `selection` is cedar's `model_selection` setting, and while it is off cedar chooses the model
+/// of each run.
 async fn list_models(Scoped(state): Scoped) -> Result<Json<Value>, AppError> {
-    Ok(Json(json!({ "models": state.cedar.models().await? })))
+    let (models, selection) = state.cedar.model_listing().await?;
+    Ok(Json(json!({ "models": models, "selection": selection })))
 }
 
 // -- memory ---------------------------------------------------------------------------------
@@ -2015,7 +2030,7 @@ async fn get_server_settings(Scoped(state): Scoped, headers: HeaderMap) -> Resul
     Ok(Json(state.cedar.server_settings().await?))
 }
 
-/// Change cedar's server-wide settings; the body (`{max_image_side?, sandbox_idle_minutes?, sandbox_runtime?, run_timeout_secs?}`)
+/// Change cedar's server-wide settings; the body (`{max_image_side?, sandbox_idle_minutes?, sandbox_runtime?, run_timeout_secs?, model_selection?}`)
 /// goes through as it is.
 async fn put_server_settings(Scoped(state): Scoped, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;
@@ -2023,6 +2038,25 @@ async fn put_server_settings(Scoped(state): Scoped, headers: HeaderMap, ApiJson(
         return Err(AppError::BadRequest("the body must be a JSON object".into()));
     }
     Ok(Json(state.cedar.set_server_settings(&body).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModelSelectionBody {
+    enabled: bool,
+}
+
+/// Turn choosing models on or off (cedar's `model_selection` setting; Settings -> Advanced).
+/// It is about the models, so whoever may manage them may change it (see
+/// `require_models_access`). Answers `{selection}`.
+async fn put_model_selection(
+    Scoped(state): Scoped,
+    headers: HeaderMap,
+    ApiJson(body): ApiJson<ModelSelectionBody>,
+) -> Result<Json<Value>, AppError> {
+    require_models_access(&state, &headers)?;
+    let saved = state.cedar.set_server_settings(&json!({ "model_selection": body.enabled })).await?;
+    Ok(Json(json!({ "selection": saved["model_selection"].as_bool().unwrap_or(body.enabled) })))
 }
 
 async fn delete_model(Scoped(state): Scoped, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, AppError> {

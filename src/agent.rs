@@ -13,6 +13,7 @@ use crate::memory::{self, Memories, MemoryContext};
 use crate::records::{self, Records, RecordsContext};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
 use crate::plan;
+use crate::routing;
 use crate::policy::Endpoint;
 use crate::sandbox::{Reach, Runtime, Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
@@ -92,23 +93,43 @@ impl From<anyhow::Error> for AgentError {
 /// browser's lifetimes, and the terminal event.
 pub async fn run_agent(
     env: &AgentEnv,
-    run: &Run,
+    created: &Run,
     sandbox: Arc<dyn Sandbox>,
     browser: Option<Arc<BrowserSession>>,
     events: &Emitter,
     cancel: &CancellationToken,
 ) -> Result<Completion, AgentError> {
+    // A continuation starts with a copy of its parent's conversation (made when it was created).
+    let mut messages: Vec<Value> = env
+        .store
+        .list_messages(created.id)
+        .await?
+        .into_iter()
+        .map(|m| json!({ "role": m.role, "content": m.content }))
+        .collect();
+    let attachments = env.store.list_attachments(created.id).await?;
+    // A run that left the choice of model to cedar moves between the smallest and the biggest
+    // registered one (see [`routing`]); `run` is the run on the model it is using, and
+    // `on_small` whether it may still move up.
+    let (mut run, big) = match route(env, created, &messages, &attachments).await? {
+        Some((run, big)) => (run, Some(big)),
+        None => (created.clone(), None),
+    };
+    let mut on_small = big.as_ref().is_some_and(|big| big.id != run.model_id);
+    let run = &mut run;
+    // The model a tool asks (search_products, plan_trip): such calls are for the biggest.
+    let tool_model = big.as_ref().map_or_else(|| run.clone(), |big| on_model(run, big));
     let ctx = ToolContext {
         sandbox: sandbox.clone(),
         browser,
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
-        model: env.llm.client_for(&run.model_id).map(|client| {
+        model: env.llm.client_for(&tool_model.model_id).map(|client| {
             Arc::new(ToolModel::new(
                 client,
-                run.model.clone(),
-                max_tokens(env, run),
-                run.reasoning.clone(),
+                tool_model.model.clone(),
+                max_tokens(env, &tool_model),
+                tool_model.reasoning.clone(),
             ))
         }),
         locale: run.locale.clone(),
@@ -150,14 +171,6 @@ pub async fn run_agent(
         _ = cancel.cancelled() => return Err(AgentError::Cancelled),
         _ = tool_set.connect_remote(env.tool_timeout) => {}
     }
-    // A continuation starts with a copy of its parent's conversation (made when it was created).
-    let mut messages: Vec<Value> = env
-        .store
-        .list_messages(run.id)
-        .await?
-        .into_iter()
-        .map(|m| json!({ "role": m.role, "content": m.content }))
-        .collect();
     // How much of the model's window the run's requests may take (see [`context`]).
     let mut budget = Budget::new(
         model_entry(env, run).and_then(|m| m.context_window),
@@ -172,7 +185,7 @@ pub async fn run_agent(
     if let Some(allow) = &narrowed {
         tracing::info!(run_id = %run.id, window = ?budget.window(), tools = ?allow, "small context window: offering only the tools the request seems to need");
     }
-    let tools = tool_set.select(narrowed.as_deref().or(run.tools.as_deref()));
+    let tools = tool_set.select(narrowed.as_deref().or(created.tools.as_deref()));
     let mut tool_defs = tools.definitions();
     let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
     // In `tool` mode the model decides whether a request needs a plan.
@@ -246,7 +259,6 @@ pub async fn run_agent(
     let mut system = with_note(&run.system, &with_note(&date, &note));
     let workspace_lost = !messages.is_empty() && !run.workspace_reused;
     let opening = opening_message(&messages, &run.prompt, workspace_lost);
-    let attachments = env.store.list_attachments(run.id).await?;
     // CSV and JSON attachments go into record sets named after them before the model sees
     // anything, when the run asks for it (see [`records::import`]); the note says what became
     // of each, and a `records.updated` event what was imported.
@@ -319,6 +331,12 @@ pub async fn run_agent(
     // The limit the manager enforces for this run (see [`crate::manager::run_time_limit`]).
     let time_limit = crate::manager::run_time_limit(&env.store, env.run_timeout).await;
     for turn in 1..=run.max_turns {
+        // A run that is still working after its first turns is a complex task.
+        if let (true, Some(big)) = (on_small && turn > routing::SMALL_TURNS, &big) {
+            move_to(env, run, big, &mut budget, "the task takes many turns").await?;
+            on_small = false;
+        }
+        let resp = 'ask: loop {
         // Looked up each turn, so an admin's change applies to the next call.
         budget.set_max_reply(max_tokens(env, run));
         let llm = env.llm.client_for(&run.model_id).ok_or_else(|| {
@@ -362,7 +380,10 @@ pub async fn run_agent(
             };
             let started = Instant::now();
             let resp = call_model(env, run, llm.as_ref(), &req, trace::AGENT, turn, cancel).await??;
-            if let Some(text) = &resp.reasoning {
+            // The smallest model reached for a complex tool: the turn is asked again of the
+            // biggest (below), and nothing of this reply is shown.
+            let dropped = on_small && calls_complex_tool(&resp);
+            if let Some(text) = resp.reasoning.as_ref().filter(|_| !dropped) {
                 events
                     .emit(
                         event::ASSISTANT_REASONING,
@@ -376,7 +397,7 @@ pub async fn run_agent(
                 .await?;
             budget.calibrate(sent_bytes, resp.usage);
             let learned = budget.learn_window(req.max_tokens, resp.stop_reason.as_deref(), resp.usage);
-            if !cut_off_empty(&resp) {
+            if dropped || !cut_off_empty(&resp) {
                 break resp;
             }
             // Less conversation only helps when the window, not the reply limit, cut it short:
@@ -391,6 +412,14 @@ pub async fn run_agent(
                 continue;
             }
             return Err(AgentError::Failed(cut_off_reason(&budget, req.max_tokens, resp.usage, window_bound)));
+        };
+        match &big {
+            Some(big) if on_small && calls_complex_tool(&resp) => {
+                move_to(env, run, big, &mut budget, "a complex tool call").await?;
+                on_small = false;
+            }
+            _ => break 'ask resp,
+        }
         };
         push_message(
             env,
@@ -496,6 +525,74 @@ pub async fn run_agent(
         "run did not finish within {} turns",
         run.max_turns
     )))
+}
+
+/// The run on the model it starts with and the biggest model, for a run that left the choice of
+/// model to cedar (see [`routing`]); `None` for a run that named its model. Looked up now, so
+/// the registry as it is counts, not as it was when the run was created. It starts on the
+/// smallest model unless it plans first; a conversation with images stays among the models that
+/// take them.
+async fn route(
+    env: &AgentEnv,
+    run: &Run,
+    messages: &[Value],
+    attachments: &[crate::models::Attachment],
+) -> Result<Option<(Run, crate::models::ModelEntry)>, AgentError> {
+    if !run.model_auto {
+        return Ok(None);
+    }
+    let shown = |m: &Value| {
+        m["content"].as_array().is_some_and(|blocks| blocks.iter().any(|b| b["type"] == "image"))
+    };
+    let images = attachments.iter().any(|a| a.is_image()) || messages.iter().any(shown);
+    let Some(tiers) = routing::Tiers::pick(&env.integrations.models(), images) else {
+        return Ok(None);
+    };
+    let first = if plan::wanted(run.plan, &run.prompt) { &tiers.big } else { &tiers.small };
+    let start = on_model(run, first);
+    if start.model_id != run.model_id || start.reasoning != run.reasoning {
+        env.store
+            .set_run_model(run.id, &start.model_id, &start.model, start.reasoning.as_deref())
+            .await?;
+    }
+    Ok(Some((start, tiers.big)))
+}
+
+/// `run` as it is on `entry`: that model, at its default reasoning level.
+fn on_model(run: &Run, entry: &crate::models::ModelEntry) -> Run {
+    Run {
+        model_id: entry.id.clone(),
+        model: entry.model.clone(),
+        reasoning: entry.default_reasoning.clone(),
+        ..run.clone()
+    }
+}
+
+/// Take the run on with the biggest model (see [`routing`]): its requests, its limits and its
+/// window from here on, and what `GET /v1/runs/{id}` reports as the run's model.
+async fn move_to(
+    env: &AgentEnv,
+    run: &mut Run,
+    big: &crate::models::ModelEntry,
+    budget: &mut Budget,
+    why: &str,
+) -> Result<(), AgentError> {
+    tracing::info!(run_id = %run.id, from = %run.model_id, to = %big.id, why, "going on with the biggest model");
+    *run = on_model(run, big);
+    *budget = Budget::new(big.context_window, big.max_tokens);
+    env.store
+        .set_run_model(run.id, &run.model_id, &run.model, run.reasoning.as_deref())
+        .await?;
+    Ok(())
+}
+
+/// Whether a reply asks for a tool that is for the biggest model (see [`routing::complex_tool`]).
+fn calls_complex_tool(resp: &LlmResponse) -> bool {
+    resp.content
+        .iter()
+        .filter(|b| b["type"] == "tool_use")
+        .filter_map(|b| b["name"].as_str())
+        .any(routing::complex_tool)
 }
 
 /// The run's completion, after what it learned has been noted (see [`note_memory`]). The answer
@@ -859,7 +956,7 @@ fn history_text(messages: &[Value]) -> String {
 
 /// The `usage` event for one model call, with what it cost when the model has a price.
 fn usage_event(env: &AgentEnv, run: &Run, turn: u32, usage: Usage) -> Value {
-    let mut data = json!({ "turn": turn, "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens });
+    let mut data = json!({ "turn": turn, "model_id": run.model_id, "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens });
     let price = env
         .integrations
         .models()

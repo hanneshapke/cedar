@@ -21,6 +21,8 @@ final class AppModel {
     private(set) var settings: ServerSettings
     private(set) var conversations: [Conversation] = []
     private(set) var models: [ModelInfo] = []
+    /// Whether people choose the model (see `ModelList`); off, the server does and the pickers are hidden.
+    private(set) var modelSelection = true
     /// How many finished responses nobody has looked at (the bell in the web UI).
     private(set) var inboxUnread = 0
     private(set) var isRefreshing = false
@@ -157,6 +159,7 @@ final class AppModel {
             activityError = nil
             conversationAgents = [:]
             models = []
+            modelSelection = true
             modelsLoaded = false
             serverHasMemory = false
             serverHasContributions = false
@@ -412,7 +415,9 @@ final class AppModel {
             }
             if !modelsLoaded {
                 modelsLoaded = true
-                models = (try? await client.models()) ?? []
+                let list = try? await client.modelList()
+                models = list?.models ?? []
+                modelSelection = list?.selection ?? true
                 let config = try? await client.config()
                 serverHasMemory = config?.memory ?? false
                 serverHasRecords = config?.records ?? false

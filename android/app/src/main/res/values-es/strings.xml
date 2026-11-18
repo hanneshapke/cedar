@@ -54,6 +54,7 @@
     <string name="reasoning_default">Predeterminado</string>
     <string name="models_footnote_empty">Los modelos de IA que ofrece tu servidor aparecen en cuanto está disponible.</string>
     <string name="models_footnote">Qué IA responde a tus mensajes y cuánto piensa antes de responder. Las herramientas, el límite de turnos y el prompt del sistema siguen la configuración del servidor.</string>
+    <string name="models_footnote_auto">Cedar elige el modelo de IA para cada mensaje: uno más grande para planificar y para las tareas complejas, uno más pequeño para las consultas cotidianas. Para elegir tú mismo, activa «Elegir el modelo tú mismo» en Configuración avanzada del chat web.</string>
     <string name="plan">Plan</string>
     <string name="plan_mode_server">Configuración del servidor</string>
     <string name="plan_mode_tool">Cuando Cedar crea que ayuda</string>

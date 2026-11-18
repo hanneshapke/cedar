@@ -15,6 +15,7 @@ use crate::manager::{self, RunManager};
 use crate::marketplace::{InstallRequest, Marketplace};
 use crate::memory::{self, Actor, Memories, Refused};
 use crate::records::{self, Records, SaveOptions};
+use crate::routing;
 use crate::polls::{self, Polls};
 use crate::models::{
     Attachment, CreateRunRequest, ModelEntry, NewRun, Rating, Run, RunStatus, StoredMessage,
@@ -413,6 +414,37 @@ fn resolve_model(
     })
 }
 
+/// The model cedar chooses for a request that named none while `model_selection` is off (see
+/// [`routing`]): the smallest registered one, or with `big` the biggest, at its default
+/// reasoning level. With `images`, among the models that take images when there are any.
+fn routed_model(models: &[ModelEntry], images: bool, big: bool) -> Result<ResolvedModel, AppError> {
+    let tiers = routing::Tiers::pick(models, images).ok_or_else(|| {
+        AppError::Conflict(
+            "no model is registered; an admin adds one under Settings or with PUT /v1/admin/models/{id}"
+                .into(),
+        )
+    })?;
+    let entry = if big { tiers.big } else { tiers.small };
+    Ok(ResolvedModel {
+        id: entry.id,
+        name: entry.model,
+        reasoning: entry.default_reasoning,
+        multimodal: entry.multimodal,
+        max_tokens: entry.max_tokens,
+    })
+}
+
+/// Whether a request left the choice of model to cedar: it named no model and no reasoning level
+/// (which belongs to a model), and users don't choose models here (`model_selection` is off).
+async fn leaves_model_to_cedar(
+    state: &AppState,
+    model: Option<&str>,
+    reasoning: Option<&str>,
+) -> Result<bool, AppError> {
+    let named = |v: Option<&str>| v.is_some_and(|s| !s.trim().is_empty());
+    Ok(!named(model) && !named(reasoning) && !routing::selection_on(&state.store).await?)
+}
+
 /// Check the files sent with a prompt: count, name, media type, that `data` is real base64, and
 /// the decoded sizes. The base64 is kept as sent; decoding here only validates it.
 fn validate_attachments(attachments: &[Attachment]) -> Result<(), AppError> {
@@ -495,14 +527,33 @@ async fn create_run(
             _ => return Err(AppError::NotFound("parent run not found")),
         },
     };
-    let model = resolve_model(
-        &state.integrations.models(),
-        req.model.as_deref(),
-        req.reasoning.as_deref(),
-        parent.as_ref(),
-    )?;
+    let has_images = attachments.iter().any(Attachment::is_image);
+    // Without a model named, and unless users choose models here, cedar chooses as the run goes
+    // (see `routing`); this is the model it starts with.
+    let model_auto =
+        leaves_model_to_cedar(&state, req.model.as_deref(), req.reasoning.as_deref()).await?;
+    // A run that plans first starts on the biggest model.
+    let plan_first = crate::plan::wanted(req.plan.unwrap_or(cfg.plan), &req.prompt);
+    let model = if model_auto {
+        routed_model(&state.integrations.models(), has_images, plan_first)?
+    } else {
+        resolve_model(
+            &state.integrations.models(),
+            req.model.as_deref(),
+            req.reasoning.as_deref(),
+            parent.as_ref(),
+        )?
+    };
     // PDFs are fine for any model: they are saved in the workspace for the agent to read.
-    if attachments.iter().any(Attachment::is_image) && !model.multimodal {
+    if has_images && !model.multimodal && model_auto {
+        return Err(AppError::BadRequest(
+            "no registered model accepts images (an admin registers one as accepting them under \
+             Settings, or with \"multimodal\": true on PUT /v1/admin/models/{id}); PDFs can be \
+             attached for any model"
+                .into(),
+        ));
+    }
+    if has_images && !model.multimodal {
         return Err(AppError::BadRequest(format!(
             "model {:?} does not accept images (an admin registers it as accepting them under \
              Settings, or with \"multimodal\": true on PUT /v1/admin/models/{{id}}); PDFs can be \
@@ -588,6 +639,7 @@ async fn create_run(
         model_id: model.id,
         model: model.name,
         reasoning: model.reasoning,
+        model_auto,
         max_turns,
         parent_id: req.parent_id,
         tools,
@@ -681,7 +733,15 @@ async fn list_models(State(state): State<AppState>) -> Json<serde_json::Value> {
         .iter()
         .map(ModelEntry::public)
         .collect();
-    Json(json!({ "models": models }))
+    // Whether users choose among them; off, cedar chooses for the runs that name none.
+    let model_selection = match routing::selection_on(&state.store).await {
+        Ok(on) => on,
+        Err(e) => {
+            tracing::warn!(error = %format!("{e:#}"), "could not read model_selection; taking it as off");
+            false
+        }
+    };
+    Json(json!({ "models": models, "model_selection": model_selection }))
 }
 
 /// What a run gets when it doesn't say: for clients that show the defaults.
@@ -691,6 +751,7 @@ async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Valu
     Ok(Json(json!({
         "model": default.as_ref().map(|m| m.model.clone()),
         "model_id": default.as_ref().map(|m| m.id.clone()),
+        "model_selection": routing::selection_on(&state.store).await?,
         "system": cfg.default_system_prompt,
         "locale": cfg.default_locale,
         "locales": locale::LANGUAGES.iter().chain(locale::REGIONS).collect::<Vec<_>>(),
@@ -1074,6 +1135,10 @@ struct SettingsBody {
     /// `RUN_TIMEOUT_SECS`.
     #[serde(default, deserialize_with = "crate::integrations::present")]
     run_timeout_secs: Option<Option<u64>>,
+    /// Whether users choose the model of a run themselves. Off (the default), cedar chooses
+    /// among the registered models by their size (see [`crate::routing`]).
+    #[serde(default, deserialize_with = "crate::integrations::present")]
+    model_selection: Option<Option<bool>>,
 }
 
 async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> {
@@ -1082,6 +1147,7 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
         "sandbox_idle_minutes": manager::saved_idle_minutes(&state.store).await?,
         "sandbox_runtime": sandbox::saved_runtime(&state.store).await?.map(sandbox::Runtime::as_str),
         "run_timeout_secs": manager::saved_run_timeout_secs(&state.store).await?,
+        "model_selection": routing::selection_on(&state.store).await?,
         // Where OpenShell can't run (Windows), sandboxes always run on Docker.
         "openshell_supported": sandbox::OPENSHELL_SUPPORTED,
         // The OS cedar runs on (`linux`, `macos`, `windows`), for the steps that set OpenShell up.
@@ -1097,6 +1163,7 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
             "run_timeout_secs": state.cfg.run_timeout.as_secs(),
             "min_run_timeout_secs": manager::MIN_RUN_TIMEOUT_SECS,
             "max_run_timeout_secs": manager::MAX_RUN_TIMEOUT_SECS,
+            "model_selection": false,
         },
     }))
 }
@@ -1156,6 +1223,9 @@ async fn put_settings(
     }
     if let Some(secs) = body.run_timeout_secs {
         manager::set_run_timeout_secs(&state.store, secs).await?;
+    }
+    if let Some(on) = body.model_selection {
+        routing::set_selection(&state.store, on.unwrap_or(false)).await?;
     }
     if let Some(runtime) = runtime {
         // Docker is the default, so it is saved as no setting at all.
@@ -1825,13 +1895,18 @@ async fn compact_conversation(
             ))
         }
     };
-    // Compaction takes no reasoning level: one plain call is enough.
-    let model = resolve_model(
-        &state.integrations.models(),
-        req.model.as_deref(),
-        Some(""),
-        run.as_ref(),
-    )
+    // Compaction takes no reasoning level: one plain call is enough. Reviewing a whole
+    // conversation is for the biggest model when cedar chooses (see `routing`).
+    let model = if leaves_model_to_cedar(&state, req.model.as_deref(), None).await? {
+        routed_model(&state.integrations.models(), false, true)
+    } else {
+        resolve_model(
+            &state.integrations.models(),
+            req.model.as_deref(),
+            Some(""),
+            run.as_ref(),
+        )
+    }
     .map(|m| ResolvedModel {
         reasoning: None,
         ..m

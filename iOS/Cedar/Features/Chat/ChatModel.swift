@@ -45,9 +45,11 @@ final class ChatModel {
     }
 
     /// Whether the model new messages go to takes images: the one picked in Settings, or the
-    /// server's default. PDFs go with any model.
+    /// server's default; while the server picks the model, whether any model does (an image then
+    /// goes to one that takes it). PDFs go with any model.
     var acceptsImages: Bool {
         guard let app else { return false }
+        guard app.modelSelection else { return app.models.contains(where: \.multimodal) }
         let model = app.settings.model.isEmpty
             ? app.models.first(where: \.isDefault)
             : app.models.first(where: { $0.id == app.settings.model })
@@ -296,8 +298,9 @@ final class ChatModel {
             }
             let turn = try await client.send(conversationId: id, .init(
                 content: text,
-                model: settings.model.isEmpty ? nil : settings.model,
-                reasoning: settings.reasoning.isEmpty ? nil : settings.reasoning,
+                // While the server picks the model, a pick saved earlier is not sent.
+                model: settings.model.isEmpty || !app.modelSelection ? nil : settings.model,
+                reasoning: settings.reasoning.isEmpty || !app.modelSelection ? nil : settings.reasoning,
                 attachments: attachments.isEmpty ? nil : attachments.map {
                     .init(name: $0.name, mediaType: $0.mediaType, data: $0.data.base64EncodedString())
                 },

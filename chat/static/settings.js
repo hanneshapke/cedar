@@ -444,7 +444,8 @@ const cedarSettings = (() => {
     const parts = [await registryBlock()];
 
     const fields = el('div', 'cedar-set-fields');
-    if (cedarModels.all().length) {
+    // A default model is only chosen while users choose models (Settings -> Advanced).
+    if (cedarModels.all().length && cedarModels.selectable()) {
       const modelSelect = el('select');
       const def = cedarModels.byId(cedarModels.defaultId());
       modelSelect.append(new Option(def ? tr('settings.model.cedarDefaultIs', { model: modelLabel(def) }) : tr('settings.model.cedarDefault'), ''));
@@ -583,10 +584,12 @@ const cedarSettings = (() => {
   function modelSummary() {
     if (!prefs) return null;
     if (cedarModels.loaded() && !cedarModels.all().length) return { text: tr('settings.model.summaryNone'), kind: 'error' };
-    const m = cedarModels.byId(prefs.model) || cedarModels.byId(cedarModels.defaultId());
+    const auto = !cedarModels.selectable() && cedarModels.all().length > 1;
+    const m = cedarModels.byId(cedarModels.selectable() ? prefs.model : '') || cedarModels.byId(cedarModels.defaultId());
     const parts = [];
-    if (m) parts.push(m.label || m.model || m.id);
-    if (m?.default_reasoning) parts.push(m.default_reasoning);
+    if (auto) parts.push(tr('settings.model.summaryAuto'));
+    else if (m) parts.push(m.label || m.model || m.id);
+    if (!auto && m?.default_reasoning) parts.push(m.default_reasoning);
     parts.push(prefs.system ? tr('settings.model.customPrompt') : tr('settings.model.defaultPrompt'));
     return parts.join(' · ');
   }
@@ -681,13 +684,15 @@ const cedarSettings = (() => {
   /** cedar's server settings as last loaded for the Advanced page, for its nav line. */
   let advancedSettings = null;
 
-  /** Expert mode (trace-view.js), for this browser and so open to everyone, then the server-wide
-   *  options most setups leave alone, which need the admin token: how long a run may take, and
-   *  what runs the sandboxes. */
+  /** Expert mode (trace-view.js), for this browser and so open to everyone, and whether models
+   *  are chosen by hand, open to whoever may manage the models; then the server-wide options most
+   *  setups leave alone, which need the admin token: how long a run may take, and what runs the
+   *  sandboxes. */
   async function renderAdvanced(section = advancedSection) {
     if (!section) return;
     advancedSection = section;
     const expert = typeof cedarTrace === 'undefined' ? [] : [cedarTrace.settingsBlock()];
+    expert.push(advancedBlock(tr('settings.advanced.models'), modelSelectionRow()));
     const cfg = deps.config();
     if (!cfg.admin_enabled || !unlocked()) {
       advancedSettings = null;
@@ -724,6 +729,56 @@ const cedarSettings = (() => {
     head.append(el('span', 'settings-eyebrow', title));
     b.append(head, content);
     return b;
+  }
+
+  /** The switch that brings the model pickers back (cedar's `model_selection` setting). Off, the
+   *  default, cedar chooses the model of every message by the models' sizes. Whoever may manage
+   *  the models may flip it. */
+  function modelSelectionRow() {
+    const cfg = deps.config();
+    const allowed = modelsOpen() || (cfg.admin_enabled && unlocked());
+    const { row, main, side } = integrationRow(tr('settings.advanced.modelSelection.title'), tr('settings.advanced.modelSelection.desc'));
+    const sw = el('button', 'cedar-set-switch');
+    sw.type = 'button';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('aria-label', tr('settings.advanced.modelSelection.title'));
+    sw.disabled = !allowed;
+    const state = badge('', 'ok');
+    const problem = el('small', 'cedar-set-error');
+    problem.hidden = true;
+    if (!allowed) {
+      row.classList.add('unavailable');
+      sw.title = tr('settings.advanced.modelSelection.locked');
+    }
+    main.append(problem);
+    const show = (on) => {
+      sw.setAttribute('aria-checked', String(on));
+      state.textContent = tr(on ? 'settings.advanced.modelSelection.manual' : 'settings.advanced.modelSelection.auto');
+    };
+    show(cedarModels.selectable());
+    sw.addEventListener('click', async () => {
+      const was = sw.getAttribute('aria-checked') === 'true';
+      sw.disabled = true;
+      problem.hidden = true;
+      try {
+        const saved = await adminApi('PUT', '/integrations/model-selection', { enabled: !was });
+        const now = saved?.selection === true;
+        show(now);
+        // The pickers in the composer and the agent form follow, and the Models page's default.
+        await modelsChanged();
+        refreshModels();
+        deps.toast(tr(now ? 'settings.advanced.modelSelection.savedOn' : 'settings.advanced.modelSelection.savedOff'));
+      } catch (err) {
+        show(was);
+        problem.textContent = err.message;
+        problem.hidden = false;
+      } finally {
+        sw.disabled = !allowed;
+        shell()?.refresh('model');
+      }
+    });
+    side.append(state, sw);
+    return row;
   }
 
   /** The Advanced page's Sandbox block around `content`. */

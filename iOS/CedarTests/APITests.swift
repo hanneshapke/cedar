@@ -176,6 +176,10 @@ final class APITests: XCTestCase {
         XCTAssertEqual(models.models[0].reasoningLevels, ["low", "high"])
         XCTAssertTrue(models.models[0].isDefault)
         XCTAssertEqual(models.models[1].label, "bare")
+        // A server from before the setting has people choose the model; a newer one says.
+        XCTAssertTrue(models.selection)
+        let chosen = try JSONDecoder.cedar.decode(ModelList.self, from: Data(#"{"models":[],"selection":false}"#.utf8))
+        XCTAssertFalse(chosen.selection)
     }
 
     // MARK: Agents

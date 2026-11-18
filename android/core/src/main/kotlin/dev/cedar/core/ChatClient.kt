@@ -70,7 +70,10 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
 
     suspend fun config(): ServerConfig = decode(request("api/config"), ServerConfig.serializer())
 
-    suspend fun models(): List<ModelInfo> = decode(request("api/models"), ModelList.serializer()).models
+    suspend fun models(): List<ModelInfo> = modelList().models
+
+    /** The models, and whether people choose among them (see [ModelList]). */
+    suspend fun modelList(): ModelList = decode(request("api/models"), ModelList.serializer())
 
     // Memory
 

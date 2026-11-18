@@ -836,6 +836,8 @@ async fn defaults_and_clamps_are_applied() {
     ])
     .await;
     app.register("small", "small-model", &[]).await;
+    // Users choose the model here, so a run that names none gets the default one.
+    cedar::routing::set_selection(&app.state.store, true).await.unwrap();
 
     let plain = app.create_run(KEY_A, "x").await;
     assert_eq!(plain["model"], TEST_MODEL);
@@ -1782,6 +1784,7 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         interactive: false,
         locale: "en".into(),
         import_attachments: false,
+        model_auto: false,
     };
     let running = store
         .insert_run_limited(&new("was running"), 10)
@@ -1832,7 +1835,7 @@ async fn the_registered_models_are_listed_to_any_key() {
               "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true, "max_tokens": 16384, "context_window": null, "price": null },
             { "id": "small", "label": "small", "model": "small-model", "is_default": false,
               "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false, "max_tokens": 16384, "context_window": null, "price": null },
-        ] })
+        ] , "model_selection": false })
     );
     let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
     assert_eq!(defaults["model"], TEST_MODEL);
@@ -1848,6 +1851,8 @@ async fn a_run_asks_for_a_reasoning_level_and_a_continuation_keeps_it() {
         Step::Reply(text("d")),
     ])
     .await;
+    // Users choose the model here, so a run that names none gets the default one.
+    cedar::routing::set_selection(&app.state.store, true).await.unwrap();
 
     let run = app
         .create_run_with(KEY_A, json!({ "prompt": "think", "reasoning": "high" }))
@@ -2002,6 +2007,8 @@ async fn a_finished_run_can_be_compacted_into_one_prompt() {
     ])
     .await;
     app.register("small", "small-model", &["low", "high"]).await;
+    // Users choose the model here, so a run that names none gets the default one.
+    cedar::routing::set_selection(&app.state.store, true).await.unwrap();
     let run = app
         .create_run_with(
             KEY_A,

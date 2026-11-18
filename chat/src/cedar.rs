@@ -157,8 +157,16 @@ impl CedarClient {
     /// The models cedar has registered, in picker order: each
     /// `{id, label, model, reasoning_levels, default_reasoning, is_default}`.
     pub async fn models(&self) -> Result<Vec<Value>, AppError> {
+        Ok(self.model_listing().await?.0)
+    }
+
+    /// The registered models, and whether users choose among them (cedar's `model_selection`
+    /// setting). Off, cedar chooses the model of every run that names none, by the models'
+    /// sizes, and this service names none. A cedar from before the setting has users choose.
+    pub async fn model_listing(&self) -> Result<(Vec<Value>, bool), AppError> {
         let body: Value = self.json(self.http.get(self.url("/models"))).await?;
-        Ok(body["models"].as_array().cloned().unwrap_or_default())
+        let selection = body["model_selection"].as_bool().unwrap_or(true);
+        Ok((body["models"].as_array().cloned().unwrap_or_default(), selection))
     }
 
     /// What cedar's runs remember about the user (`GET /v1/memory`): `{items, limits}`. `None` from

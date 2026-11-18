@@ -4336,6 +4336,29 @@
         }
       }
     },
+    "Cedar picks the AI model for each message: a bigger one for planning and complex tasks, a smaller one for everyday requests. To choose yourself, turn on “Choose the model yourself” under Advanced settings in the web chat." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar wählt das KI-Modell für jede Nachricht: ein leistungsstärkeres zum Planen und für komplexe Aufgaben, ein kleineres für alltägliche Anfragen. Um selbst zu wählen, aktiviere im Web-Chat unter „Erweiterte Einstellungen“ die Option „Modell selbst auswählen“."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar elige el modelo de IA para cada mensaje: uno más grande para planificar y para las tareas complejas, uno más pequeño para las consultas cotidianas. Para elegir tú mismo, activa «Elegir el modelo tú mismo» en Configuración avanzada del chat web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar choisit le modèle d’IA pour chaque message : un plus grand pour planifier et pour les tâches complexes, un plus petit pour les demandes courantes. Pour choisir vous-même, activez « Choisir le modèle soi-même » dans les Réglages avancés du chat web."
+          }
+        }
+      }
+    },
     "Cedar planned this, waiting for your go-ahead" : {
       "extractionState" : "manual",
       "localizations" : {

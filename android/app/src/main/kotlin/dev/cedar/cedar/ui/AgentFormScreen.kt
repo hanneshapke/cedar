@@ -339,33 +339,36 @@ fun AgentFormScreen(app: AppModel, request: AgentFormRequest) {
                 if (byEvent) SafetyNote(stringResource(R.string.agent_safety_events))
                 if (personalTool) SafetyNote(stringResource(R.string.agent_safety_personal_tool))
 
-                HorizontalDivider()
-                Section(stringResource(R.string.section_ai_model))
-                val models = app.models
-                val selected = models.firstOrNull { it.id == model }
-                val serverDefault = stringResource(R.string.server_default)
-                Picker(
-                    label = stringResource(R.string.ai_model),
-                    value = selected?.label ?: if (model.isEmpty()) serverDefault else model,
-                    options = listOf("" to serverDefault) + models.map { it.id to it.label },
-                ) { id ->
-                    // A level the new model doesn't offer is dropped.
-                    val levels = models.firstOrNull { it.id == id }?.reasoningLevels.orEmpty()
-                    model = id
-                    if (reasoning !in levels) reasoning = ""
-                    touched = true
-                }
-                val levels = selected?.reasoningLevels.orEmpty()
-                if (levels.isNotEmpty()) {
-                    // The levels are the server's words (low, medium, high).
-                    val default = stringResource(R.string.reasoning_default)
+                // While the server picks the model, an agent has none of its own to choose.
+                if (app.modelSelection) {
+                    HorizontalDivider()
+                    Section(stringResource(R.string.section_ai_model))
+                    val models = app.models
+                    val selected = models.firstOrNull { it.id == model }
+                    val serverDefault = stringResource(R.string.server_default)
                     Picker(
-                        label = stringResource(R.string.reasoning_effort),
-                        value = reasoning.replaceFirstChar { it.uppercase() }.ifEmpty { default },
-                        options = listOf("" to default) + levels.map { it to it.replaceFirstChar { c -> c.uppercase() } },
-                    ) {
-                        reasoning = it
+                        label = stringResource(R.string.ai_model),
+                        value = selected?.label ?: if (model.isEmpty()) serverDefault else model,
+                        options = listOf("" to serverDefault) + models.map { it.id to it.label },
+                    ) { id ->
+                        // A level the new model doesn't offer is dropped.
+                        val levels = models.firstOrNull { it.id == id }?.reasoningLevels.orEmpty()
+                        model = id
+                        if (reasoning !in levels) reasoning = ""
                         touched = true
+                    }
+                    val levels = selected?.reasoningLevels.orEmpty()
+                    if (levels.isNotEmpty()) {
+                        // The levels are the server's words (low, medium, high).
+                        val default = stringResource(R.string.reasoning_default)
+                        Picker(
+                            label = stringResource(R.string.reasoning_effort),
+                            value = reasoning.replaceFirstChar { it.uppercase() }.ifEmpty { default },
+                            options = listOf("" to default) + levels.map { it to it.replaceFirstChar { c -> c.uppercase() } },
+                        ) {
+                            reasoning = it
+                            touched = true
+                        }
                     }
                 }
 
