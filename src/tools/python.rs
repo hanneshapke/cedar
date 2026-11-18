@@ -27,7 +27,10 @@ impl Tool for RunPython {
          return its stdout, stderr, exit status, and the workspace files it created or modified. \
          Prefer it over bash for anything longer than a one-liner: no shell quoting is needed. \
          Modules in /workspace can be imported. Each call is a fresh interpreter, so keep state \
-         in files."
+         in files. Installed: numpy, pandas, scipy, opencv-python-headless (cv2), pillow, \
+         matplotlib, requests, beautifulsoup4, lxml, pypdf, pypdfium2, python-docx, openpyxl, \
+         python-pptx, weasyprint, markdown. Use these rather than `pip install`: the sandbox \
+         is often offline."
     }
 
     fn schema(&self) -> Value {
