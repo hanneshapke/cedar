@@ -308,6 +308,52 @@
       }
     },
     {
+      "name": "ticketmaster_events",
+      "version": "1.0.0",
+      "summary": "Concerts, sports, theatre and other live events near you, with dates, venues, prices and links, from Ticketmaster",
+      "category": "media",
+      "author": "Hannes Hapke",
+      "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/ticketmaster_events",
+      "license": "Apache-2.0",
+      "permissions": {
+        "network": [
+          "app.ticketmaster.com"
+        ],
+        "secrets": [
+          "TICKETMASTER_API_KEY"
+        ],
+        "pip": [],
+        "health_data": false
+      },
+      "base_url": "tools/ticketmaster_events/",
+      "files": {
+        ".env.example": "9d378e2dea5e1ec55b6bd8849c5f058087f9cab46c138b8f38bef7c9384a6700",
+        "tool.json": "73c897c85cf43ecdc3882fc60606151df56ef121c33719eade39e608f0cba54a",
+        "tool.py": "32efaca6670f8ce86bddde89ec3ac7c10040feba1dbfcbeb9d6c723f7307a578"
+      },
+      "reviewed": false,
+      "translations": {
+        "de": {
+          "summary": "Konzerte, Sport, Theater und andere Events in deiner N\u00e4he, mit Terminen, Orten, Preisen und Links, von Ticketmaster",
+          "secrets": {
+            "TICKETMASTER_API_KEY": "Der Consumer Key einer App auf developer.ticketmaster.com (kostenlos; 5.000 Aufrufe pro Tag)"
+          }
+        },
+        "fr": {
+          "summary": "Concerts, sport, th\u00e9\u00e2tre et autres \u00e9v\u00e9nements pr\u00e8s de chez vous, avec dates, lieux, prix et liens, via Ticketmaster",
+          "secrets": {
+            "TICKETMASTER_API_KEY": "La Consumer Key d'une application sur developer.ticketmaster.com (gratuite ; 5 000 appels par jour)"
+          }
+        },
+        "es": {
+          "summary": "Conciertos, deportes, teatro y otros eventos cerca de ti, con fechas, lugares, precios y enlaces, de Ticketmaster",
+          "secrets": {
+            "TICKETMASTER_API_KEY": "La Consumer Key de una app en developer.ticketmaster.com (gratis; 5000 llamadas al d\u00eda)"
+          }
+        }
+      }
+    },
+    {
       "name": "x_ai_trends",
       "version": "1.0.0",
       "summary": "What's trending in AI on X today: topics, rising stories, top posts and shared links",
