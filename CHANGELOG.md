@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 - **The Slack app can be set up in Settings.** An admin pastes the app's two tokens into Settings → Slack; they are checked with Slack, saved, and the app connects at once, without a restart, and can be replaced or removed the same way. This is how the desktop app gets Slack. Tokens set in the environment (`CHAT_SLACK_APP_TOKEN`, `CHAT_SLACK_BOT_TOKEN`) still win, and Settings says so.
 - **Memory as a graph.** Settings → Memory has a new *Graph* view: every memory is a mark, and a line joins two that came from the same conversation, share a topic, were used together in a reply, or replaced one another. Bigger marks weigh more when cedar decides what to recall; pinned ones wear a ring and archived ones are hollow. Choosing a mark shows the memory with its usual actions (pin, archive, remove) and what it is linked to and why; the legend hides and shows each kind of mark and line, and *Include the archive* adds what was replaced. Over the API it is `GET /v1/memory/graph` (`{nodes, edges, total, left_out}`), built per request from what memory already stores, so nothing new is kept. On the web and in the desktop app; the phone apps keep the lists.
