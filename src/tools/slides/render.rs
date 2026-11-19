@@ -765,7 +765,7 @@ impl<'a> Page<'a> {
         }
         for (r, row) in all.iter().enumerate() {
             let is_header = has_header && r == 0;
-            for c in 0..cols {
+            for (c, &numbers) in right.iter().enumerate() {
                 let text = cell(row, c);
                 if text.is_empty() {
                     continue;
@@ -780,7 +780,7 @@ impl<'a> Page<'a> {
                     "style": Self::text_style(&style, t.text, is_header),
                     "fields": "fontFamily,fontSize,bold,foregroundColor",
                 } }));
-                if right[c] {
+                if numbers {
                     self.requests.push(json!({ "updateParagraphStyle": {
                         "objectId": id, "cellLocation": at, "textRange": { "type": "ALL" },
                         "style": { "alignment": "END" }, "fields": "alignment",
@@ -976,7 +976,7 @@ mod tests {
         let r = rendered(json!([{ "title": "Cover" }, { "title": "T", "body": "Lead 🚀 in.", "bullets": [
             "One **bold**", { "text": "Two", "sub": ["Under **it**"] } ] }]));
         let slide = &r.slides[1];
-        let inserted = slide.iter().filter_map(|q| q.get("insertText")).last().unwrap();
+        let inserted = slide.iter().filter_map(|q| q.get("insertText")).next_back().unwrap();
         let text = inserted["text"].as_str().unwrap();
         assert_eq!(text, "Lead 🚀 in.\nOne bold\nTwo\n\tUnder it");
         let id = inserted["objectId"].as_str().unwrap();
