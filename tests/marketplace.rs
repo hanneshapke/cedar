@@ -99,6 +99,8 @@ async fn app(script: Vec<Step>, dir: &std::path::Path, url: &str) -> TestApp {
             ("CEDAR_SECRET_KEY", SECRET_KEY),
             ("TOOLS_DIR", dir.to_str().unwrap()),
             ("TOOLS_REGISTRY_URL", url),
+            // "Always" from the first approval, as these tests answer it.
+            ("ALWAYS_ALLOW_AFTER", "0"),
         ],
     )
     .await

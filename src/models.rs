@@ -97,6 +97,10 @@ pub struct Run {
     /// The client answers what the run asks while it goes: it waits for the plan to be agreed and
     /// for risky tool calls to be approved. Otherwise the plan is only shown and nothing waits.
     pub interactive: bool,
+    /// Whether what the run would send or change in the user's accounts is held for them to
+    /// approve instead of done (see [`HeldCall`]). It applies while nobody answers the run: one
+    /// that isn't interactive.
+    pub hold_writes: bool,
     /// The user's language and region (a BCP 47 tag such as `de-CH`; see [`crate::locale`]).
     pub locale: String,
     /// The user's verdict on the run (`POST /v1/runs/{id}/feedback`), if they gave one.
@@ -130,6 +134,7 @@ pub struct NewRun {
     pub callback_secret: Option<String>,
     pub plan: PlanMode,
     pub interactive: bool,
+    pub hold_writes: bool,
     pub locale: String,
     /// Import CSV and JSON attachments into record sets when the run starts.
     pub import_attachments: bool,
@@ -311,6 +316,8 @@ pub mod event {
     pub const PLAN_UPDATED: &str = "plan.updated";
     pub const APPROVAL_REQUIRED: &str = "approval.required";
     pub const APPROVAL_RESOLVED: &str = "approval.resolved";
+    /// A call was not made but kept for the user to approve later (see `HeldCall`).
+    pub const CALL_HELD: &str = "call.held";
     /// The sandbox's policy refused a connection or request while a call ran.
     pub const SANDBOX_DENIED: &str = "sandbox.denied";
     pub const USAGE: &str = "usage";
@@ -379,6 +386,34 @@ impl RunStatus {
     }
 }
 
+/// A tool call a run wanted to make that waits in its owner's outbox instead: something that
+/// sends or changes in one of their accounts, held because nobody was there to approve it (an
+/// unattended run with `hold_writes`) or because nobody answered in time. Approving it makes
+/// exactly this call, or the one the owner edited it into, outside any run.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct HeldCall {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    /// The tool call's id in the run.
+    pub call_id: String,
+    pub tool: String,
+    /// The call's input: as the model wrote it, or as the owner sent it once `edited`.
+    pub input: Value,
+    /// One line on what the call does.
+    pub reason: String,
+    /// `unattended` or `timeout`.
+    pub why: String,
+    /// `pending`, `sending`, `sent`, `failed` (the tool refused; it can be approved again) or
+    /// `discarded`.
+    pub status: String,
+    /// Whether the owner changed the input before sending.
+    pub edited: bool,
+    /// What the tool returned, or why it failed.
+    pub output: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub decided_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct StoredMessage {
     pub seq: i64,
@@ -418,6 +453,10 @@ pub struct CreateRunRequest {
     /// (`POST /v1/runs/{id}/plan`) and approve risky tool calls
     /// (`POST /v1/runs/{id}/approvals/{approval_id}`). Absent: false, and nothing waits.
     pub interactive: Option<bool>,
+    /// Hold what the run would send or change in the user's accounts (mail, calendar, files,
+    /// Slack) for them to approve later (`GET /v1/held`), instead of doing it, when the run
+    /// isn't interactive. Absent: false, and an unattended run acts at once.
+    pub hold_writes: Option<bool>,
     /// The user's language and region, a BCP 47 tag such as `de` or `fr-CH` (see
     /// [`crate::locale`]). Absent: the parent's for a continuation, else `DEFAULT_LOCALE`.
     pub locale: Option<String>,
