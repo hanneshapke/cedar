@@ -19,7 +19,8 @@ use crate::sandbox::{Reach, Runtime, Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
 use crate::tools::{
-    question_text, ToolContext, ToolModel, ToolView, ASK_USER, RECORDS_SAVE, REMEMBER,
+    question_text, Handover, ToolContext, ToolModel, ToolView, ACCOUNT_GROUPS, ASK_USER,
+    RECORDS_SAVE, REMEMBER,
 };
 use crate::trace;
 use crate::waits::{Answer, Waits};
@@ -44,6 +45,9 @@ pub struct AgentEnv {
     pub approvals: Rules,
     /// How long a run waits for an answer to its plan or an approval.
     pub approval_timeout: Duration,
+    /// After how many plain "allow" answers for the same thing an approval offers "always
+    /// allow"; 0 offers it from the first time.
+    pub always_allow_after: u32,
     /// Where runs wait for those answers.
     pub waits: Arc<Waits>,
     /// The model registry, for whether a run's model takes images.
@@ -188,6 +192,13 @@ pub async fn run_agent(
     let tools = tool_set.select(narrowed.as_deref().or(created.tools.as_deref()));
     let mut tool_defs = tools.definitions();
     let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
+    // How this run hands over to its user: what waits for their OK, what is held for them.
+    note.push(' ');
+    note.push_str(&tools.handover_note(Handover {
+        interactive: run.interactive,
+        approvals: !env.approvals.is_empty(),
+        hold_writes: run.hold_writes,
+    }));
     // In `tool` mode the model decides whether a request needs a plan.
     let offers_plan = run.plan == PlanMode::Tool;
     if offers_plan {
@@ -1094,8 +1105,30 @@ async fn propose_plan(
 const DECLINED: &str = "The user declined this call, so it did not run. Don't try it again     another way; go on without it, or say what you would need.";
 const NOT_APPROVED: &str = "No one approved this call in time, so it did not run. Go on without     it, or say what you would need.";
 
-/// In an interactive run, wait for the user's OK if the call needs one (and isn't always
-/// allowed already). `Ok(None)`: go ahead; `Ok(Some(message))`: don't, and tell the model this.
+/// What the model reads back for a call that was held (see [`hold`]).
+const HELD_NOTE: &str = "Not done yet: this call is held in the user's outbox and is only made \
+    if they approve it there. Don't make it again and don't wait for it. Go on with the rest, \
+    and tell the user that it is waiting for their approval.";
+
+/// At most this many calls of one run are held; more are refused, so a run that loops can't
+/// fill its owner's outbox.
+const MAX_HELD_PER_RUN: i64 = 20;
+
+/// What becomes of a call before it runs.
+enum Verdict {
+    /// Make it.
+    Go,
+    /// Don't, and tell the model this.
+    Refused(String),
+    /// Don't: it waits in the owner's outbox. The model is told this, as the call's result.
+    Held(String),
+}
+
+/// Decide whether a call runs now. In an interactive run, wait for the user's OK if the call
+/// needs one (and isn't always allowed already); one that sends or changes something in the
+/// user's accounts and got no answer in time is held for them rather than dropped. In a run
+/// nobody answers, such a call is held when the run says so (`hold_writes`), and everything
+/// else goes ahead.
 #[allow(clippy::too_many_arguments)]
 async fn approve(
     env: &AgentEnv,
@@ -1107,30 +1140,76 @@ async fn approve(
     call_id: &str,
     name: &str,
     input: &Value,
-) -> Result<Option<&'static str>, AgentError> {
+) -> Result<Verdict, AgentError> {
+    // By the tool's group in this run's set, so a personal tool whose name merely looks like an
+    // account's is never held: it needs a sandbox to run.
+    let holdable = ACCOUNT_GROUPS.contains(&tools.group(name)) && crate::tools::holdable(name);
     if !run.interactive {
-        return Ok(None);
+        if run.hold_writes && holdable {
+            return hold(env, run, events, call_id, name, input, "unattended").await;
+        }
+        return Ok(Verdict::Go);
     }
     let personal = tools
         .get(name)
         .and_then(|t| t.personal())
         .and_then(|t| approvals::check_personal(&env.approvals, t));
     let Some(gate) = approvals::check(&env.approvals, name, input, reach).or(personal) else {
-        return Ok(None);
+        return Ok(Verdict::Go);
     };
     let rule = gate.rule.as_str();
     if env.store.granted(&run.owner, rule, &gate.grants).await? {
-        return Ok(None);
+        return Ok(Verdict::Go);
     }
     match ask(env, run, events, cancel, call_id, name, input, &gate).await? {
-        Decision::Allow => Ok(None),
+        Decision::Allow => Ok(Verdict::Go),
         Decision::Always => {
             env.store.grant(&run.owner, rule, &gate.grants).await?;
-            Ok(None)
+            Ok(Verdict::Go)
         }
-        Decision::Timeout => Ok(Some(NOT_APPROVED)),
-        Decision::Deny => Ok(Some(DECLINED)),
+        Decision::Timeout if holdable => hold(env, run, events, call_id, name, input, "timeout").await,
+        Decision::Timeout => Ok(Verdict::Refused(NOT_APPROVED.into())),
+        Decision::Deny => Ok(Verdict::Refused(DECLINED.into())),
     }
+}
+
+/// Keep a call in its owner's outbox instead of making it, and say so with a `call.held` event.
+/// The call is stored as the model wrote it; approving it later makes exactly that call (see
+/// `POST /v1/held/{id}`).
+async fn hold(
+    env: &AgentEnv,
+    run: &Run,
+    events: &Emitter,
+    call_id: &str,
+    name: &str,
+    input: &Value,
+    why: &str,
+) -> Result<Verdict, AgentError> {
+    if env.store.count_held(run.id).await? >= MAX_HELD_PER_RUN {
+        return Ok(Verdict::Refused(format!(
+            "{MAX_HELD_PER_RUN} calls of this run already wait for the user's approval, so this \
+             one was not kept. Stop here and tell the user what is waiting."
+        )));
+    }
+    let reason = approvals::describe(name, input);
+    let held = env
+        .store
+        .hold_call(run.id, &run.owner, call_id, name, input, &reason, why)
+        .await?;
+    // The same call made twice is kept once; only the first is announced.
+    if held.call_id == call_id {
+        events
+            .emit(
+                event::CALL_HELD,
+                json!({ "id": held.id, "call_id": call_id, "tool": name, "input": input,
+                        "reason": reason, "why": why }),
+            )
+            .await?;
+    }
+    Ok(Verdict::Held(
+        json!({ "held": { "id": held.id, "tool": name, "reason": reason, "why": why }, "note": HELD_NOTE })
+            .to_string(),
+    ))
 }
 
 /// What the user answered to an approval card.
@@ -1156,28 +1235,53 @@ async fn ask(
 ) -> Result<Decision, AgentError> {
     let id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
     let key = format!("approval:{id}");
+    let rule = gate.rule.as_str();
+    // "Always allow" is earned: it is offered once the owner plainly allowed the same thing
+    // `always_allow_after` times, counted since they last declined it. Until then the event
+    // carries no `scope`, which is how clients know not to offer it, and `always` says how far
+    // along it is.
+    let after = env.always_allow_after;
+    let allowed = match &gate.scope {
+        Some(_) if after > 0 => env.store.allow_count(&run.owner, rule, &gate.grants).await?,
+        _ => 0,
+    };
+    let offered = gate.scope.is_some() && allowed >= after;
+    let mut data = json!({ "id": id, "call_id": call_id, "tool": name, "input": input, "rule": rule,
+                           "reason": gate.reason, "scope": gate.scope.as_ref().filter(|_| offered) });
+    if gate.scope.is_some() && after > 0 {
+        data["always"] = json!({ "scope": gate.scope, "allowed": allowed, "after": after, "offered": offered });
+    }
     let rx = env.waits.register(run.id, &key);
-    events
-        .emit(
-            event::APPROVAL_REQUIRED,
-            json!({ "id": id, "call_id": call_id, "tool": name, "input": input, "rule": gate.rule.as_str(),
-                    "reason": gate.reason, "scope": gate.scope }),
-        )
-        .await?;
+    events.emit(event::APPROVAL_REQUIRED, data).await?;
     let decision = match env.waits.wait(run.id, &key, rx, env.approval_timeout, cancel).await {
         Answer::Cancelled => return Err(AgentError::Cancelled),
-        Answer::TimedOut => "timeout".to_string(),
-        Answer::Given(v) => v["decision"].as_str().unwrap_or("deny").to_string(),
+        Answer::TimedOut => "timeout",
+        Answer::Given(v) => match v["decision"].as_str() {
+            Some("allow") => "allow",
+            // An "always" that wasn't offered counts as this once.
+            Some("allow_always") if offered => "allow_always",
+            Some("allow_always") => "allow",
+            _ => "deny",
+        },
     };
     let by = if decision == "timeout" { "timeout" } else { "user" };
     events
         .emit(event::APPROVAL_RESOLVED, json!({ "id": id, "decision": decision, "by": by }))
         .await?;
-    Ok(match decision.as_str() {
-        "allow" => Decision::Allow,
-        "allow_always" => Decision::Always,
+    Ok(match decision {
+        "allow" => {
+            env.store.count_allow(&run.owner, rule, &gate.grants).await?;
+            Decision::Allow
+        }
+        "allow_always" => {
+            env.store.reset_allow_counts(&run.owner, rule, &gate.grants).await?;
+            Decision::Always
+        }
         "timeout" => Decision::Timeout,
-        _ => Decision::Deny,
+        _ => {
+            env.store.reset_allow_counts(&run.owner, rule, &gate.grants).await?;
+            Decision::Deny
+        }
     })
 }
 
@@ -1393,6 +1497,8 @@ struct Prepared<'b> {
     name: String,
     /// Why it isn't run: refused by the user or a rule, or taken out by the [`Breaker`].
     refused: Option<String>,
+    /// The call was held instead of made: what the model reads as its result.
+    held: Option<String>,
     since: SystemTime,
 }
 
@@ -1412,12 +1518,15 @@ async fn prepare_call<'b>(
     let name = block["name"].as_str().unwrap_or_default().to_string();
     let input = &block["input"];
     let mut refused = breaker.refusal(&name);
+    let mut held = None;
     // A call to a tool the run doesn't have fails without running, so it needs no OK.
     if refused.is_none() && tools.get(&name).is_some() {
         let reach = Reach::of(ctx.sandbox.runtime(), &env.sandbox);
-        refused = approve(env, tools, &reach, run, events, cancel, &id, &name, input)
-            .await?
-            .map(String::from);
+        match approve(env, tools, &reach, run, events, cancel, &id, &name, input).await? {
+            Verdict::Go => {}
+            Verdict::Refused(why) => refused = Some(why),
+            Verdict::Held(output) => held = Some(output),
+        }
     }
     events
         .emit(
@@ -1425,7 +1534,7 @@ async fn prepare_call<'b>(
             json!({ "id": id, "name": name, "input": input }),
         )
         .await?;
-    Ok(Prepared { block, id, name, refused, since: SystemTime::now() })
+    Ok(Prepared { block, id, name, refused, held, since: SystemTime::now() })
 }
 
 /// Run a prepared call; the result and how long it took.
@@ -1439,6 +1548,9 @@ async fn run_call(
     let work = async {
         if let Some(message) = &call.refused {
             return Err(anyhow!(message.clone()));
+        }
+        if let Some(output) = &call.held {
+            return Ok(output.clone());
         }
         // A tool left out of the run's selection is as unknown as a made-up one.
         match tools.get(&call.name) {
@@ -1479,7 +1591,7 @@ async fn finish_call(
         // Errors go back to the model so it can recover.
         Err(e) => (format!("{e:#}"), true),
     };
-    if call.refused.is_none() {
+    if call.refused.is_none() && call.held.is_none() {
         breaker.record(name, is_error, &output);
     }
     if call.refused.is_none() && RUNS_CODE.contains(&name) && tools.get(name).is_some() {

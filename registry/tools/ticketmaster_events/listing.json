@@ -1,0 +1,24 @@
+{
+  "summary": "Concerts, sports, theatre and other live events near you, with dates, venues, prices and links, from Ticketmaster",
+  "category": "media",
+  "translations": {
+    "de": {
+      "summary": "Konzerte, Sport, Theater und andere Events in deiner Nähe, mit Terminen, Orten, Preisen und Links, von Ticketmaster",
+      "secrets": {
+        "TICKETMASTER_API_KEY": "Der Consumer Key einer App auf developer.ticketmaster.com (kostenlos; 5.000 Aufrufe pro Tag)"
+      }
+    },
+    "fr": {
+      "summary": "Concerts, sport, théâtre et autres événements près de chez vous, avec dates, lieux, prix et liens, via Ticketmaster",
+      "secrets": {
+        "TICKETMASTER_API_KEY": "La Consumer Key d'une application sur developer.ticketmaster.com (gratuite ; 5 000 appels par jour)"
+      }
+    },
+    "es": {
+      "summary": "Conciertos, deportes, teatro y otros eventos cerca de ti, con fechas, lugares, precios y enlaces, de Ticketmaster",
+      "secrets": {
+        "TICKETMASTER_API_KEY": "La Consumer Key de una app en developer.ticketmaster.com (gratis; 5000 llamadas al día)"
+      }
+    }
+  }
+}

@@ -27,6 +27,10 @@ pub struct Config {
     /// How much earlier conversation is inlined into the prompt when the previous cedar run is gone
     /// and can't be continued.
     pub history_max_bytes: usize,
+    /// How long a response may wait for the person (an approval, a plan to agree to) before they
+    /// are told out of the app (`CHAT_ATTENTION_DELAY_SECS`, 20): long enough that whoever is
+    /// looking at the page answers first.
+    pub attention_delay: std::time::Duration,
     /// Where Pushover messages are POSTed; overridable so tests can point at a mock.
     pub pushover_url: String,
     /// Where iPhone pushes are POSTed, when set: overrides the production and sandbox APNs
@@ -52,6 +56,11 @@ pub struct Config {
     /// of a cedar-contrib ingest; see `contrib`): `DEFAULT_CONTRIBUTIONS_URL` unless another is
     /// named. `off`, and nothing can be sent; the review dialog still exports a bundle to a file.
     pub contributions_url: Option<String>,
+    /// Where a person can report, as an issue they file themselves, something Cedar could not do
+    /// (`CHAT_FEEDBACK_ISSUES_URL`): the "new issue" address of a repository, which the page
+    /// opens with the report filled in. The project's own unless another is named; `off`, and
+    /// the link isn't offered. This server sends nothing there itself.
+    pub feedback_issues_url: Option<String>,
     /// The Slack app people talk to Cedar through (see `slack`): its app-level token
     /// (`CHAT_SLACK_APP_TOKEN`, `xapp-...`), which opens the Socket Mode connection events come
     /// over, and its bot token (`CHAT_SLACK_BOT_TOKEN`, `xoxb-...`), which answers. Both or neither.
@@ -73,6 +82,10 @@ pub const DEFAULT_SLACK_API_URL: &str = "https://slack.com/api";
 /// the project's own cedar-contrib ingest. Nothing goes there until a person turns contributing
 /// on in Settings and sends a conversation.
 pub const DEFAULT_CONTRIBUTIONS_URL: &str = "https://contrib-api-7fdw4asdra-uw.a.run.app";
+
+/// Where "Report it to the project" opens an issue unless `CHAT_FEEDBACK_ISSUES_URL` names another
+/// repository's or is `off`.
+pub const DEFAULT_FEEDBACK_ISSUES_URL: &str = "https://github.com/hanneshapke/cedar/issues/new";
 
 /// Who may add, change and remove models in Settings -> Server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,6 +140,7 @@ impl Config {
                 .map(|u| u.trim().trim_end_matches('/').to_string())
                 .unwrap_or_else(|| format!("http://{bind_addr}")),
             history_max_bytes: parse("CHAT_HISTORY_MAX_BYTES", get("CHAT_HISTORY_MAX_BYTES"), 40_000)?,
+            attention_delay: std::time::Duration::from_secs(parse("CHAT_ATTENTION_DELAY_SECS", get("CHAT_ATTENTION_DELAY_SECS"), 20)?),
             pushover_url: get("CHAT_PUSHOVER_URL").unwrap_or_else(|| crate::channels::PUSHOVER_URL.into()),
             apns_url: get("CHAT_APNS_URL").map(|u| u.trim().trim_end_matches('/').to_string()),
             fcm_url: get("CHAT_FCM_URL")
@@ -145,6 +159,11 @@ impl Config {
             update_dir: get("CHAT_UPDATE_DIR").map(|d| std::path::PathBuf::from(d.trim())),
             contributions_url: match get("CHAT_CONTRIBUTIONS_URL").map(|u| u.trim().trim_end_matches('/').to_string()) {
                 None => Some(DEFAULT_CONTRIBUTIONS_URL.into()),
+                Some(v) if matches!(v.to_ascii_lowercase().as_str(), "off" | "none" | "no" | "false" | "0") => None,
+                Some(v) => Some(v),
+            },
+            feedback_issues_url: match get("CHAT_FEEDBACK_ISSUES_URL").map(|u| u.trim().to_string()) {
+                None => Some(DEFAULT_FEEDBACK_ISSUES_URL.into()),
                 Some(v) if matches!(v.to_ascii_lowercase().as_str(), "off" | "none" | "no" | "false" | "0") => None,
                 Some(v) => Some(v),
             },
@@ -169,6 +188,12 @@ impl Config {
             }
             if !(slack.api_url.starts_with("http://") || slack.api_url.starts_with("https://")) {
                 bail!("CHAT_SLACK_API_URL must start with http:// or https://");
+            }
+        }
+        if let Some(u) = &cfg.feedback_issues_url {
+            // The page opens it as a link, so nothing but a plain https address without a query.
+            if !u.starts_with("https://") || u.contains(['?', '#', '"', '<', '>', ' ']) {
+                bail!("CHAT_FEEDBACK_ISSUES_URL must be an https:// address without a query, such as https://github.com/owner/repo/issues/new");
             }
         }
         if let Some(u) = &cfg.contributions_url {
@@ -246,6 +271,23 @@ mod tests {
         assert_eq!(cfg.update_dir.as_deref(), Some(std::path::Path::new("/var/lib/cedar/update")));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_CHECK", "sometimes")])).is_err());
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_URL", "api.github.com")])).is_err());
+    }
+
+    #[test]
+    fn feedback_issues_url() {
+        let cfg = |v: Option<&str>| {
+            Config::from_lookup(|k| match k {
+                "CEDAR_API_KEY" => Some("k".to_string()),
+                "CHAT_FEEDBACK_ISSUES_URL" => v.map(String::from),
+                _ => None,
+            })
+        };
+        assert_eq!(cfg(None).unwrap().feedback_issues_url.as_deref(), Some(DEFAULT_FEEDBACK_ISSUES_URL));
+        assert!(cfg(Some("off")).unwrap().feedback_issues_url.is_none());
+        assert_eq!(cfg(Some("https://git.example/acme/cedar/issues/new")).unwrap().feedback_issues_url.as_deref(), Some("https://git.example/acme/cedar/issues/new"));
+        for bad in ["http://git.example/issues/new", "javascript:alert(1)", "https://git.example/issues/new?title=x"] {
+            assert!(cfg(Some(bad)).is_err(), "{bad}");
+        }
     }
 
     #[test]

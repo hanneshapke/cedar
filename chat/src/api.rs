@@ -37,6 +37,7 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 mod agents;
+mod handover;
 mod slack;
 mod users;
 use users::{create_user, delete_user, get_me, list_users, rename_user, rotate_user_token};
@@ -101,6 +102,10 @@ const CLARIFY_VIEW_CSS: &str = include_str!("../static/clarify-view.css");
 /// The card for a follow-up the model suggested, with the buttons that decide about it; every UI loads it.
 const FOLLOWUP_VIEW_JS: &str = include_str!("../static/followup-view.js");
 const FOLLOWUP_VIEW_CSS: &str = include_str!("../static/followup-view.css");
+/// The cards for what Cedar could not do and for a call that waits for approval, the outbox on the
+/// Agents page and the Feedback page of Settings; every UI loads it.
+const HANDOVER_VIEW_JS: &str = include_str!("../static/handover-view.js");
+const HANDOVER_VIEW_CSS: &str = include_str!("../static/handover-view.css");
 /// Draws the `plan_trip` tool's result as a route map with the options; it needs the map view.
 const TRANSIT_VIEW_JS: &str = include_str!("../static/transit-view.js");
 const TRANSIT_VIEW_CSS: &str = include_str!("../static/transit-view.css");
@@ -382,6 +387,11 @@ pub fn router(state: AppState) -> Router {
         .route("/turns/{id}/plan", post(approve_plan))
         .route("/turns/{id}/approvals/{approval_id}", post(decide_approval))
         .route("/turns/{id}/followups/{call_id}", put(agents::decide_followup))
+        .route("/turns/{id}/limitations/{call_id}", put(handover::decide_limitation))
+        .route("/feedback", get(handover::list_feedback))
+        .route("/feedback/{id}", axum::routing::delete(handover::delete_feedback))
+        .route("/outbox", get(handover::list_outbox))
+        .route("/outbox/{id}", get(handover::get_outbox).post(handover::decide_outbox))
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
@@ -468,6 +478,8 @@ pub fn router(state: AppState) -> Router {
         .route("/clarify-view.css", get(|| async { asset(CSS, CLARIFY_VIEW_CSS) }))
         .route("/followup-view.js", get(|| async { asset(JS, FOLLOWUP_VIEW_JS) }))
         .route("/followup-view.css", get(|| async { asset(CSS, FOLLOWUP_VIEW_CSS) }))
+        .route("/handover-view.js", get(|| async { asset(JS, HANDOVER_VIEW_JS) }))
+        .route("/handover-view.css", get(|| async { asset(CSS, HANDOVER_VIEW_CSS) }))
         .route("/transit-view.js", get(|| async { asset(JS, TRANSIT_VIEW_JS) }))
         .route("/transit-view.css", get(|| async { asset(CSS, TRANSIT_VIEW_CSS) }))
         .route("/stock-view.js", get(|| async { asset(JS, STOCK_VIEW_JS) }))
@@ -651,6 +663,9 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
         // Whether a conversation can be sent to a corpus (CHAT_CONTRIBUTIONS_URL); the review
         // dialog exports to a file either way.
         "contributions": state.cfg.contributions_url.is_some(),
+        // Where the page opens an issue for a report the person wants the project to see
+        // (CHAT_FEEDBACK_ISSUES_URL); null when that isn't offered. They file it themselves.
+        "feedback_issues_url": state.cfg.feedback_issues_url,
     }))
 }
 
@@ -764,6 +779,8 @@ struct ConversationDetail {
     agent: Option<Value>,
     /// What was decided about the follow-ups suggested in its turns; one not listed is open.
     followups: Vec<crate::store::Followup>,
+    /// What was decided about what the model reported it could not do; one not listed is open.
+    limitations: Vec<crate::store::Feedback>,
 }
 
 async fn get_conversation(
@@ -777,7 +794,8 @@ async fn get_conversation(
         None => None,
     };
     let followups = state.store.list_followups(conversation.id).await?;
-    Ok(Json(ConversationDetail { conversation, turns, agent, followups }))
+    let limitations = state.store.list_conversation_feedback(conversation.id).await?;
+    Ok(Json(ConversationDetail { conversation, turns, agent, followups, limitations }))
 }
 
 async fn rename_conversation(
@@ -1458,6 +1476,8 @@ async fn send_message(
     let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
     let message = NewMessage { content: &content, model: requested, reasoning, plan, locale, attachments, infos };
     let turn = post_message(&state, ConversationRef::Id(&id), message).await?;
+    // Should the response wait for an OK while nobody looks at the page, they are told.
+    crate::attention::watch(state.clone(), turn.clone());
     Ok((StatusCode::CREATED, Json(turn)))
 }
 
@@ -1604,6 +1624,7 @@ impl RunSettings {
             attachments: None,
             plan: None,
             interactive: false,
+            hold_writes: false,
             locale: self.locale.as_deref(),
         }
     }
@@ -2668,6 +2689,7 @@ async fn create_schedule(
             hook_secret: None,
             min_interval_secs: None,
             max_runs_per_day: None,
+            hold_writes: true,
         })
         .await?;
     Ok((StatusCode::CREATED, Json(schedule)))

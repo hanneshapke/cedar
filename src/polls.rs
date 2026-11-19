@@ -216,6 +216,27 @@ async fn call_tool(
     result
 }
 
+/// Make a call that needs nothing of a run (no sandbox, no model) outside one: a held call the
+/// owner approved (see `POST /v1/held/{id}`). The tool's own time limit applies, and this one
+/// for a call that hangs outside it.
+pub async fn call_without_run(cfg: &Config, tool: &dyn Tool, input: &Value) -> Result<String> {
+    let ctx = ToolContext {
+        sandbox: Arc::new(NoSandbox),
+        browser: None,
+        timeout: cfg.tool_timeout,
+        max_output: MAX_OUTPUT_BYTES,
+        model: None,
+        locale: cfg.default_locale.clone(),
+        memory: None,
+        records: None,
+    };
+    let limit = cfg.tool_timeout * 2 + Duration::from_secs(60);
+    match tokio::time::timeout(limit, tool.call(&ctx, input)).await {
+        Ok(result) => result,
+        Err(_) => Err(anyhow!("{} did not finish in {}s", tool.name(), limit.as_secs())),
+    }
+}
+
 /// The sandbox of a call that has none. Tools that are pollable without being personal never
 /// reach for it; one that did would get an error, not a container.
 struct NoSandbox;

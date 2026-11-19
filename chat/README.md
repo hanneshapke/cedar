@@ -37,6 +37,13 @@ Both interfaces have all of these, except where noted:
 - A stop button cancels the running response
 - [Slack](#slack): message the Slack app or mention it in a channel, and the answer comes back in
   the thread, with plans and approvals as buttons (when the server has a Slack app)
+- [An outbox](#the-outbox): what an agent would have sent or changed in your accounts waits on the
+  Agents page until you approve, edit or discard it
+- [Feedback](#feedback): when Cedar can't do something you asked for, it says so in a card you can
+  send as feedback, which stays on this server
+- A response that needs your OK while you are away [is announced](#when-a-response-waits-for-you)
+  by your notification method, and "Always allow" is offered only once you have allowed the same
+  thing a few times
 - Expert mode (Settings → Advanced settings → Expert mode, saved in this browser) adds a Trace button to each message
   you send. It opens a dialog with everything the agent did for that response, from cedar's
   `GET /v1/runs/{id}/trace` (`/api/turns/{id}/trace` here): a timeline of each model call (the
@@ -289,6 +296,8 @@ remove the tool.
 | `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
 | `CHAT_MODELS_ACCESS` | `users` | Who may add, change and remove [the models](#models): `users` (everyone the access token lets in) or `admins` (the admin token; set this on a server several people use). API keys and the Google account stay with admins either way |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, except for a browser that opened the chat at a loopback address (`127.0.0.1`, `localhost`), which is sent back to that address |
+| `CHAT_ATTENTION_DELAY_SECS` | `20` | How long a response may wait for you (an approval, a plan to agree to) before you are told by your notification method (see [When a response waits for you](#when-a-response-waits-for-you)) |
+| `CHAT_FEEDBACK_ISSUES_URL` | `https://github.com/hanneshapke/cedar/issues/new` | Where *Report it to the project* opens an issue for [a report](#feedback) the person files themselves: an `https` "new issue" address that takes `title` and `body`. `off` removes the link. The server sends nothing there |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for an agent in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
@@ -415,6 +424,31 @@ What the page does with that:
   `POST /api/conversations/{id}/seen`.
 
 A run the user stopped is not announced. Responses from before this feature count as seen.
+
+### When a response waits for you
+
+A response can stop in the middle to ask: a risky call needs your OK, or its plan is to be agreed
+to. cedar only waits so long (`APPROVAL_TIMEOUT_SECS`, five minutes unless changed), and the
+request used to be on the page alone. Now the server follows the run of every message sent from
+the page, and:
+
+- every open tab hears of a wait at once (a `turn.waiting` notice on `GET /api/events`); a tab on
+  another conversation says so in a toast;
+- a wait that is still unanswered after `CHAT_ATTENTION_DELAY_SECS` (20) goes out by your default
+  notification method, with what the call would do: *Invoice: needs your OK*. One answered
+  sooner, by whoever is looking at the page, is never announced. With "only in the app" nothing
+  is sent.
+
+If nobody answers in time, a call that would have sent or changed something in your accounts is
+not lost: it is kept in [the outbox](#the-outbox), and the finished response is announced as
+*waiting for your approval*. Anything else is skipped, and the reply says so. Runs started from
+Slack are not followed this way: their requests are posted in the thread. A wait that is going
+when this server restarts is not announced.
+
+**"Always allow" is earned.** An approval offers *Always for …* only once you have allowed the
+same thing (a host, a package) three times since you last declined it (cedar's
+`ALWAYS_ALLOW_AFTER`); until then the card says how many more it takes. Sending mail, posting to
+Slack and deleting files are asked about every time, as before.
 
 ### Out of the app
 
@@ -610,6 +644,62 @@ follow-up would run, and **Set up** and **Dismiss**.
 This is why a prompt injection can at most put a suggestion in front of you: an agent only comes
 to exist when you press the button, and you see its prompt first.
 
+### The outbox
+
+Nobody reads along while an agent runs, so nobody can approve what it does. An agent therefore
+**holds what it would send or change** in your accounts: mail, calendar events, files in Drive,
+cells in Sheets, messages in Slack. The call is not made. It is kept, exactly as the model wrote
+it, and the run goes on and tells you in its result what is waiting. Reading is never held.
+
+- The **Agents** page lists what waits under *Waiting for your approval*, each with the agent
+  whose run wanted it and a link to that run. The same card is in the run's conversation.
+- **Approve** makes that call now, with no model involved: what you approved is what goes out,
+  whatever the run read. **Edit** lets you change the text fields first (the recipient, the
+  subject, the body) and approve the result. **Discard** drops it.
+- A call the service refuses (a mistyped address, a channel the app isn't in) stays with the error
+  and a **Try again** button.
+- A run that left something in the outbox is announced as *waiting for your approval*, whatever
+  **Send it for** says.
+
+The iOS and Android apps show the outbox above their list of agents and the card in a run's
+conversation, with **Approve** and **Discard**; changing a call before it goes out is done on
+the page.
+
+Holding is a setting of each agent (*Hold what it sends or changes until I approve it*), on for
+every agent made from now on and for the follow-ups you set up. Agents that existed before keep
+acting at once, as they did when you made them; turn it on in their form. Turn it off for an agent
+you trust to act alone, say one that posts a digest to a channel every morning. It is cedar's
+`hold_writes` (see [The outbox](../README.md#the-outbox) in cedar's README): an agent made for
+events still gets only the tools that read unless you choose otherwise, so there is something to
+hold only once you gave it tools that write.
+
+### Feedback
+
+When Cedar can't do something you asked for (there is no tool for it, an account isn't connected,
+a site refuses it, it ran into a limit), it says so, does what it can, and notes the gap with
+cedar's `report_limitation` tool. That tool **records nothing**. The chat shows what the model
+noted as a card under the reply: one sentence, a category, what would make it possible, and
+**Send feedback** and **Dismiss**.
+
+- **Send feedback** keeps the report on this server, with a note of your own if you add one. It
+  holds the sentence on the card and nothing of the conversation. Nothing is sent anywhere else.
+- **Dismiss** records only that you saw it.
+- The first decision stands, on every device.
+
+A report you sent can also go to the project: **Report it to the project**, on the card and in
+Settings, opens a new GitHub issue with the report filled in (the sentence, the category, what
+would help, your note). This server sends nothing itself. You read the issue in GitHub's own form
+and submit it with your own account, so it is public and under your name, and nothing else of the
+conversation is in it. `CHAT_FEEDBACK_ISSUES_URL` names another repository's "new issue" address
+(a fork's, or a company's own tracker that takes `title` and `body` the same way), and `off`
+removes the link.
+
+**Settings → Feedback** lists what you sent, counted by category, and lets you delete a report.
+Whoever runs the server sees everyone's there once the admin token is entered (or with
+`GET /api/feedback?users=all`): which tools and connections people keep missing. A report
+outlives its conversation, since it says what was missing, not what was said.
+
+### Webhooks
 ### Webhooks
 
 Saving a webhook agent gives it an address, `{CHAT_PUBLIC_URL}/api/hooks/<32 hex characters>`, and
@@ -739,7 +829,7 @@ on a shared one, everyone links their own, and their runs, memories and conversa
 - **Plans and approvals.** Runs from Slack are interactive, like messages on the page: a plan the
   run waits on is posted with *Go ahead* and *Stop*, and a tool call that needs approval (the
   `TOOL_APPROVALS` rules of [cedar](../README.md#plans-and-approvals)) with *Allow*, *Always
-  allow* (when the call has a scope) and *Deny*. Only the person whose run it is can press them,
+  allow* (when the call has a scope, and once it [was allowed a few times](#when-a-response-waits-for-you)) and *Deny*. Only the person whose run it is can press them,
   and the message shows the decision once one is made, here or on the page. Without an answer, a
   wait ends after cedar's `APPROVAL_TIMEOUT_SECS`.
 - **The answer** is posted in the thread in Slack's markup (bold, links, lists, headings; tables
@@ -1033,7 +1123,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |
 | `GET /api/conversations` | Conversations, most recently active first, each with `unread` and `needs_answer` (see [Notifications](#notifications)). Conversations that are an agent's runs are left out |
 | `POST /api/conversations` | Create one. Body `{}` or `{"title": "..."}` |
-| `GET /api/conversations/{id}` | `{conversation, turns, agent?, followups}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen`. `agent` is `{id, title, trigger_kind}` when the conversation is an [agent](#agents)'s run; `followups` lists what was decided about the [follow-ups suggested](#follow-ups-the-agent-suggests) in its turns (one not listed is still open) |
+| `GET /api/conversations/{id}` | `{conversation, turns, agent?, followups, limitations}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen`. `agent` is `{id, title, trigger_kind}` when the conversation is an [agent](#agents)'s run; `followups` lists what was decided about the [follow-ups suggested](#follow-ups-the-agent-suggests) in its turns (one not listed is still open) |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
 | `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
 | `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "plan"?: "off"\|"on"\|"auto"\|"tool", "locale"?: "de-CH", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) (`plan`, the phone apps' Plans setting, overrides the Settings one for this message; `locale`, the language the page or app is shown in, overrides the saved one) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Images to a model registered without "accepts images" are a 400 from cedar, relayed. Returns 409 if a response is still running |
@@ -1053,7 +1143,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/starred` | `{conversations}`: the starred conversations, most recently starred first, agents' runs included, each with `schedule_title` (the agent a run belongs to, else `null`) |
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
-| `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
+| `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends, a `turn.waiting` event (`{turn_id, conversation_id, what: "approval" \| "plan", reason}`) when one sent from the page stops for an OK or for its plan, and `outbox.changed` (`{id, status}`) when a held call was decided. No replay: read `/api/inbox` on connecting |
 | `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, desktop: {configured, connected_at, listening}, ios: {configured, team_id, key_id, key_set, topic, environment, devices: [{id, name, created_at, last_used_at}]}, android: {configured (FCM set up, or a UnifiedPush phone registered), fcm_configured, project_id, client_email, key_set, devices: [{id, transport: "fcm"\|"unifiedpush", name, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
 | `PUT /api/notifications` | Change any of `{"default_method": "none"\|"desktop"\|"browser"\|"ios"\|"android"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "ios": {"team_id"?, "key_id"?, "private_key"? (the `.p8` file's contents), "topic"?, "environment"?: "production"\|"sandbox"}, "android": {"service_account"? (the Firebase service account's JSON file; checked for `project_id`, `client_email` and an RSA `private_key`)}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser, no registered iPhone or Android phone, only FCM phones and no service account, the Mac app never connected) |
 | `POST /api/notifications/test` | `{"method"}`: send a test message with the saved settings. `{ok, detail}`, or 502 with what went wrong; recorded as `last_delivery` either way |
@@ -1069,14 +1159,20 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `DELETE /api/notifications/android/devices/{id}` | Remove a registered Android phone |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
-| `GET /api/agents` | `{agents, limits}`: every [agent](#agents), enabled ones first, each `{id, title, prompt, model, reasoning, tools, notify, enabled, source_conversation_id, timezone, trigger, next_run_at, next_check_at, last_run_at, last_checked_at, last_error, waiting, min_interval_secs, max_runs_per_day, hook, last_run, created_at, updated_at}`. `next_run_at` is set for an agent on a clock and `next_check_at` for one that watches; `last_error` says why its last check failed; `waiting` that a webhook call is held until it may run; `hook` is `{url, path, secret_last4}` for a webhook agent. `limits` has the defaults (`max_agents`, `min_interval_secs`, `max_runs_per_day`, `min_interval_minutes`, `check_minutes`, `personal_check_minutes`) |
-| `POST /api/agents` | Create one: `{"title", "prompt", "trigger", "timezone"?, "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?, "enabled"?, "min_interval_secs"?, "max_runs_per_day"?}`. `trigger` is one of the shapes below. Without `tools`, an agent that events start gets the [careful choice](#runs-that-start-from-outside), and one on a clock the conversation's tools or the defaults; `null` means the defaults. `notify` is how its finished runs are announced: a method set up under Notifications (`desktop`, `browser`, `ios`, `android`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method. Returns `201` with the agent; a webhook agent's `hook.secret` is in this response only. 409 at 100 agents |
+| `GET /api/agents` | `{agents, limits}`: every [agent](#agents), enabled ones first, each `{id, title, prompt, model, reasoning, tools, notify, enabled, source_conversation_id, timezone, trigger, next_run_at, next_check_at, last_run_at, last_checked_at, last_error, waiting, min_interval_secs, max_runs_per_day, hold_writes, hook, last_run, created_at, updated_at}`. `next_run_at` is set for an agent on a clock and `next_check_at` for one that watches; `last_error` says why its last check failed; `waiting` that a webhook call is held until it may run; `hook` is `{url, path, secret_last4}` for a webhook agent. `limits` has the defaults (`max_agents`, `min_interval_secs`, `max_runs_per_day`, `min_interval_minutes`, `check_minutes`, `personal_check_minutes`) |
+| `POST /api/agents` | Create one: `{"title", "prompt", "trigger", "timezone"?, "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?, "enabled"?, "min_interval_secs"?, "max_runs_per_day"?, "hold_writes"?}` (`hold_writes`, true unless given, keeps what its runs would send or change in [the outbox](#the-outbox)). `trigger` is one of the shapes below. Without `tools`, an agent that events start gets the [careful choice](#runs-that-start-from-outside), and one on a clock the conversation's tools or the defaults; `null` means the defaults. `notify` is how its finished runs are announced: a method set up under Notifications (`desktop`, `browser`, `ios`, `android`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method. Returns `201` with the agent; a webhook agent's `hook.secret` is in this response only. 409 at 100 agents |
 | `GET /api/agents/{id}` | `{agent, runs}`, newest run first (at most 100), each `{id, schedule_id, conversation_id, turn_id, due_at, started_at, manual, error, cause, turn}`. `cause` is what started it, `{kind, summary, excerpt?}` with `kind` one of `clock`, `changed`, `holds`, `rows`, `webhook`, `device`, `mail`, `soon`, `new_event`, `files`, and `summary` a line in the saved language; `null` for "run now". `turn` is refreshed while unfinished; `error` says why a run could not be started |
 | `PATCH /api/agents/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A `trigger` replaces the whole trigger and forgets what the old one had seen; resuming skips what was missed. A webhook agent that gets another trigger loses its address |
 | `DELETE /api/agents/{id}` | Delete the agent with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
 | `POST /api/agents/{id}/run` | Start a run now, whatever the trigger says. Returns 409 while its latest run is still going |
 | `POST /api/agents/{id}/hook/rotate` | A new secret for a webhook agent, returned in `hook.secret` this once; the old one stops working. 409 if the agent has no webhook |
 | `POST /api/agents/{id}/trigger` | [Your phone](#your-phone) asks for a run of any agent that isn't paused: `{"source"?, "text"?, "title"?, "url"?}` (the body may be left out; at most 16 KiB, else `413`). `202 {started: true, conversation_id}` or `202 {started: false, held: "busy" \| "too_soon" \| "daily_limit" \| "cedar_busy"}`; `409` for a paused agent |
+| `PUT /api/turns/{id}/limitations/{call_id}` | Decide about [something the model reported it could not do](#feedback) in that turn (`call_id` is the `report_limitation` call's id): `{"decision": "send", "summary", "category"?, "needed"?, "comment"?}` keeps it as feedback, `{"decision": "dismiss"}` keeps only that it was seen. Returns `{feedback}`; the first decision stands |
+| `GET /api/feedback` | `{feedback, by_category}`: the reports you sent, newest first, each `{id, turn_id, call_id, status, summary, category, needed, comment, created_at}`. With `?users=all` and the admin token, everyone's, each with `user_name` |
+| `DELETE /api/feedback/{id}` | Take one report back (with `?users=all` and the admin token, anyone's). `204` |
+| `GET /api/outbox` | `{items}`: what waits for your approval in [the outbox](#the-outbox), newest first: cedar's held calls (`{id, run_id, tool, input, reason, why, status, edited, output, created_at, decided_at}`), each with `turn_id`, `conversation_id`, `title` and `agent: {id, title}` where the run is one of this chat's. `?status=` asks for `sent`, `failed`, `discarded` or `all` instead |
+| `GET /api/outbox/{id}` | One held call, whatever became of it |
+| `POST /api/outbox/{id}` | `{"decision": "approve" \| "discard", "input"?}`: approve a held call, which makes it now (with `input` in place of what the model wrote, if given), or discard it. Returns the call as it is afterwards; the open tabs get an `outbox.changed` notice |
 | `PUT /api/turns/{id}/followups/{call_id}` | Decide about [a follow-up the model suggested](#follow-ups-the-agent-suggests) in that turn (`call_id` is the `suggest_follow_up` call's id in the run's events): `{"decision": "accept", "title", "prompt", "at", "timezone"}` makes a one-off agent, `{"decision": "dismiss"}` records that. Returns `{followup: {turn_id, call_id, status, agent_id, decided_at}, agent}`. The first decision stands; deciding again returns it. `400` if the time has passed |
 | `POST /api/agents/test` | Try a watching trigger out, keeping nothing: `{"trigger"}` → `{ok: true, value, would_fire, summary?, sample: {text, cut, json}}`, or `{ok: false, error, sample?}` when the check fails. 400 for a trigger that doesn't watch |
 | `GET /api/agents/activity` | The latest runs of all agents, newest first: `{items, next_before}`, each item a run as above plus `agent: {id, title, trigger_kind}`. `?limit=` (30, at most 100) and `?before=` (the previous page's `next_before`) page back |

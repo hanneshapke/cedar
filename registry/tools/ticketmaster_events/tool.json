@@ -1,0 +1,103 @@
+{
+  "description": "Find concerts, sports, theatre, comedy, family shows and other live events on Ticketmaster (its Discovery API, which also covers Live Nation, Universe and TicketWeb across North America, Europe, Australia and more). Use it when the user asks what's on, who is playing, when an artist or team plays near them, or for ideas for a night out. Search by keyword (an artist, team, show or venue), a place (city, postal code, state or country, or latitude and longitude with a radius), dates, and a segment or genre; or pass event_id for the details of one event from an earlier search (all price ranges, sale windows, ticket limits, the venue's address and notes). Returns JSON: each event's name, local date and time, status (onsale, offsale, cancelled, postponed, rescheduled), segment and genre, venue with city and distance, the performers, price range when Ticketmaster lists one, when public sales start, an image, and its Ticketmaster link. The tool can't buy tickets or see seat availability: give the user the link to buy. Present the events as a short list grouped by date, with the time, venue and price, and say when a price isn't listed rather than guessing; mention cancelled or postponed events only as such. Dates and times are the venue's local time.",
+  "version": "1.0.0",
+  "author": "Hannes Hapke",
+  "homepage": "https://github.com/hanneshapke/cedar/tree/main/registry/tools/ticketmaster_events",
+  "license": "Apache-2.0",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "keyword": {
+        "type": "string",
+        "description": "Words to search for: an artist, band, team, show, festival or venue, such as \"Taylor Swift\" or \"Lakers\"."
+      },
+      "city": {
+        "type": "string",
+        "description": "A city, such as \"Chicago\" or \"London\". Add country_code when the name is ambiguous."
+      },
+      "state_code": {
+        "type": "string",
+        "description": "A US state or Canadian province code, such as \"CA\" or \"ON\"."
+      },
+      "country_code": {
+        "type": "string",
+        "description": "An ISO 3166 country code, such as \"US\", \"GB\", \"DE\" or \"AU\"."
+      },
+      "postal_code": {
+        "type": "string",
+        "description": "A postal or ZIP code. With radius, events within that distance of it."
+      },
+      "latitude": {
+        "type": "number",
+        "minimum": -90,
+        "maximum": 90,
+        "description": "Instead of a city or postal code: the latitude, with longitude, to search around."
+      },
+      "longitude": {
+        "type": "number",
+        "minimum": -180,
+        "maximum": 180,
+        "description": "The longitude, with latitude."
+      },
+      "radius": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 500,
+        "description": "How far from latitude/longitude or postal_code to search, in unit. Default 25."
+      },
+      "unit": {
+        "type": "string",
+        "enum": ["miles", "km"],
+        "description": "The unit of radius and of the distances returned. Defaults to miles for the US and the UK, km elsewhere."
+      },
+      "start_date": {
+        "type": "string",
+        "description": "The first day to include, YYYY-MM-DD, in the venue's local time. Defaults to today."
+      },
+      "end_date": {
+        "type": "string",
+        "description": "The last day to include, YYYY-MM-DD. For \"this weekend\" pass Friday and Sunday."
+      },
+      "segment": {
+        "type": "string",
+        "enum": ["music", "sports", "arts_theatre", "film", "family", "miscellaneous"],
+        "description": "Only events of this kind. arts_theatre includes comedy, musicals, opera, dance and classical."
+      },
+      "genre": {
+        "type": "string",
+        "description": "Only events of this genre or sub-genre, such as \"rock\", \"jazz\", \"basketball\", \"comedy\" or \"musical\"."
+      },
+      "sort": {
+        "type": "string",
+        "enum": ["date", "relevance", "distance"],
+        "default": "date",
+        "description": "date (soonest first), relevance (best match for keyword first), or distance (closest first; needs latitude/longitude)."
+      },
+      "max_results": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "default": 15,
+        "description": "How many events to return."
+      },
+      "page": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "The page of results, from 0, to see more events of the same search."
+      },
+      "event_id": {
+        "type": "string",
+        "description": "Instead of a search: the id of one event from an earlier result, for its full details."
+      }
+    }
+  },
+  "timeout_secs": 60,
+  "network": ["app.ticketmaster.com"],
+  "secrets": [
+    {
+      "name": "TICKETMASTER_API_KEY",
+      "description": "The Consumer Key of an app on developer.ticketmaster.com (free; 5,000 calls a day)"
+    }
+  ],
+  "health_data": false
+}

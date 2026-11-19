@@ -329,6 +329,32 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/turns/\(turnId)/followups/\(callId)", method: "PUT", json: body))
     }
 
+    /// Sends as feedback, or dismisses, something the model reported it could not do in a turn;
+    /// `callId` is the id of the `report_limitation` call. Sent feedback stays on the server.
+    /// The first decision stands: deciding again answers the earlier one.
+    func decideLimitation(turnId: String, callId: String, _ body: FeedbackBody) async throws -> FeedbackAnswer {
+        try await decode(makeRequest("api/turns/\(turnId)/limitations/\(callId)", method: "PUT", json: body))
+    }
+
+    /// What waits for the person's approval, newest first.
+    func outbox() async throws -> [OutboxItem] {
+        let outbox: Outbox = try await decode(makeRequest("api/outbox"))
+        return outbox.items
+    }
+
+    /// One held call, whatever became of it. 404 once its run is deleted.
+    func outboxItem(id: String) async throws -> OutboxItem {
+        try await decode(makeRequest("api/outbox/\(id)"))
+    }
+
+    /// Approves a held call, which makes it now, exactly as it was written and with no model
+    /// involved, or discards it. The answer is the call as it is afterwards: `sent`, `failed`
+    /// (the service refused; it can be approved again) or `discarded`. 409 once it was decided.
+    /// The server waits for the call itself, so this can take as long as a tool does.
+    func decideOutbox(id: String, approve: Bool) async throws -> OutboxItem {
+        try await decode(makeRequest("api/outbox/\(id)", method: "POST", json: approve ? OutboxDecisionBody.approve : OutboxDecisionBody.discard))
+    }
+
     /// The latest runs of every agent, newest first. `before` is the last page's `nextBefore`.
     func activity(before: String? = nil, limit: Int? = nil) async throws -> ActivityPage {
         var query: [URLQueryItem] = []

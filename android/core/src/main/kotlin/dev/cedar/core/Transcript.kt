@@ -31,6 +31,10 @@ data class ToolCall(
     val charts: List<ChartCard> = emptyList(),
     /** What a finished `suggest_follow_up` suggested, parsed once when its result arrives. */
     val followUp: FollowUpSuggestion? = null,
+    /** What a finished `report_limitation` said the run could not do. */
+    val limitation: LimitationReport? = null,
+    /** The call was not made but kept in the outbox: what its result says about that. */
+    val held: HeldNote? = null,
 ) {
     val isFinished: Boolean get() = output != null
     val isCard: Boolean get() = name in CARD_TOOLS
@@ -48,6 +52,7 @@ data class ToolCall(
             "forget" -> ""
             "recall" -> input["query"].str ?: ""
             FollowUpSuggestion.TOOL -> input["title"].str ?: ""
+            LimitationReport.TOOL -> input["summary"].str ?: ""
             "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "weather_forecast" -> cardTitle ?: ""
             else -> input.pretty().replace("\n", " ")
         }
@@ -329,8 +334,12 @@ data class TurnTranscript(
                     call = call.copy(card = Card.parse(call.name, output, call.input))
                 } else if (call.name == FollowUpSuggestion.TOOL && !isError) {
                     call = call.copy(followUp = FollowUpSuggestion.parse(output))
+                } else if (call.name == LimitationReport.TOOL && !isError) {
+                    call = call.copy(limitation = LimitationReport.parse(output))
                 } else if (!isError) {
-                    call = call.copy(charts = ChartCard.inOutput(output).charts)
+                    // Any tool that writes to an account may have been held instead of called.
+                    val held = HeldNote.parse(output)
+                    call = if (held != null) call.copy(held = held) else call.copy(charts = ChartCard.inOutput(output).charts)
                 }
                 data["sources"].arr?.let { sources ->
                     call = call.copy(sources = sources.mapNotNull { s ->
@@ -380,6 +389,14 @@ data class TurnTranscript(
     /** The follow-ups the turn's finished tool calls suggested, in order, each with its tool call's id. */
     val followUps: List<Pair<String, FollowUpSuggestion>>
         get() = items.mapNotNull { item -> (item as? TranscriptItem.Tool)?.call?.let { call -> call.followUp?.let { call.id to it } } }
+
+    /** What the turn's finished tool calls reported the run could not do, each with its tool call's id. */
+    val limitations: List<Pair<String, LimitationReport>>
+        get() = items.mapNotNull { item -> (item as? TranscriptItem.Tool)?.call?.let { call -> call.limitation?.let { call.id to it } } }
+
+    /** The calls of the turn that were kept in the outbox instead of made, in order. */
+    val heldCalls: List<HeldNote>
+        get() = items.mapNotNull { item -> (item as? TranscriptItem.Tool)?.call?.held }
 
     /** The images the turn's finished tool calls produced, each once, in order: workspace paths. */
     val images: List<String>

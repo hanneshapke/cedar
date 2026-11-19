@@ -209,6 +209,9 @@ struct AgentDraft: Equatable, Sendable {
     var toolsChoice: ToolsChoice = .automatic
     var customTools: Set<String> = []
 
+    /// Hold what its runs would send or change until the person approves it. On for a new agent.
+    var holdWrites = true
+
     /// A new agent: daily at nine, with the server's defaults.
     init(limits: AgentList.Limits = AgentList.Limits(), now: Date = Date()) {
         let zone = TimeZone.current.identifier
@@ -229,6 +232,7 @@ struct AgentDraft: Equatable, Sendable {
         model = agent.model ?? ""
         reasoning = agent.reasoning ?? ""
         notify = agent.notify ?? ""
+        holdWrites = agent.holdWrites
         customTools = Set(agent.tools ?? [])
         if agent.minIntervalSecs != nil || agent.maxRunsPerDay != nil {
             customLimits = true
@@ -431,6 +435,9 @@ struct AgentDraft: Equatable, Sendable {
         body.conversationId = conversationId
         body.trigger = try trigger(limits: limits, personalTool: catalog.isPersonal(tool: toolName), now: now)
         body.tools = try tools(catalog: catalog)
+        // The server holds unless told otherwise, so only "don't" is said: one from before the
+        // outbox refuses a field it doesn't know.
+        if !holdWrites { body.holdWrites = false }
         if kind.byEvent, customLimits {
             body.minIntervalSecs = .value(try limitSeconds())
             body.maxRunsPerDay = .value(maxRunsPerDay)
@@ -447,6 +454,8 @@ struct AgentDraft: Equatable, Sendable {
             body.trigger = try trigger(limits: limits, personalTool: catalog.isPersonal(tool: toolName), now: now)
         }
         body.tools = try tools(catalog: catalog)
+        // Only when it changed, so a server from before the outbox isn't sent a field it refuses.
+        if holdWrites != agent.holdWrites { body.holdWrites = holdWrites }
         if byEvent {
             if customLimits {
                 body.minIntervalSecs = .value(try limitSeconds())
@@ -510,6 +519,7 @@ struct AgentDraft: Equatable, Sendable {
         mine.model = other.model
         mine.reasoning = other.reasoning
         mine.notify = other.notify
+        mine.holdWrites = other.holdWrites
         mine.customLimits = other.customLimits
         mine.minInterval = other.minInterval
         mine.maxRunsPerDay = other.maxRunsPerDay

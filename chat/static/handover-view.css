@@ -1,0 +1,48 @@
+/* Handing work over to the person (handover-view.js), shared by every UI: the card for something
+   Cedar could not do, the card for a call that waits for approval, the outbox on the Agents page
+   and the Feedback page of Settings. It draws with the variables each UI defines (--sheet, --ink,
+   --ink-2, --muted, --line, --accent, --mono); buttons reuse each UI's .copy-btn and .primary. */
+
+.cedar-handover { display: flex; flex-direction: column; gap: 8px; max-width: 560px; margin: 10px 0; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: 12px; background: var(--sheet); color: var(--ink); font-size: 13.5px; }
+.cedar-handover.settled { border-color: var(--line); }
+.cedar-held { border-color: var(--warn-line, #e9d9b8); background: var(--warn-wash, var(--sheet)); }
+.cedar-held.settled { background: var(--sheet); }
+.cedar-handover-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cedar-handover-label { font: 500 11px var(--mono, ui-monospace, monospace); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.cedar-held:not(.settled) .cedar-handover-label { color: var(--warn, #8a6a1f); }
+.cedar-handover-chip { padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2, var(--muted)); font-size: 12px; overflow-wrap: anywhere; }
+.cedar-handover-body { font-size: 14px; overflow-wrap: anywhere; }
+.cedar-handover-sub { color: var(--ink-2, var(--muted)); overflow-wrap: anywhere; }
+.cedar-handover-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cedar-handover-note { flex: 1 1 220px; margin: 0; color: var(--muted); font-size: 12.5px; }
+.cedar-handover-done { flex: 1; color: var(--accent); font-weight: 500; }
+.cedar-handover-error { flex: 1 1 220px; color: #b3402e; font-size: 12.5px; overflow-wrap: anywhere; }
+@media (prefers-color-scheme: dark) { .cedar-handover-error { color: #f08a78; } }
+.cedar-handover-foot .copy-btn, .cedar-handover-foot .primary, .cedar-feedback-row .copy-btn { padding: 5px 12px; border-radius: 7px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: none; }
+.cedar-feedback-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.cedar-handover-foot .copy-btn, .cedar-feedback-row .copy-btn { border: 1px solid var(--line); background: none; color: var(--ink); }
+.cedar-handover-foot button:disabled { opacity: .5; cursor: default; }
+.cedar-handover-input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--sheet); color: var(--ink); font: inherit; font-size: 13px; resize: vertical; }
+.cedar-handover-what > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.cedar-handover-fields { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.cedar-handover-field { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: start; }
+.cedar-handover-field-name { padding-top: 2px; color: var(--muted); font: 12px var(--mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.cedar-handover-field-value { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+@media (max-width: 520px) { .cedar-handover-field { grid-template-columns: 1fr; gap: 2px; } }
+
+/* The outbox on the Agents page. */
+.cedar-outbox { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 18px; padding: 14px 16px; border: 1px solid var(--warn-line, var(--line)); border-radius: 14px; }
+.cedar-outbox-title { margin: 0; font-size: 15px; font-weight: 600; }
+.cedar-outbox-intro { margin: 0 0 4px; color: var(--muted); font-size: 12.5px; }
+.cedar-outbox-list { display: flex; flex-direction: column; gap: 10px; }
+.cedar-outbox-item .cedar-handover { margin: 4px 0 0; max-width: none; }
+.cedar-outbox-from { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 500; }
+.cedar-outbox-from .cedar-handover-note { flex: none; font-weight: 400; }
+
+/* Settings -> Feedback. */
+.cedar-handover-counts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cedar-feedback-list { display: flex; flex-direction: column; }
+.cedar-feedback-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 10px 0; border-bottom: 1px solid var(--line-soft, var(--line)); }
+.cedar-feedback-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cedar-feedback-summary { font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+.cedar-feedback-comment { font-size: 13px; overflow-wrap: anywhere; }

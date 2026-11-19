@@ -244,8 +244,54 @@ pub fn event_summary(locale: Option<&str>, event: &crate::trigger::Event) -> Str
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     NeedsAnswer,
+    /// It finished, and what it would have sent or changed waits in the outbox for approval.
+    NeedsApproval,
     Failed,
     Finished,
+}
+
+/// What a response that is still going waits for (see `attention`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Waiting {
+    /// A risky call needs the person's OK; the line says what it would do.
+    Approval(String),
+    /// The plan needs agreeing to.
+    Plan,
+}
+
+/// The title and body of the notification for a response that waits for the person.
+pub fn waiting_message(locale: Option<&str>, name: Option<&str>, waiting: &Waiting) -> (String, String) {
+    let lang = Lang::of(locale);
+    let name = name.unwrap_or(lang.new_chat());
+    let colon = if lang == Lang::Fr { " :" } else { ":" };
+    let what = match (lang, waiting) {
+        (Lang::En, Waiting::Approval(_)) => "needs your OK",
+        (Lang::En, Waiting::Plan) => "has a plan for you to agree to",
+        (Lang::De, Waiting::Approval(_)) => "braucht dein OK",
+        (Lang::De, Waiting::Plan) => "hat einen Plan, dem du zustimmen sollst",
+        (Lang::Fr, Waiting::Approval(_)) => "attend votre accord",
+        (Lang::Fr, Waiting::Plan) => "propose un plan à valider",
+        (Lang::Es, Waiting::Approval(_)) => "necesita tu aprobación",
+        (Lang::Es, Waiting::Plan) => "tiene un plan que debes aprobar",
+    };
+    let asks = match lang {
+        Lang::En => "Cedar is waiting",
+        Lang::De => "Cedar wartet",
+        Lang::Fr => "Cedar attend",
+        Lang::Es => "Cedar está esperando",
+    };
+    let quoted = match lang {
+        Lang::En => format!("in \"{name}\""),
+        Lang::De => format!("in „{name}“"),
+        Lang::Fr => format!("dans « {name} »"),
+        Lang::Es => format!("en «{name}»"),
+    };
+    let body = match waiting {
+        Waiting::Approval(reason) if !reason.trim().is_empty() => format!("{asks} {quoted}{colon}\n{}", reason.trim()),
+        _ => format!("{asks} {quoted}."),
+    };
+    let title = format!("{name}{colon} {what}");
+    (Lang::swiss(locale, title), Lang::swiss(locale, body))
 }
 
 /// The title and body of a finished turn's notification. `excerpt` is the start of the reply, and
@@ -261,6 +307,10 @@ pub fn turn_message(
     let lang = Lang::of(locale);
     let name = name.unwrap_or(lang.new_chat());
     let (title_what, what) = match (lang, outcome) {
+        (Lang::En, Outcome::NeedsApproval) => ("waiting for your approval", "has something waiting for your approval"),
+        (Lang::De, Outcome::NeedsApproval) => ("wartet auf deine Freigabe", "hat etwas, das auf deine Freigabe wartet"),
+        (Lang::Fr, Outcome::NeedsApproval) => ("en attente de votre accord", "a quelque chose en attente de votre accord"),
+        (Lang::Es, Outcome::NeedsApproval) => ("espera tu aprobación", "tiene algo que espera tu aprobación"),
         (Lang::En, Outcome::NeedsAnswer) => ("needs your answer", "needs your answer"),
         (Lang::En, Outcome::Failed) => ("failed", "failed"),
         (Lang::En, Outcome::Finished) => ("finished", "finished"),
@@ -313,6 +363,20 @@ pub fn turn_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_waiting_response_says_what_it_waits_for() {
+        let (title, body) = waiting_message(None, Some("Trip"), &Waiting::Approval("Send message in your Gmail to a@x.org.".into()));
+        assert_eq!(title, "Trip: needs your OK");
+        assert_eq!(body, "Cedar is waiting in \"Trip\":\nSend message in your Gmail to a@x.org.");
+        let (title, body) = waiting_message(Some("de"), None, &Waiting::Plan);
+        assert!(title.ends_with("hat einen Plan, dem du zustimmen sollst"), "{title}");
+        assert!(body.starts_with("Cedar wartet in „"), "{body}");
+        let (title, _) = waiting_message(Some("fr"), Some("Voyage"), &Waiting::Approval(String::new()));
+        assert_eq!(title, "Voyage : attend votre accord");
+        let (_, body) = turn_message(Some("en"), Some("Digest"), Outcome::NeedsApproval, true, None, Some("Two drafts."));
+        assert_eq!(body, "An agent's run in \"Digest\" has something waiting for your approval:\nTwo drafts.");
+    }
 
     #[test]
     fn locales_are_checked_not_rewritten() {

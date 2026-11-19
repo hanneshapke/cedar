@@ -18,7 +18,8 @@ use crate::records::{self, Records, SaveOptions};
 use crate::routing;
 use crate::polls::{self, Polls};
 use crate::models::{
-    Attachment, CreateRunRequest, ModelEntry, NewRun, Rating, Run, RunStatus, StoredMessage,
+    Attachment, CreateRunRequest, HeldCall, ModelEntry, NewRun, Rating, Run, RunStatus,
+    StoredMessage,
     ALLOWED_ATTACHMENT_TYPES,
 };
 use crate::sandbox::{
@@ -129,6 +130,7 @@ impl AppState {
             sandbox: cfg.sandbox.clone(),
             approvals: cfg.tool_approvals.clone(),
             approval_timeout: cfg.approval_timeout,
+            always_allow_after: cfg.always_allow_after,
             waits: Arc::default(),
             store: store.clone(),
             tool_timeout: cfg.tool_timeout,
@@ -211,6 +213,8 @@ pub fn router_with(
         .route("/runs/{id}/feedback", post(run_feedback))
         .route("/runs/{id}/plan", post(answer_plan))
         .route("/runs/{id}/approvals/{approval_id}", post(decide_approval))
+        .route("/held", get(list_held))
+        .route("/held/{id}", get(get_held).post(decide_held))
         .route("/runs/{id}/files", get(list_files))
         .route("/runs/{id}/files/{*path}", get(download_file))
         .route("/events", get(stream_notifications))
@@ -649,6 +653,7 @@ async fn create_run(
         callback_secret,
         plan: req.plan.unwrap_or(cfg.plan),
         interactive: req.interactive.unwrap_or(false),
+        hold_writes: req.hold_writes.unwrap_or(false),
         locale,
         import_attachments: cfg.records && req.import_attachments.unwrap_or(cfg.records_import_attachments),
     };
@@ -759,6 +764,7 @@ async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Valu
         "max_turns_cap": cfg.max_turns_cap,
         "plan": cfg.plan,
         "tool_approvals": !cfg.tool_approvals.is_empty(),
+        "always_allow_after": cfg.always_allow_after,
         "attachments": {
             "max_count": MAX_ATTACHMENTS,
             "max_bytes": MAX_ATTACHMENT_BYTES,
@@ -1765,6 +1771,139 @@ async fn decide_approval(
         return Err(AppError::Conflict("the run is not waiting for that approval".into()));
     }
     Ok((StatusCode::ACCEPTED, Json(answer)))
+}
+
+// -- the outbox -----------------------------------------------------------------------------
+
+/// At most this many held calls in one listing.
+const MAX_HELD_LISTED: u32 = 200;
+/// The largest input an edited held call may be sent with.
+const MAX_HELD_INPUT_BYTES: usize = 256 * 1024;
+
+#[derive(Deserialize, Default)]
+struct HeldQuery {
+    /// `pending`, `sent`, `failed`, `discarded` or `sending`; absent for all.
+    status: Option<String>,
+    run_id: Option<Uuid>,
+}
+
+/// `GET /v1/held`: the calls waiting in the caller's outbox (or, by `status`, what became of
+/// earlier ones), newest first.
+async fn list_held(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiQuery(q): ApiQuery<HeldQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let status = q.status.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    if let Some(s) = status {
+        if !matches!(s, "pending" | "sending" | "sent" | "failed" | "discarded") {
+            return Err(AppError::BadRequest(
+                "status must be pending, sending, sent, failed or discarded".into(),
+            ));
+        }
+    }
+    let held = state.store.list_held(&owner.0, status, q.run_id, MAX_HELD_LISTED).await?;
+    Ok(Json(json!({ "held": held })))
+}
+
+fn held_id(raw: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(raw).map_err(|_| AppError::NotFound("no such held call"))
+}
+
+async fn get_held(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<HeldCall>, AppError> {
+    let held = state.store.get_held(&owner.0, held_id(&id)?).await?;
+    Ok(Json(held.ok_or(AppError::NotFound("no such held call"))?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeldDecision {
+    /// `approve` or `discard`.
+    decision: String,
+    /// For `approve`: the input to make the call with instead of the one the model wrote.
+    input: Option<serde_json::Value>,
+}
+
+/// `POST /v1/held/{id}`: decide about a held call. `approve` makes the call now, exactly as it
+/// was written or with the `input` given instead, and answers with what became of it (`sent`,
+/// or `failed` with the tool's error, which can be approved again); `discard` drops it. No
+/// model is involved either way. `409` for a call that was already sent or discarded, or is
+/// being sent right now.
+async fn decide_held(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<HeldDecision>,
+) -> Result<Json<HeldCall>, AppError> {
+    let id = held_id(&id)?;
+    let held = state
+        .store
+        .get_held(&owner.0, id)
+        .await?
+        .ok_or(AppError::NotFound("no such held call"))?;
+    let settled = || AppError::Conflict(format!("this call is already {}", held.status));
+    match body.decision.as_str() {
+        "discard" => {
+            if body.input.is_some() {
+                return Err(AppError::BadRequest("input goes with approve, not discard".into()));
+            }
+            if !state.store.discard_held(&owner.0, id).await? {
+                return Err(settled());
+            }
+        }
+        "approve" => {
+            let edited = body.input.as_ref().is_some_and(|input| *input != held.input);
+            let input = body.input.unwrap_or_else(|| held.input.clone());
+            if !input.is_object() {
+                return Err(AppError::BadRequest("input must be an object".into()));
+            }
+            if input.to_string().len() > MAX_HELD_INPUT_BYTES {
+                return Err(AppError::BadRequest(format!(
+                    "input is larger than {} KiB",
+                    MAX_HELD_INPUT_BYTES / 1024
+                )));
+            }
+            // The owner's tools as they are now: an account disconnected since can't send.
+            let tools = state.integrations.tools_for(&owner.0).await;
+            let Some(tool) = tools.get(&held.tool).filter(|t| {
+                crate::tools::ACCOUNT_GROUPS.contains(&tools.group(t.name()))
+                    && crate::tools::holdable(t.name())
+            }) else {
+                return Err(AppError::Conflict(format!(
+                    "{} is not available any more (is the account still connected?); the call stays in the outbox",
+                    held.tool
+                )));
+            };
+            if !state.store.claim_held(&owner.0, id).await? {
+                return Err(settled());
+            }
+            let started = chrono::Utc::now();
+            let clock = std::time::Instant::now();
+            let result = polls::call_without_run(&state.cfg, tool, &input).await;
+            let error = result.as_ref().err().map(|e| format!("{e:#}"));
+            tracing::info!(owner = %owner.0, tool = %held.tool, held = %id, edited,
+                failed = error.is_some(), "held call approved and made");
+            if let Err(e) = state
+                .store
+                .record_tool_call(&owner.0, &held.tool, started, clock.elapsed(), error.as_deref(), polls::KEEP_CALLS)
+                .await
+            {
+                tracing::warn!(error = %format!("{e:#}"), "could not record a tool call");
+            }
+            let (status, output) = match (result, error) {
+                (Ok(output), _) => ("sent", output),
+                (Err(_), error) => ("failed", error.unwrap_or_default()),
+            };
+            state.store.settle_held(id, status, &input, edited, &output).await?;
+        }
+        _ => return Err(AppError::BadRequest("decision must be approve or discard".into())),
+    }
+    let held = state.store.get_held(&owner.0, id).await?;
+    Ok(Json(held.ok_or(AppError::NotFound("no such held call"))?))
 }
 
 async fn delete_run(

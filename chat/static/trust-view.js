@@ -182,6 +182,12 @@ const cedarTrust = (() => {
     if (scope) acts.append(button(tr('trust.approval.always', { scope }), 'allow_always'));
     acts.append(button(tr('trust.approval.skip'), 'deny'));
     el.append(acts);
+    // "Always" is earned: cedar offers it once the same thing was allowed a few times, and says
+    // how far along that is (`always`: {scope, allowed, after, offered}).
+    const always = spec.always;
+    if (always && !always.offered && always.scope && always.after > always.allowed) {
+      el.append(h('div', 'cedar-approval-later', tr('trust.approval.alwaysLater', { scope: always.scope, count: always.after - always.allowed })));
+    }
     return el;
   }
 

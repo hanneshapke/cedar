@@ -10,6 +10,7 @@
 
 mod ask_user;
 mod follow_up;
+mod limitation;
 mod bash;
 mod bestbuy;
 mod browser;
@@ -43,6 +44,7 @@ mod web_search;
 
 pub use ask_user::{as_text as question_text, AskUser, NAME as ASK_USER};
 pub use follow_up::{SuggestFollowUp, NAME as SUGGEST_FOLLOW_UP};
+pub use limitation::{ReportLimitation, CATEGORIES as LIMITATION_CATEGORIES, NAME as REPORT_LIMITATION};
 pub use bash::Bash;
 pub use bestbuy::BestBuy;
 pub use browser::BrowserTool;
@@ -386,6 +388,9 @@ impl ToolSet {
         if cfg.ask_user {
             set.tools.push(Arc::new(AskUser));
         }
+        if cfg.feedback {
+            set.tools.push(Arc::new(ReportLimitation));
+        }
         if cfg.memory {
             set.tools.push(Arc::new(Remember));
             set.tools.push(Arc::new(Forget));
@@ -631,7 +636,7 @@ impl ToolSet {
 
 /// Tool groups a run with a small context window always keeps when its selection is narrowed
 /// (see [`ToolSet::narrow_selection`]): looking things up and the run's own bookkeeping.
-const ALWAYS_OFFERED: &[&str] = &["web_search", "web_fetch", "ask_user", "follow_up", "memory", "records"];
+const ALWAYS_OFFERED: &[&str] = &["web_search", "web_fetch", "ask_user", "follow_up", "feedback", "memory", "records"];
 
 /// Words that show a request may need a tool group, matched as whole words (or with a plural
 /// `s`) in the request.
@@ -702,6 +707,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("products", "Shopping"),
     ("ask_user", "Clarifying questions"),
     ("follow_up", "Follow-ups"),
+    ("feedback", "Feedback on what it can't do"),
     ("memory", "Memory"),
     ("records", "Records"),
     ("browser", "Browser"),
@@ -735,6 +741,7 @@ pub fn group_of(name: &str) -> &'static str {
         "search_products" => "products",
         "ask_user" => "ask_user",
         "suggest_follow_up" => "follow_up",
+        "report_limitation" => "feedback",
         REMEMBER | FORGET | RECALL => "memory",
         RECORDS_LIST | RECORDS_DESCRIBE | RECORDS_SAVE | RECORDS_LOOKUP | RECORDS_DROP => "records",
         "browser" => "browser",
@@ -790,6 +797,64 @@ impl<'a> ToolView<'a> {
     /// The group a tool belongs to (see [`ToolSet::group`]).
     pub fn group(&self, name: &str) -> &'static str {
         self.set.group(name)
+    }
+
+    /// A note for the system prompt on how this run hands work over to its user: which calls wait
+    /// for their OK, what is held for them instead of sent, and how to end an answer that leaves
+    /// something for them to do. What it says follows what the run can do, so a model is never
+    /// told about an approval or an outbox that this run doesn't have.
+    pub fn handover_note(&self, how: Handover) -> String {
+        let account_writes = self.all().any(|t| holdable(t.name()));
+        let mut note = String::new();
+        if how.interactive && how.approvals {
+            note.push_str(
+                "Some of your calls wait for the user's OK before they run: sending or changing \
+                 mail, posting to Slack, saving a file from the web, installing packages, \
+                 deleting files, running a community tool. Make each such call complete and \
+                 final (the whole message, the real recipient), because what the user approves \
+                 is exactly what happens. If they decline, don't try to get the same thing done \
+                 another way: go on without it, or ask what they would prefer.",
+            );
+            if account_writes {
+                note.push_str(
+                    " If nobody answers in time, a message or change for one of their accounts \
+                     is kept in their outbox to approve later, and any other call is skipped; \
+                     say which in your answer.",
+                );
+            } else {
+                note.push_str(" If nobody answers in time, the call is skipped; say so in your answer.");
+            }
+        } else if !how.interactive && how.hold_writes && account_writes {
+            note.push_str(
+                "Nobody is reading along in this run, so you can't ask anything, and whatever \
+                 you send or change in the user's accounts (mail, calendar, files, Slack) is not \
+                 done right away: each such call is held in their outbox, where they approve, \
+                 edit or discard it later. Write each one complete and ready to go, since it is \
+                 sent as you wrote it and you won't be asked again. Make each call once, don't \
+                 wait for it, and don't build on its result. In your answer, list what is \
+                 waiting for their approval, and never say that it was sent.",
+            );
+        } else if !how.interactive {
+            note.push_str(
+                "Nobody is reading along in this run, so you can't ask anything and nothing \
+                 waits for approval: do what the prompt asks for and no more.",
+            );
+            if account_writes {
+                note.push_str(
+                    " Send or change something in the user's accounts only where the prompt \
+                     says to.",
+                );
+            }
+        }
+        if !note.is_empty() {
+            note.push(' ');
+        }
+        note.push_str(
+            "When you finish with something left open, end your answer with what is left for \
+             the user: what is waiting for their approval or their answer, what you could not do \
+             and why, and the next step that is theirs. Leave that out when nothing is left.",
+        );
+        note
     }
 
     /// A note for the system prompt saying what the sandbox can reach and how to use the web, so
@@ -903,6 +968,16 @@ impl<'a> ToolView<'a> {
                  to come back to something by yourself: without it you can't.",
             );
         }
+        if self.get(REPORT_LIMITATION).is_some() {
+            note.push_str(
+                " When you can't do something the user asked for because of what you have here \
+                 (no tool for it, an account that isn't connected, a site that refuses you, a \
+                 limit you hit), say so plainly, do the part you can, and note the gap with \
+                 report_limitation; the user decides whether it is sent as feedback. Never \
+                 describe something as done that wasn't, and don't report a request you \
+                 declined or a fact you don't know.",
+            );
+        }
         if ["bash", "run_python", "write_file", "generate_chart"]
             .iter()
             .any(|t| self.get(t).is_some())
@@ -991,6 +1066,25 @@ impl<'a> ToolView<'a> {
         }
         note
     }
+}
+
+/// How a run hands work over to its user, for [`ToolView::handover_note`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Handover {
+    /// Someone answers while the run goes (see `interactive` on a run).
+    pub interactive: bool,
+    /// Some calls wait for that person's OK (`TOOL_APPROVALS` isn't off).
+    pub approvals: bool,
+    /// What the run would send or change in the user's accounts is held for them instead (see
+    /// `hold_writes` on a run).
+    pub hold_writes: bool,
+}
+
+/// Whether a call of `name` can be held for the user's approval instead of made: one that sends
+/// or changes something in a connected account. Such a call needs nothing of the run (no
+/// sandbox, no model), so it can be made later, exactly as it was written.
+pub fn holdable(name: &str) -> bool {
+    writes(name)
 }
 
 /// The rules for tools that handle health data, which every run that has one gets, whatever
@@ -1305,6 +1399,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1329,6 +1424,7 @@ mod tests {
                 "search_products",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1352,6 +1448,7 @@ mod tests {
                 "search_products",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1378,6 +1475,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1399,6 +1497,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1420,6 +1519,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1441,6 +1541,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1462,6 +1563,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1483,6 +1585,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1504,6 +1607,7 @@ mod tests {
                 "plan_trip",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1525,6 +1629,7 @@ mod tests {
                 ("STOCKS", "off"),
                 ("ASK_USER", "off"),
                 ("FOLLOW_UPS", "off"),
+                ("FEEDBACK", "off"),
                 ("MEMORY", "off"),
                 ("RECORDS", "off")
             ])),
@@ -1542,6 +1647,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
