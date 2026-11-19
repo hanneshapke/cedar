@@ -72,6 +72,7 @@ struct AgentFormView: View {
                 // While the server picks the model, an agent has none of its own to choose.
                 if app.modelSelection { model }
                 notify
+                holding
                 if let error {
                     Section {
                         Label(error, systemImage: "exclamationmark.triangle")
@@ -587,6 +588,15 @@ struct AgentFormView: View {
     /// The picked model, or the server's default one when none is picked.
     private var selectedModel: ModelInfo? {
         draft.model.isEmpty ? app.models.first(where: \.isDefault) : app.models.first { $0.id == draft.model }
+    }
+
+    /// Whether what the agent would send or change waits for the person.
+    private var holding: some View {
+        Section {
+            Toggle("Hold What It Sends Until I Approve", isOn: $draft.holdWrites)
+        } footer: {
+            Text("Mail, calendar events, files and Slack messages it would write wait under Agents and go out only when you approve them. Reading is never held. Turn this off for an agent you trust to act on its own.")
+        }
     }
 
     private var notify: some View {

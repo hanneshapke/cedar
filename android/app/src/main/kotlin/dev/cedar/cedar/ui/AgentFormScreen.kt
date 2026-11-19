@@ -141,6 +141,8 @@ fun AgentFormScreen(app: AppModel, request: AgentFormRequest) {
     var model by remember { mutableStateOf(editing?.model.orEmpty()) }
     var reasoning by remember { mutableStateOf(editing?.reasoning.orEmpty()) }
     var notify by remember { mutableStateOf(editing?.notify.orEmpty()) }
+    // What it would send or change waits for the person; on for a new agent.
+    var holdWrites by remember { mutableStateOf(editing?.holdWrites ?: true) }
     var toolsChoice by remember { mutableStateOf(ToolsChoice.AUTO) }
     var tools by remember { mutableStateOf(editing?.tools.orEmpty().toSet()) }
     var choosingTools by remember { mutableStateOf(false) }
@@ -256,6 +258,9 @@ fun AgentFormScreen(app: AppModel, request: AgentFormRequest) {
             timezone = deviceZone,
             minIntervalSecs = interval,
             maxRunsPerDay = runs,
+            // The server holds a new agent's writes unless told otherwise, so creating says only
+            // "don't", and editing only a change: one from before the outbox refuses the field.
+            holdWrites = holdWrites.takeIf { if (editing == null) !it else it != editing.holdWrites },
         )
         saving = true
         scope.launch {
@@ -392,6 +397,13 @@ fun AgentFormScreen(app: AppModel, request: AgentFormRequest) {
                     touched = true
                 }
                 Footnote(stringResource(R.string.agent_notify_footnote))
+
+                HorizontalDivider()
+                SwitchLine(stringResource(R.string.agent_hold_writes), holdWrites) {
+                    holdWrites = it
+                    touched = true
+                }
+                Footnote(stringResource(R.string.agent_hold_writes_footnote))
 
                 HorizontalDivider()
                 Section(stringResource(R.string.agent_tools))

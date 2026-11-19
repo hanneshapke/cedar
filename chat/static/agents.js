@@ -441,6 +441,10 @@ const cedarAgents = (() => {
     const current = ++view;
     const add = link(tr('agents.new'), '#/agents/new', 'primary');
     const parts = [heading(tr('agents.title'), add), el('p', 'cedar-ag-intro', tr('agents.intro')), tabs('agents')];
+    // What agents' runs would have sent or changed, waiting for a decision. A refresh of the
+    // list keeps the section as it is, so an edit under way isn't thrown away.
+    const outbox = page.body.querySelector('.cedar-outbox') || (typeof cedarHandover === 'undefined' ? null : cedarHandover.outbox.section());
+    if (outbox) parts.push(outbox);
     if (!agents.length) page.body.replaceChildren(...parts, el('div', 'cedar-ag-note', tr('agents.loading')));
     await load();
     if (current !== view) return;
@@ -572,6 +576,7 @@ const cedarAgents = (() => {
       small.push(tr('agents.limitsText', { interval: tr('agents.minutesShort', { count: gap }), count: a.max_runs_per_day ?? limits.max_runs_per_day ?? 24 }));
     }
     small.push(`${tr('agents.toolsLabel')}: ${a.tools ? a.tools.join(', ') : tr('agents.toolsDefault')}`);
+    small.push(tr(a.hold_writes ? 'agents.holds' : 'agents.actsAtOnce'));
     facts.append(el('div', 'cedar-ag-note', small.filter(Boolean).join(' · ')));
 
     const actions = el('div', 'cedar-ag-actions');
@@ -923,6 +928,12 @@ const cedarAgents = (() => {
     limitsRow.append(toolsField, field(tr('agents.form.minInterval'), gap), field(tr('agents.form.maxPerDay'), perDay));
     const limitsHelp = help(tr('agents.form.limitsHelp'));
 
+    // Whether what it would send or change waits for the person. On for a new agent.
+    const holdOn = input('checkbox', { checked: agent ? !!agent.hold_writes : true });
+    const hold = el('label', 'cedar-ag-inline');
+    hold.append(holdOn, el('span', '', tr('agents.form.hold')));
+    const holdHelp = help(tr('agents.form.holdHelp'));
+
     // Model, reasoning, and how a finished run is announced.
     const model = el('select');
     const modelField = field(tr('agents.form.model'), model);
@@ -952,7 +963,7 @@ const cedarAgents = (() => {
       field(tr('agents.form.name'), name), field(tr('agents.form.prompt'), prompt), promptHelp,
       el('div', 'cedar-ag-legend', tr('agents.form.trigger')), picks,
       scheduleSet, conditionSet, recordsSet, webhookSet, deviceSet, mailSet, calendarSet, driveSet, tryBox,
-      safety, limitsRow, limitsHelp, runRow2, help(tr('agents.form.notifyHelp')), error, actions,
+      safety, limitsRow, limitsHelp, hold, holdHelp, runRow2, help(tr('agents.form.notifyHelp')), error, actions,
     );
     const sets2 = { schedule: scheduleSet, condition: conditionSet, records: recordsSet, webhook: webhookSet, device: deviceSet, email: mailSet, calendar: calendarSet, drive: driveSet };
     const syncPick = () => {
@@ -1098,6 +1109,7 @@ const cedarAgents = (() => {
         body.min_interval_secs = gap.value ? Number(gap.value) * 60 : null;
         body.max_runs_per_day = perDay.value ? Number(perDay.value) : null;
       }
+      body.hold_writes = holdOn.checked;
       if (!toolsField.hidden && toolsChoice.value === 'defaults') body.tools = null;
       if (!agent && conversation) body.conversation_id = conversation.id;
       submit.disabled = true;

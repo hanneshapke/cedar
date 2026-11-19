@@ -464,4 +464,39 @@ class ChatClientTest {
         server.enqueue(json("{}", 401))
         assertFailsWith<ChatException.Unauthorized> { runBlocking { client.notices().toList() } }
     }
+
+    @Test
+    fun readsAndDecidesTheOutboxAndSendsFeedback() = runBlocking {
+        server.enqueue(json("""{"items":[{"id":"h-1","tool":"gmail_send_message","status":"pending","input":{"to":"ana@example.com"}}]}"""))
+        server.enqueue(json("""{"id":"h-1","tool":"gmail_send_message","status":"sent","output":"ok","decided_at":"2026-11-19T10:00:00Z"}"""))
+        server.enqueue(json("""{"id":"h-2","tool":"slack_send_message","status":"discarded"}"""))
+        server.enqueue(json("""{"error":{"code":"conflict","message":"this call is already sent"}}""", 409))
+        server.enqueue(json("""{"id":"h-1","tool":"gmail_send_message","status":"sent"}"""))
+        server.enqueue(json("""{"feedback":{"id":"f1","turn_id":"t1","call_id":"call_1","status":"sent","summary":"No booking tool","category":"missing_tool","created_at":"2026-11-19T10:00:00Z"}}"""))
+
+        assertEquals(listOf("h-1"), client.outbox().map { it.id })
+        assertEquals(true, client.decideOutbox("h-1", approve = true).isSent)
+        assertEquals("discarded", client.decideOutbox("h-2", approve = false).status)
+        val late = assertFailsWith<ChatException.Api> { client.decideOutbox("h-1", approve = true) }
+        assertEquals(409, late.status)
+        assertEquals(true, client.outboxItem("h-1").isSent)
+        val sent = client.decideLimitation("t1", "call_1", FeedbackChoice.Send(LimitationReport("No booking tool", "missing_tool")))
+        assertEquals(true, sent.feedback.isSent)
+
+        assertEquals("GET /api/outbox", server.takeRequest().let { "${it.method} ${it.path}" })
+        server.takeRequest().let {
+            assertEquals("POST /api/outbox/h-1", "${it.method} ${it.path}")
+            assertEquals(j("""{"decision":"approve"}"""), j(it.body.readUtf8()))
+        }
+        server.takeRequest().let {
+            assertEquals("POST /api/outbox/h-2", "${it.method} ${it.path}")
+            assertEquals(j("""{"decision":"discard"}"""), j(it.body.readUtf8()))
+        }
+        assertEquals("POST /api/outbox/h-1", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("GET /api/outbox/h-1", server.takeRequest().let { "${it.method} ${it.path}" })
+        server.takeRequest().let {
+            assertEquals("PUT /api/turns/t1/limitations/call_1", "${it.method} ${it.path}")
+            assertEquals(j("""{"decision":"send","summary":"No booking tool","category":"missing_tool"}"""), j(it.body.readUtf8()))
+        }
+    }
 }

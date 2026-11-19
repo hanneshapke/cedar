@@ -3,8 +3,8 @@
 //! Uses runtime-checked queries (not the `query!` macros) so building doesn't need a database.
 
 use crate::models::{
-    event, Attachment, Event, ModelEntry, NewRun, Notification, PlanMode, Rating, Run, RunStatus,
-    StoredMessage, Usage,
+    event, Attachment, Event, HeldCall, ModelEntry, NewRun, Notification, PlanMode, Rating, Run,
+    RunStatus, StoredMessage, Usage,
 };
 use crate::trace::{LlmCall, NewCall};
 use anyhow::{anyhow, Context, Result};
@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
     turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
-    workspace_reused, tools, plan, interactive, locale, callback_url, rating, import_attachments, model_auto, created_at, started_at, finished_at";
+    workspace_reused, tools, plan, interactive, hold_writes, locale, callback_url, rating, import_attachments, model_auto, created_at, started_at, finished_at";
 
 /// What `GET /v1/events` and the webhook worker read for a notification: the row joined with
 /// its run's final state.
@@ -79,6 +79,7 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
         callback_url: r.try_get("callback_url")?,
         plan: PlanMode::parse(r.try_get("plan")?).unwrap_or_default(),
         interactive: r.try_get("interactive")?,
+        hold_writes: r.try_get::<i64, _>("hold_writes")? != 0,
         locale: r.try_get("locale")?,
         rating: r.try_get::<Option<i64>, _>("rating")?.and_then(|v| match v { 1 => Some(Rating::Up), -1 => Some(Rating::Down), _ => None }),
         import_attachments: r.try_get::<i64, _>("import_attachments")? != 0,
@@ -134,6 +135,26 @@ pub enum InsertRefused {
     ParentActive,
     /// The parent was already continued by this run.
     ParentContinued(Uuid),
+}
+
+const HELD_COLS: &str =
+    "id, run_id, call_id, tool, input, reason, why, status, edited, output, created_at, decided_at";
+
+fn held_from_row(r: &SqliteRow) -> Result<HeldCall> {
+    Ok(HeldCall {
+        id: Uuid::parse_str(r.try_get::<&str, _>("id")?)?,
+        run_id: Uuid::parse_str(r.try_get::<&str, _>("run_id")?)?,
+        call_id: r.try_get("call_id")?,
+        tool: r.try_get("tool")?,
+        input: serde_json::from_str(r.try_get::<&str, _>("input")?)?,
+        reason: r.try_get("reason")?,
+        why: r.try_get("why")?,
+        status: r.try_get("status")?,
+        edited: r.try_get::<i64, _>("edited")? != 0,
+        output: r.try_get("output")?,
+        created_at: to_dt(r.try_get("created_at")?),
+        decided_at: r.try_get::<Option<i64>, _>("decided_at")?.map(to_dt),
+    })
 }
 
 fn notification_from_row(r: &SqliteRow) -> Result<Notification> {
@@ -371,8 +392,8 @@ impl Store {
 
         sqlx::query(
             "INSERT INTO runs (id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
-             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, locale, import_attachments, model_auto, created_at) \
-             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, hold_writes, locale, import_attachments, model_auto, created_at) \
+             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -390,6 +411,7 @@ impl Store {
         .bind(&callback.1)
         .bind(new.plan.as_str())
         .bind(new.interactive)
+        .bind(new.hold_writes as i64)
         .bind(&new.locale)
         .bind(new.import_attachments as i64)
         .bind(new.model_auto as i64)
@@ -515,6 +537,202 @@ impl Store {
             .await?;
         }
         Ok(())
+    }
+
+    /// How often `owner` plainly allowed every one of `scopes` for `rule` since they last
+    /// declined one: the lowest of their counts, 0 for no scopes.
+    pub async fn allow_count(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<u32> {
+        let mut least: Option<i64> = None;
+        for scope in scopes {
+            let n: Option<i64> = sqlx::query_scalar(
+                "SELECT allows FROM approval_counts WHERE owner = ? AND rule = ? AND scope = ?",
+            )
+            .bind(owner)
+            .bind(rule)
+            .bind(scope)
+            .fetch_optional(&self.pool)
+            .await?;
+            let n = n.unwrap_or(0);
+            least = Some(least.map_or(n, |l| l.min(n)));
+        }
+        Ok(least.unwrap_or(0).max(0) as u32)
+    }
+
+    /// Count one plain "allow" of `scopes` for `rule`.
+    pub async fn count_allow(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<()> {
+        for scope in scopes {
+            sqlx::query(
+                "INSERT INTO approval_counts (owner, rule, scope, allows, updated_at) VALUES (?, ?, ?, 1, ?) \
+                 ON CONFLICT (owner, rule, scope) DO UPDATE SET allows = allows + 1, updated_at = excluded.updated_at",
+            )
+            .bind(owner)
+            .bind(rule)
+            .bind(scope)
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Forget how often `scopes` were allowed for `rule`: the owner declined one, or always
+    /// allows them now.
+    pub async fn reset_allow_counts(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<()> {
+        for scope in scopes {
+            sqlx::query("DELETE FROM approval_counts WHERE owner = ? AND rule = ? AND scope = ?")
+                .bind(owner)
+                .bind(rule)
+                .bind(scope)
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
+    }
+
+    // -- held calls (the outbox) --------------------------------------------------------------
+
+    /// Keep a call for its owner to decide about. The same call (tool and input) already
+    /// waiting for the same run is returned instead of kept twice.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn hold_call(
+        &self,
+        run_id: Uuid,
+        owner: &str,
+        call_id: &str,
+        tool: &str,
+        input: &Value,
+        reason: &str,
+        why: &str,
+    ) -> Result<HeldCall> {
+        let input = serde_json::to_string(input)?;
+        let waiting: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM held_calls WHERE run_id = ? AND tool = ? AND input = ? AND status = 'pending'",
+        )
+        .bind(run_id.to_string())
+        .bind(tool)
+        .bind(&input)
+        .fetch_optional(&self.pool)
+        .await?;
+        let id = match waiting {
+            Some(id) => Uuid::parse_str(&id)?,
+            None => {
+                let id = Uuid::now_v7();
+                sqlx::query(
+                    "INSERT INTO held_calls (id, run_id, owner, call_id, tool, input, reason, why, status, created_at) \
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+                )
+                .bind(id.to_string())
+                .bind(run_id.to_string())
+                .bind(owner)
+                .bind(call_id)
+                .bind(tool)
+                .bind(&input)
+                .bind(reason)
+                .bind(why)
+                .bind(now_ms())
+                .execute(&self.pool)
+                .await?;
+                id
+            }
+        };
+        self.get_held(owner, id)
+            .await?
+            .ok_or_else(|| anyhow!("held call {id} vanished after insert"))
+    }
+
+    /// One of `owner`'s held calls.
+    pub async fn get_held(&self, owner: &str, id: Uuid) -> Result<Option<HeldCall>> {
+        let row = sqlx::query(&format!("SELECT {HELD_COLS} FROM held_calls WHERE id = ? AND owner = ?"))
+            .bind(id.to_string())
+            .bind(owner)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.as_ref().map(held_from_row).transpose()
+    }
+
+    /// `owner`'s held calls, newest first: all of them, or those in `status`, or of one run.
+    pub async fn list_held(
+        &self,
+        owner: &str,
+        status: Option<&str>,
+        run_id: Option<Uuid>,
+        limit: u32,
+    ) -> Result<Vec<HeldCall>> {
+        let rows = sqlx::query(&format!(
+            "SELECT {HELD_COLS} FROM held_calls WHERE owner = ?1 AND (?2 IS NULL OR status = ?2) \
+             AND (?3 IS NULL OR run_id = ?3) ORDER BY created_at DESC, id DESC LIMIT ?4"
+        ))
+        .bind(owner)
+        .bind(status)
+        .bind(run_id.map(|r| r.to_string()))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(held_from_row).collect()
+    }
+
+    /// How many calls a run has had held so far, whatever became of them.
+    pub async fn count_held(&self, run_id: Uuid) -> Result<i64> {
+        Ok(sqlx::query_scalar("SELECT COUNT(*) FROM held_calls WHERE run_id = ?")
+            .bind(run_id.to_string())
+            .fetch_one(&self.pool)
+            .await?)
+    }
+
+    /// Take a held call to send it: only one that is waiting, or failed before, and only once
+    /// at a time. False if it is being sent, was sent or was discarded.
+    pub async fn claim_held(&self, owner: &str, id: Uuid) -> Result<bool> {
+        let done = sqlx::query(
+            "UPDATE held_calls SET status = 'sending' WHERE id = ? AND owner = ? AND status IN ('pending', 'failed')",
+        )
+        .bind(id.to_string())
+        .bind(owner)
+        .execute(&self.pool)
+        .await?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// What became of a claimed call: `sent` or `failed`, with the input it was made with and
+    /// what the tool said.
+    pub async fn settle_held(&self, id: Uuid, status: &str, input: &Value, edited: bool, output: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE held_calls SET status = ?, input = ?, edited = ?, output = ?, decided_at = ? WHERE id = ? AND status = 'sending'",
+        )
+        .bind(status)
+        .bind(serde_json::to_string(input)?)
+        .bind(edited as i64)
+        .bind(output)
+        .bind(now_ms())
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Drop a held call without making it. False unless it was waiting (or had failed).
+    pub async fn discard_held(&self, owner: &str, id: Uuid) -> Result<bool> {
+        let done = sqlx::query(
+            "UPDATE held_calls SET status = 'discarded', decided_at = ? WHERE id = ? AND owner = ? AND status IN ('pending', 'failed')",
+        )
+        .bind(now_ms())
+        .bind(id.to_string())
+        .bind(owner)
+        .execute(&self.pool)
+        .await?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// Calls that were being sent when cedar stopped: whether they went out is unknown, so they
+    /// are marked failed with a note saying so, and the owner decides. Returns how many.
+    pub async fn fail_interrupted_held(&self) -> Result<u64> {
+        let done = sqlx::query(
+            "UPDATE held_calls SET status = 'failed', decided_at = ?, output = ? WHERE status = 'sending'",
+        )
+        .bind(now_ms())
+        .bind("cedar stopped while this was being sent, so it may or may not have gone out. Check before sending it again.")
+        .execute(&self.pool)
+        .await?;
+        Ok(done.rows_affected())
     }
 
     /// The model a run with `model_auto` goes on with (see [`crate::routing`]), and the
@@ -1242,6 +1460,7 @@ mod tests {
             callback_secret: None,
             plan: PlanMode::Off,
             interactive: false,
+            hold_writes: false,
             locale: "en".into(),
             import_attachments: false,
             model_auto: false,
@@ -1614,6 +1833,7 @@ mod tests {
             attachments: files.clone(),
             plan: PlanMode::Off,
             interactive: false,
+            hold_writes: false,
             locale: "en".into(),
             import_attachments: false,
             model_auto: false,

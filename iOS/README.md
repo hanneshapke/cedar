@@ -24,6 +24,13 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
   chat, and anything else opens in Quick Look (text, CSV, code, SVG, Office documents), all with
   sharing
 - Clarifying questions (`ask_user`) as a form: pick options, add your own words, send
+- What Cedar could not do (`report_limitation`) as a card under the reply, with **Send Feedback**
+  (kept on your server, with a note if you add one) and **Dismiss Report**; nothing is recorded
+  until you send it
+- The outbox: what an agent's run would have sent or changed in your accounts and held instead
+  (see [The outbox](../chat/README.md#the-outbox)), above the list of agents and as a card in the
+  run's conversation, with **Approve** and **Discard**. Approving sends it exactly as shown;
+  to change it first, use the web UI. The agent form has the switch that holds an agent's writes
 - Follow-up suggestions (`suggest_follow_up`) as a card under the reply: what Cedar would do
   later and when, in your time zone, with the prompt folded. **Set Up** makes it a one-off agent,
   **Dismiss Suggestion** drops it; nothing is scheduled until you set it up. A card that was

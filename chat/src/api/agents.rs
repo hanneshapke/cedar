@@ -41,6 +41,9 @@ pub(super) struct AgentBody {
     min_interval_secs: Option<Option<u32>>,
     #[serde(default, deserialize_with = "nullable")]
     max_runs_per_day: Option<Option<u32>>,
+    /// Whether what its runs would send or change in the person's accounts waits in the outbox
+    /// for their approval. When creating, absent means yes.
+    hold_writes: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +93,7 @@ fn view(state: &AppState, s: &Schedule, last_run: Option<&RunDetail>, secret: Op
         "waiting": s.state.as_ref().is_some_and(|st| st.get("pending").is_some()),
         "min_interval_secs": s.min_interval_secs,
         "max_runs_per_day": s.max_runs_per_day,
+        "hold_writes": s.hold_writes,
         "hook": hook,
         "last_run": last_run,
         "created_at": s.created_at,
@@ -263,6 +267,7 @@ pub(super) async fn create(Scoped(state): Scoped, ApiJson(body): ApiJson<AgentBo
             hook_secret: hook.as_ref().map(|(_, secret)| secret.as_str()),
             min_interval_secs,
             max_runs_per_day,
+            hold_writes: body.hold_writes.unwrap_or(true),
         })
         .await?;
     let schedule = match body.enabled {
@@ -307,6 +312,9 @@ pub(super) async fn update(Scoped(state): Scoped, Path(id): Path<String>, ApiJso
     }
     if let Some(v) = body.max_runs_per_day {
         schedule.max_runs_per_day = v;
+    }
+    if let Some(v) = body.hold_writes {
+        schedule.hold_writes = v;
     }
     clean_limits(schedule.min_interval_secs, schedule.max_runs_per_day)?;
 
@@ -585,6 +593,8 @@ pub(super) async fn decide_followup(
                     hook_secret: None,
                     min_interval_secs: None,
                     max_runs_per_day: None,
+                    // The model wrote this prompt: whatever it would send waits for the person.
+                    hold_writes: true,
                 })
                 .await?;
             let done = state.store.decide_followup(turn.id, &call_id, "accepted", Some(schedule.id)).await?;

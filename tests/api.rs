@@ -1782,6 +1782,7 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         callback_secret: None,
         plan: cedar::models::PlanMode::Off,
         interactive: false,
+        hold_writes: false,
         locale: "en".into(),
         import_attachments: false,
         model_auto: false,

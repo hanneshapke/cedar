@@ -224,6 +224,20 @@ const cedarNotify = (() => {
     deps.onChange?.();
   }
 
+  /**
+   * A response in another conversation is waiting for an OK or for its plan to be agreed to
+   * (a `turn.waiting` notice). The open conversation shows the request itself; a hidden tab
+   * leaves it to the out-of-app method, which the server sends if nobody answers.
+   */
+  const waitingSeen = new Set();
+  function onWaiting(notice) {
+    const key = `${notice.turn_id}/${notice.what}/${notice.reason || ''}`;
+    if (!notice.turn_id || waitingSeen.has(key)) return;
+    waitingSeen.add(key);
+    if (document.visibilityState !== 'visible' || deps.current()?.id === notice.conversation_id) return;
+    deps.toast(notice.what === 'plan' ? tr('handover.waiting.plan') : tr('handover.waiting.approval', { reason: notice.reason || '' }).trim());
+  }
+
   // -- Settings: how to be told out of the app ---------------------------------------------------
 
   const note = (text, className = 'cedar-set-note') => el('p', className, text);
@@ -773,6 +787,7 @@ const cedarNotify = (() => {
             const notice = parseSse(buf.slice(0, cut));
             buf = buf.slice(cut + 2);
             if (notice?.type === 'turn.finished') onNotice(notice);
+            else if (notice?.type === 'turn.waiting') onWaiting(notice);
           }
         }
       } catch { failures++; }

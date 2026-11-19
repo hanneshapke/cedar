@@ -46,6 +46,14 @@ The same as the iOS app:
   handed what you shared; the screen says whether a run started, with a way to open it, or why
   not. Other apps can start a device agent too, once you allow it: see
   [Starting an agent from another app](#starting-an-agent-from-another-app)
+- **Feedback**: when Cedar could not do something (`report_limitation`), a card under the reply
+  says what and offers **Send Feedback** (kept on your server, with a note if you add one) and
+  **Dismiss**; nothing is recorded until you send it
+- **The outbox**: what an agent's run would have sent or changed in your accounts and held
+  instead (see [The outbox](../chat/README.md#the-outbox)) is listed above the agents and shown
+  as a card in the run's conversation, with **Approve** and **Discard**. Approving sends it
+  exactly as shown; to change it first, use the web UI. The agent form has the switch that holds
+  an agent's writes
 - **Follow-ups**: when Cedar suggests checking something again later (`suggest_follow_up`), the
   suggestion is a card under the reply with its time in the phone's time zone and its prompt
   folded: **Set Up** makes a one-off agent of it, **Dismiss** drops it, and nothing is scheduled

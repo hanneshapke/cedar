@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
@@ -119,6 +121,8 @@ private fun AgentList(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
     if (app.agents.isEmpty() && app.agentError == null) {
         // In a scrollable column, so pulling to refresh still works on an empty list.
         LazyColumn(Modifier.fillMaxSize()) {
+            // A response nobody approved in time can leave something here without any agent.
+            outboxItems(app)
             item {
                 if (app.agentsLoaded) {
                     EmptyState(
@@ -134,6 +138,7 @@ private fun AgentList(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
     }
     LazyColumn(Modifier.fillMaxSize()) {
         app.agentError?.let { error -> item { ErrorLine(error) } }
+        outboxItems(app)
         for (group in GROUPS) {
             // In the server's order: the ones switched on first.
             val agents = app.agents.filter { it.trigger.group == group }
@@ -165,6 +170,46 @@ private fun AgentList(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
         DeleteAgentDialog(agent, onDismiss = { deleting = null }) {
             deleting = null
             onAction { app.deleteAgent(agent) }
+        }
+    }
+}
+
+/**
+ * The outbox, above the agents: what their runs would have sent or changed, each with who wanted
+ * it and Approve or Discard. Nothing here happens until it is approved. Empty, it takes no room.
+ */
+private fun LazyListScope.outboxItems(app: AppModel) {
+    if (app.outbox.isEmpty()) return
+    item(key = "outbox-header") {
+        Column {
+            GroupHeader(stringResource(R.string.outbox_title))
+            Text(
+                stringResource(R.string.outbox_intro),
+                Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText,
+            )
+        }
+    }
+    items(app.outbox, key = { "held-${it.id}" }) { held ->
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val origin = listOfNotNull(held.origin, held.createdAt?.let { shortDateTime(it) }).joinToString(" · ")
+            if (origin.isNotEmpty()) {
+                val conversation = held.conversationId
+                Text(
+                    origin,
+                    if (conversation != null) Modifier.clickable { app.open(conversation) } else Modifier,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (conversation != null) MaterialTheme.colorScheme.primary else CedarColors.secondaryText,
+                )
+            }
+            HeldCallView(
+                note = null,
+                item = held,
+                gone = false,
+                deciding = app.isDecidingHeldCall(held.id),
+                error = app.heldCallError(held.id),
+                onDecide = { approve -> app.decideHeldCall(held.id, approve) },
+            )
         }
     }
 }

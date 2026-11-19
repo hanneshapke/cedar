@@ -374,7 +374,9 @@ pub async fn fire(state: &AppState, schedule: &Schedule, firing: Firing) -> Resu
     };
 
     let conversation = state.store.create_scheduled_conversation(schedule.id, &title).await?;
-    let run = match state.cedar.create_run(&unattended(&schedule.prompt, event.as_ref(), data.as_deref()), &settings.options(None)).await {
+    // Nobody reads along: what the run would send or change waits in the outbox, if the agent says so.
+    let options = crate::cedar::RunOptions { hold_writes: schedule.hold_writes, ..settings.options(None) };
+    let run = match state.cedar.create_run(&unattended(&schedule.prompt, event.as_ref(), data.as_deref()), &options).await {
         Ok(run) => run,
         Err(e) => {
             // Nothing happened; don't leave an empty conversation behind.

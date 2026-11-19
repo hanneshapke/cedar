@@ -26,6 +26,9 @@ final class ChatModel {
     /// What was decided about the follow-ups suggested here, by `FollowUpDecision.key`; a
     /// suggestion without one is still open.
     private(set) var followUpDecisions: [String: FollowUpDecision] = [:]
+    /// What was decided about what the runs here reported they could not do, by
+    /// `FeedbackDecision.key`; a report without one is still open.
+    private(set) var feedbackDecisions: [String: FeedbackDecision] = [:]
 
     @ObservationIgnored private weak var app: AppModel?
     @ObservationIgnored private var followers: [String: Task<Void, Never>] = [:]
@@ -88,6 +91,9 @@ final class ChatModel {
             // Decisions are never taken back, so the server's only add to the ones known here.
             for decision in detail.followups {
                 followUpDecisions[decision.key] = decision
+            }
+            for decision in detail.limitations where decision.turnId != nil {
+                feedbackDecisions[decision.key] = decision
             }
             sync(with: detail.turns)
             errorMessage = nil
@@ -358,6 +364,24 @@ final class ChatModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    // MARK: What Cedar could not do, and what waits for approval
+
+    /// What was decided about the report `call` made in `turn`; `nil` while it is open.
+    func feedbackDecision(for call: ToolCall, in turn: TurnTranscript) -> FeedbackDecision? {
+        feedbackDecisions[FeedbackDecision.key(turnId: turn.id, callId: call.id)]
+    }
+
+    /// Sends the report `call` made as feedback, which keeps it on the person's server, or
+    /// dismisses it. Throws the server's reason when it refuses, for the card to show. The
+    /// answer is the decision that stands, which is an earlier one when another device was first.
+    func decideLimitation(_ call: ToolCall, in turn: TurnTranscript, send: Bool, comment: String) async throws {
+        guard let report = call.limitation else { return }
+        guard let client else { throw ChatError.notConfigured }
+        let body = send ? FeedbackBody.send(report, comment: comment) : FeedbackBody.dismiss
+        let answer = try await client.decideLimitation(turnId: turn.id, callId: call.id, body)
+        feedbackDecisions[FeedbackDecision.key(turnId: turn.id, callId: call.id)] = answer.feedback
     }
 
     // MARK: Follow-ups

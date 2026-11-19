@@ -255,6 +255,10 @@ cedarI18n.add({
     'followup.dismissed': "Dismissed.",
     'followup.passed': "That time has passed.",
     'followup.failed': "Could not do that.",
+    'agents.form.hold': "Hold what it sends or changes until I approve it",
+    'agents.form.holdHelp': "Mail, calendar events, files and Slack messages it would write wait in the outbox on the Agents page, and go out only when you approve them. Reading is never held. Turn this off for an agent you trust to act on its own.",
+    'agents.holds': "What it sends waits for your approval",
+    'agents.actsAtOnce': "Sends and changes things without asking",
   },
   de: {
     'agents.title': "Agenten",
@@ -506,6 +510,10 @@ cedarI18n.add({
     'followup.dismissed': "Verworfen.",
     'followup.passed': "Dieser Zeitpunkt ist vorbei.",
     'followup.failed': "Das hat nicht geklappt.",
+    'agents.form.hold': "Zurückhalten, was er sendet oder ändert, bis ich es freigebe",
+    'agents.form.holdHelp': "E-Mails, Kalendereinträge, Dateien und Slack-Nachrichten, die er schreiben würde, warten im Postausgang auf der Agenten-Seite und gehen erst hinaus, wenn du sie freigibst. Lesen wird nie zurückgehalten. Schalte das für einen Agenten aus, dem du zutraust, selbstständig zu handeln.",
+    'agents.holds': "Was er sendet, wartet auf deine Freigabe",
+    'agents.actsAtOnce': "Sendet und ändert, ohne zu fragen",
   },
   fr: {
     'agents.title': "Agents",
@@ -757,6 +765,10 @@ cedarI18n.add({
     'followup.dismissed': "Ignoré.",
     'followup.passed': "Ce moment est passé.",
     'followup.failed': "Cela n'a pas fonctionné.",
+    'agents.form.hold': "Retenir ce qu'il envoie ou modifie jusqu'à mon approbation",
+    'agents.form.holdHelp': "Les messages, événements d'agenda, fichiers et messages Slack qu'il écrirait attendent dans la boîte d'envoi de la page Agents et ne partent que lorsque vous les approuvez. La lecture n'est jamais retenue. Désactivez ceci pour un agent en qui vous avez confiance pour agir seul.",
+    'agents.holds': "Ce qu'il envoie attend votre approbation",
+    'agents.actsAtOnce': "Envoie et modifie sans demander",
   },
   es: {
     'agents.title': "Agentes",
@@ -1008,5 +1020,9 @@ cedarI18n.add({
     'followup.dismissed': "Descartado.",
     'followup.passed': "Ese momento ya pasó.",
     'followup.failed': "No se pudo hacer.",
+    'agents.form.hold': "Retener lo que envía o cambia hasta que yo lo apruebe",
+    'agents.form.holdHelp': "Los correos, eventos de calendario, archivos y mensajes de Slack que escribiría esperan en la bandeja de salida de la página de Agentes y solo salen cuando los apruebas. Leer nunca se retiene. Desactívalo para un agente en el que confíes para actuar por su cuenta.",
+    'agents.holds': "Lo que envía espera tu aprobación",
+    'agents.actsAtOnce': "Envía y cambia cosas sin preguntar",
   },
 });
