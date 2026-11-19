@@ -223,6 +223,7 @@ cedarSite.add({
     "index.footer.desktop": "Mac & Windows guide",
     "index.footer.linux": "Linux guide",
     "index.footer.developers": "For developers",
+    "index.footer.contribute": "Share your chats",
   },
   de: {
     "page.title": "Cedar · dein eigener Assistent, zu Hause",
@@ -442,6 +443,7 @@ cedarSite.add({
     "index.footer.desktop": "Anleitung für Mac & Windows",
     "index.footer.linux": "Linux-Anleitung",
     "index.footer.developers": "Für Entwickler",
+    "index.footer.contribute": "Teile deine Chats",
   },
   fr: {
     "page.title": "Cedar · votre propre assistant, chez vous",
@@ -661,6 +663,7 @@ cedarSite.add({
     "index.footer.desktop": "Guide Mac et Windows",
     "index.footer.linux": "Guide Linux",
     "index.footer.developers": "Pour les développeurs",
+    "index.footer.contribute": "Partagez vos conversations",
   },
   es: {
     "page.title": "Cedar · tu propio asistente, en casa",
@@ -880,6 +883,7 @@ cedarSite.add({
     "index.footer.desktop": "Guía de Mac y Windows",
     "index.footer.linux": "Guía de Linux",
     "index.footer.developers": "Para desarrolladores",
+    "index.footer.contribute": "Comparte tus chats",
   },
   'es-ES': {
     "index.nav.apps": "Mac, Windows, Linux y móviles",

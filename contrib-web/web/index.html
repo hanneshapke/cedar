@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Contribute a conversation · Cedar</title>
+<title>Share your chats · Cedar</title>
 <meta name="description" content="Give one of your ChatGPT or Claude conversations to Cedar's open corpus. Your export is read in this page and never uploaded; only the conversation you review and send leaves your browser.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
@@ -16,20 +16,160 @@
 <script type="module" src="app.js"></script>
 </head>
 <body>
+<div class="bar">
 <header class="top">
   <a class="brand" href="./"><img src="favicon.svg" width="28" height="28" alt=""><span>Cedar</span></a>
-  <nav><a href="#receipts">Your contributions</a></nav>
+  <nav aria-label="Sections">
+    <a href="#why">Why</a>
+    <a href="#how">How it works</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#faq">Questions</a>
+    <a href="#receipts">Your contributions</a>
+    <a class="pill" href="#start">Share a chat</a>
+  </nav>
 </header>
+</div>
 
 <main>
-  <section class="hero">
-    <h1>Contribute a conversation</h1>
-    <p class="lead">Give one of your ChatGPT or Claude conversations to Cedar's open corpus, which trains an open-weight agent model. Your export is read in this page and is never uploaded. Only the one conversation you review and send leaves your browser.</p>
-    <ul class="promises">
-      <li><strong>One at a time.</strong> You read every conversation before it goes. There is no "send all".</li>
-      <li><strong>Redacted here.</strong> Keys, emails, phone and card numbers, IP addresses and user names are replaced with fake values of the same shape. You can add your own phrases.</li>
-      <li><strong>No account.</strong> You can stay anonymous or use a random pseudonym, and you can withdraw a contribution later.</li>
-    </ul>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-text">
+      <p class="eyebrow"><span class="dot" aria-hidden="true"></span>An open corpus, given one chat at a time</p>
+      <h1 id="hero-title">Your chats can teach an <span class="accent">open</span> model.</h1>
+      <p class="lead">The conversations people have with ChatGPT and Claude show what real work with an assistant looks like: what people ask, how the model goes about it, and whether it helped. Almost all of that sits inside closed labs. Share one of yours, and it becomes part of an openly licensed dataset anyone can use to train open-weight assistants.</p>
+      <div class="cta">
+        <a class="button primary" href="#start">Share a conversation</a>
+        <a class="button" href="#how">See how it works</a>
+      </div>
+      <p class="fine">Your export is read inside this page and never uploaded. No account needed.</p>
+    </div>
+    <figure class="hero-art" aria-label="A prompt before and after redaction">
+      <div class="art-card art-before">
+        <span class="art-label">In your export</span>
+        <p>Email the chart to <s>hannah.berg@acme.no</s> and use my key <s>sk-proj-Abc1…</s>. Files are in <s>/Users/hannah</s>/thesis.</p>
+      </div>
+      <div class="art-arrow" aria-hidden="true">↓ redacted in your browser</div>
+      <div class="art-card art-after">
+        <span class="art-label">What would be sent</span>
+        <p>Email the chart to <mark>maya.lindqvist@example.net</mark> and use my key <mark>sk-stand1n9c2e…</mark>. Files are in /Users/<mark>maya</mark>/thesis.</p>
+        <div class="art-rate"><span>Did it do what you asked?</span><b>Partly</b></div>
+      </div>
+    </figure>
+  </section>
+
+  <section class="band" id="why" aria-labelledby="why-title">
+    <h2 id="why-title">Why share a conversation?</h2>
+    <p class="section-lead">Cedar is an open-source assistant that runs on hardware you own. Assistants like it depend on open-weight models, and open models learn to do agent work, like searching, running code and using tools, from examples of exactly that.</p>
+    <div class="cards3">
+      <article class="feature">
+        <span class="ico" aria-hidden="true">01</span>
+        <h3>Open models need real tasks</h3>
+        <p>Benchmarks are made up. Your conversation is a real request, with the model's real attempt at it: the tool calls, the code, the dead ends and the answer.</p>
+      </article>
+      <article class="feature">
+        <span class="ico" aria-hidden="true">02</span>
+        <h3>Your verdict is the signal</h3>
+        <p>A transcript alone teaches little. Whether it worked, partly worked or failed, and your thumbs on single answers, are what reinforcement learning trains on.</p>
+      </article>
+      <article class="feature">
+        <span class="ico" aria-hidden="true">03</span>
+        <h3>Given, never taken</h3>
+        <p>Nothing is collected in the background. Every conversation in the corpus is one a person chose, read as it would be sent, and could take back.</p>
+      </article>
+    </div>
+
+    <h3 class="sub">What happens after you press Send</h3>
+    <ol class="pipeline">
+      <li><b>Received</b><span>The corpus checks the format and looks again for secrets. Anything with a leftover key is refused, not stored.</span></li>
+      <li><b>Screened</b><span>Automated checks look for duplicates, hidden instructions, harmful commands and personal data the redaction missed. Doubtful ones go to a person.</span></li>
+      <li><b>Held</b><span>Accepted conversations wait at least two weeks, so you can still withdraw before anything is published.</span></li>
+      <li><b>Released</b><span>A release, about once a month, publishes the conversations as an open dataset under the license each person chose, signed and with a list of withdrawn items that copies must honour.</span></li>
+    </ol>
+  </section>
+
+  <section class="band" id="how" aria-labelledby="how-title">
+    <h2 id="how-title">How to share your chats</h2>
+    <p class="section-lead">It takes a few minutes, and the slowest part is waiting for the export email.</p>
+    <ol class="steps">
+      <li class="step">
+        <span class="step-num">1</span>
+        <h3>Export your data</h3>
+        <div class="seg-tabs" role="tablist" aria-label="Export instructions">
+          <button type="button" role="tab" aria-selected="true" aria-controls="howto-chatgpt" id="howtab-chatgpt">ChatGPT</button>
+          <button type="button" role="tab" aria-selected="false" aria-controls="howto-claude" id="howtab-claude">Claude</button>
+        </div>
+        <ol class="howto-list" id="howto-chatgpt" role="tabpanel" aria-labelledby="howtab-chatgpt">
+          <li>In ChatGPT, open <em>Settings → Data controls</em>.</li>
+          <li>Choose <em>Export data</em> and confirm.</li>
+          <li>OpenAI emails you a link, usually within minutes. Download the .zip.</li>
+        </ol>
+        <ol class="howto-list" id="howto-claude" role="tabpanel" aria-labelledby="howtab-claude" hidden>
+          <li>On claude.ai, open <em>Settings → Privacy</em>.</li>
+          <li>Choose <em>Export data</em>.</li>
+          <li>Anthropic emails you a link. Download the .zip.</li>
+        </ol>
+      </li>
+      <li class="step">
+        <span class="step-num">2</span>
+        <h3>Drop the .zip below</h3>
+        <p>No need to unpack it. This page reads it on your device and lists your conversations by title. Nothing is uploaded, and the titles are never sent.</p>
+      </li>
+      <li class="step">
+        <span class="step-num">3</span>
+        <h3>Pick one and read it</h3>
+        <p>You see the conversation exactly as it would be sent, with every replaced value highlighted. Select any name, place or employer to replace it too, and say how it went.</p>
+      </li>
+      <li class="step">
+        <span class="step-num">4</span>
+        <h3>Send, and keep the receipt</h3>
+        <p>Choose a license and, if you like, a random pseudonym. Your receipt stays in this browser, and its Withdraw button takes the conversation back out.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="band" id="privacy" aria-labelledby="privacy-title">
+    <h2 id="privacy-title">What leaves your browser, and what never does</h2>
+    <div class="compare">
+      <div class="col col-sent">
+        <h3>Sent, after you've read it</h3>
+        <ul>
+          <li>Your prompts and the model's answers, in the one conversation you picked</li>
+          <li>The model's tool calls and their results, such as code it ran</li>
+          <li>Which model answered, and the day of each message</li>
+          <li>Your outcome, ratings and note, plus the license you chose</li>
+          <li>Fake stand-ins where keys, emails, numbers, addresses and user names were</li>
+        </ul>
+      </div>
+      <div class="col col-kept">
+        <h3>Never sent</h3>
+        <ul>
+          <li>The rest of your export: every other conversation stays on your device</li>
+          <li>Conversation titles, account details, ids and times of day</li>
+          <li>Files and images you uploaded (only their type and size)</li>
+          <li>ChatGPT's custom instructions and memories, and Claude's memory</li>
+          <li>Web pages the model read, unless you choose to include them</li>
+          <li>Anything from connectors to your mail, calendar or drives. Those chats can't be shared at all.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note"><strong>Be honest with yourself about the rest.</strong> The automatic redaction finds things with a known shape. It can't know that "the oat-milk startup in Portland" is you. Read before you send, and replace what identifies you or other people.</p>
+  </section>
+
+  <section class="band" id="faq" aria-labelledby="faq-title">
+    <h2 id="faq-title">Questions</h2>
+    <div class="faq">
+      <details><summary>Is my export uploaded anywhere?</summary><p>No. The page reads the .zip with your browser and builds the contribution on your device. The only request that carries conversation text is the one you start with Send, and it carries only the conversation you reviewed. You can check that in your browser's network panel.</p></details>
+      <details><summary>Can I take a contribution back?</summary><p>Yes. Each receipt has a Withdraw button. A withdrawn conversation is deleted from the queue and left out of every later release. A release that's already published can't be recalled from people who downloaded it, which is why accepted conversations wait at least two weeks first.</p></details>
+      <details><summary>Do I need an account? Will my name be attached?</summary><p>No account. By default each contribution stands alone and can't be linked to your others. If you want credit or want your contributions grouped, you can use a random pseudonym that this browser generates. It's never derived from who you are.</p></details>
+      <details><summary>Which license should I pick?</summary><p>CC0 places your part in the public domain and is the most useful for training. CC BY 4.0 asks anyone using it to credit your pseudonym. Either way, you're licensing what you wrote: your prompts and your feedback.</p></details>
+      <details><summary>Are ChatGPT and Claude answers allowed in the dataset?</summary><p>OpenAI's and Anthropic's terms restrict using their models' outputs to train other models. The corpus publishes a model's outputs only where the people running it have decided that's allowed. If it doesn't accept a model yet, this page tells you during review and Send stays off, before anything leaves your browser.</p></details>
+      <details><summary>Why can't I share some conversations?</summary><p>Conversations that used connectors to your mail, calendar, drives or work apps contain other people's data, so they're blocked. Conversations where a secret is still visible, or that are too large, are blocked until you fix them. Sharing only the first few exchanges usually helps.</p></details>
+      <details><summary>Who runs this?</summary><p>The Cedar project, which is open source under Apache 2.0. The service that receives contributions keeps no request logs and no IP addresses. Its code, the screening rules and the release process are all in the <a href="https://github.com/hanneshapke/cedar/tree/main/contrib">repository</a>.</p></details>
+    </div>
+  </section>
+
+  <section class="start-head" id="start" aria-labelledby="start-title">
+    <h2 id="start-title">Share a conversation</h2>
+    <p class="section-lead">Everything below runs on your device until you press Send.</p>
   </section>
 
   <section class="card" id="step-load">
@@ -37,27 +177,9 @@
     <label class="drop" id="drop">
       <input type="file" id="file" accept=".zip,.json,application/zip,application/json">
       <span class="drop-main">Drop your export here, or <u>choose a file</u></span>
-      <span class="drop-sub">The .zip you downloaded, or the conversations.json inside it</span>
+      <span class="drop-sub">The ChatGPT or Claude .zip you downloaded, or the conversations.json inside it</span>
     </label>
     <p class="status" id="load-status" role="status" aria-live="polite"></p>
-    <div class="howto">
-      <details>
-        <summary>How to export from ChatGPT</summary>
-        <ol>
-          <li>In ChatGPT, open <em>Settings → Data controls</em>.</li>
-          <li>Choose <em>Export data</em> and confirm. OpenAI emails you a download link, usually within minutes.</li>
-          <li>Download the .zip and drop it above. You don't need to unpack it.</li>
-        </ol>
-      </details>
-      <details>
-        <summary>How to export from Claude</summary>
-        <ol>
-          <li>On claude.ai, open <em>Settings → Privacy</em>.</li>
-          <li>Choose <em>Export data</em>. Anthropic emails you a download link.</li>
-          <li>Download the .zip and drop it above. Claude's export doesn't say which model answered, so you'll be asked.</li>
-        </ol>
-      </details>
-    </div>
   </section>
 
   <section class="card" id="step-pick" hidden>
@@ -168,7 +290,7 @@
 </main>
 
 <footer>
-  <p>Cedar is open source under the Apache 2.0 license. <a href="https://github.com/hanneshapke/cedar/blob/main/docs/design/contributions.md">How contributions work</a> · <a href="https://github.com/hanneshapke/cedar/tree/main/contrib-web">This page's source</a></p>
+  <p><a href="../">Cedar</a> is a free, open-source assistant that runs on your own hardware, under the Apache 2.0 license. <a href="https://github.com/hanneshapke/cedar/blob/main/docs/design/contributions.md">How contributions work</a> · <a href="https://github.com/hanneshapke/cedar/tree/main/contrib-web">This page's source</a></p>
 </footer>
 <noscript><p class="noscript">This page needs JavaScript and WebAssembly to read your export in the browser.</p></noscript>
 </body>

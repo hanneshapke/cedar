@@ -606,6 +606,16 @@ function wire() {
     $('transcript').hidden = raw;
     $('raw').hidden = !raw;
   };
+  // The landing page's export instructions: one service at a time.
+  for (const svc of ['chatgpt', 'claude']) {
+    $(`howtab-${svc}`).addEventListener('click', () => {
+      for (const other of ['chatgpt', 'claude']) {
+        $(`howtab-${other}`).setAttribute('aria-selected', String(other === svc));
+        $(`howto-${other}`).hidden = other !== svc;
+      }
+    });
+  }
+
   $('tab-conv').addEventListener('click', () => tab(false));
   $('tab-raw').addEventListener('click', () => tab(true));
   $('download').addEventListener('click', (e) => {
