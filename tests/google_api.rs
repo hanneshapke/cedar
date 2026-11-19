@@ -1,4 +1,4 @@
-//! The Gmail, Calendar, Drive and Sheets tools through Google's REST APIs (`GOOGLE_BACKEND=api`,
+//! The Gmail, Calendar, Drive, Sheets and Slides tools through Google's REST APIs (`GOOGLE_BACKEND=api`,
 //! the default), against a local mock of the token endpoint and the APIs.
 
 mod common;
@@ -23,6 +23,10 @@ struct Mock {
     reject_first_token: bool,
     /// The bodies posted to the drafts and freeBusy endpoints.
     posted: Mutex<Vec<Value>>,
+    /// The bodies posted to the Slides API: creating a presentation, then its batch updates.
+    slides_posted: Mutex<Vec<(String, Value)>>,
+    /// Refuse a batch update that creates an image, as Slides does for one it can't fetch.
+    reject_images: bool,
 }
 
 impl Mock {
@@ -215,6 +219,70 @@ async fn sheets_get(
     }
 }
 
+async fn slides_post(
+    State(mock): State<Arc<Mock>>,
+    path: Option<Path<String>>,
+    headers_in: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    let path = path.map(|Path(p)| format!("/slides/{p}")).unwrap_or("/slides".into());
+    mock.record("POST", &path, None, &headers_in);
+    mock.slides_posted.lock().unwrap().push((path.clone(), body.clone()));
+    match path.as_str() {
+        "/slides" => Json(json!({ "presentationId": "deck-1", "title": body["title"],
+            "slides": [{ "objectId": "p" }] }))
+        .into_response(),
+        "/slides/deck-1:batchUpdate" => {
+            let image = body["requests"].as_array().unwrap().iter().position(|r| r.get("createImage").is_some());
+            match image {
+                Some(i) if mock.reject_images => (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": { "code": 400, "message": format!("Invalid requests[{i}].createImage: There was a problem retrieving the image.") } })),
+                )
+                    .into_response(),
+                _ => Json(json!({ "presentationId": "deck-1", "replies": [] })).into_response(),
+            }
+        }
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn slides_get(
+    State(mock): State<Arc<Mock>>,
+    Path(path): Path<String>,
+    RawQuery(query): RawQuery,
+    headers_in: HeaderMap,
+) -> Response {
+    let q = query.clone().unwrap_or_default();
+    mock.record("GET", &format!("/slides/{path}"), query, &headers_in);
+    if path != "deck-1" {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    // The slides made so far, each with the notes box Slides gives it.
+    let made: Vec<String> = mock
+        .slides_posted
+        .lock()
+        .unwrap()
+        .iter()
+        .flat_map(|(_, body)| body["requests"].as_array().cloned().unwrap_or_default())
+        .filter_map(|r| r["createSlide"]["objectId"].as_str().map(String::from))
+        .collect();
+    if q.contains("speakerNotesObjectId") {
+        let slides: Vec<Value> = made
+            .iter()
+            .map(|id| json!({ "objectId": id, "slideProperties": { "notesPage": { "notesProperties": {
+                "speakerNotesObjectId": format!("{id}_notes") } } } }))
+            .collect();
+        return Json(json!({ "slides": slides })).into_response();
+    }
+    let run = |s: &str| json!({ "text": { "textElements": [{ "textRun": { "content": s } }] } });
+    Json(json!({ "presentationId": "deck-1", "title": "Q3 review", "slides": [
+        { "objectId": "s1", "pageElements": [{ "shape": run("Q3 review\n") }] },
+        { "objectId": "s2", "pageElements": [{ "shape": run("Highlights\n") }, { "shape": run("Revenue up\nChurn down\n") }] },
+    ] }))
+    .into_response()
+}
+
 async fn start(mock: Mock) -> (String, Arc<Mock>) {
     let mock = Arc::new(mock);
     let app = Router::new()
@@ -225,6 +293,8 @@ async fn start(mock: Mock) -> (String, Arc<Mock>) {
         .route("/calendar/{*path}", get(calendar_get))
         .route("/drive/{*path}", get(drive_get))
         .route("/sheets/{*path}", get(sheets_get))
+        .route("/slides", post(slides_post))
+        .route("/slides/{*path}", get(slides_get).post(slides_post))
         .with_state(mock.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -237,6 +307,7 @@ async fn app(script: Vec<Step>, base: &str, extra: &[(&str, &str)]) -> TestApp {
     let calendar = format!("{base}/calendar");
     let drive = format!("{base}/drive");
     let sheets = format!("{base}/sheets");
+    let slides = format!("{base}/slides");
     let token = format!("{base}/token");
     let mut env = vec![
         ("GMAIL", "on"),
@@ -245,6 +316,7 @@ async fn app(script: Vec<Step>, base: &str, extra: &[(&str, &str)]) -> TestApp {
         ("CALENDAR_API_URL", calendar.as_str()),
         ("DRIVE_API_URL", drive.as_str()),
         ("SHEETS_API_URL", sheets.as_str()),
+        ("SLIDES_API_URL", slides.as_str()),
         ("GOOGLE_CLIENT_ID", "client"),
         ("GOOGLE_CLIENT_SECRET", "secret"),
         ("GOOGLE_REFRESH_TOKEN", "refresh"),
@@ -711,4 +783,156 @@ async fn mail_and_calendar_can_be_read_outside_a_run() {
     }
     assert_eq!(app.llm.call_count(), 0);
     assert!(app.factory.created.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_deck_is_made_from_an_outline_added_to_and_read_back() {
+    let (base, mock) = start(Mock::default()).await;
+    let app = app(
+        vec![
+            Step::Reply(tool_use(
+                "t1",
+                "slides_create_presentation",
+                json!({ "title": "Q3 review", "theme": "editorial", "accent": "#0F766E", "footer": "Acme", "slides": [
+                    { "title": "Q3 business review", "subtitle": "Board meeting" },
+                    { "title": "Revenue grew 18%", "bullets": ["**Enterprise** led", "Churn fell"], "notes": "Start with enterprise." },
+                    { "title": "The quarter in numbers", "stats": [{ "value": "$4.2M", "label": "Revenue" }] },
+                    { "layout": "closing", "title": "Thank you", "notes": "Take questions." },
+                ] }),
+            )),
+            Step::Reply(tool_use(
+                "t2",
+                "slides_append_slides",
+                json!({ "presentationId": "https://docs.google.com/presentation/d/deck-1/edit", "insertAt": 4,
+                    "slides": [{ "title": "By region", "table": { "headers": ["Region", "Revenue"], "rows": [["EMEA", "1,200"]] } }] }),
+            )),
+            Step::Reply(tool_use("t3", "slides_get_presentation", json!({ "presentationId": "deck-1" }))),
+            Step::Reply(tool_use(
+                "t4",
+                "slides_create_presentation",
+                json!({ "title": "Bad", "theme": "neon", "slides": [{ "title": "T" }] }),
+            )),
+            Step::Reply(tool_use(
+                "t5",
+                "slides_create_presentation",
+                json!({ "title": "Bad", "slides": [{ "title": "Cover" }, { "title": "T", "columns": [{ "heading": "Only one" }] }] }),
+            )),
+            Step::Reply(text("done")),
+        ],
+        &base,
+        &[("GMAIL", "off"), ("CALENDAR", "off")],
+    )
+    .await;
+    run_to_completion(&app).await;
+
+    let first = app.llm.requests()[0].clone();
+    let names: Vec<&str> = first["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .filter(|n| n.starts_with("slides_"))
+        .collect();
+    assert_eq!(
+        names,
+        ["slides_create_presentation", "slides_append_slides", "slides_get_presentation"]
+    );
+    let system = first["system"].as_str().unwrap();
+    assert!(system.contains("slides_create_presentation"), "{system}");
+
+    let made = result_json(&app, 1);
+    assert_eq!(made["presentationId"], "deck-1");
+    assert_eq!(made["link"], "https://docs.google.com/presentation/d/deck-1/edit");
+    assert_eq!(made["slideCount"], 4);
+    assert_eq!(made["theme"], "editorial");
+    assert!(made.get("warnings").is_none(), "{made}");
+
+    let posted = mock.slides_posted.lock().unwrap().clone();
+    // The presentation is created 16:9 with its name, drawn in one batch, then given its notes.
+    assert_eq!(posted[0].0, "/slides");
+    assert_eq!(posted[0].1["title"], "Q3 review");
+    assert_eq!(posted[0].1["pageSize"]["width"], json!({ "magnitude": 9144000, "unit": "EMU" }));
+    assert_eq!(posted[1].0, "/slides/deck-1:batchUpdate");
+    let requests = posted[1].1["requests"].as_array().unwrap();
+    let slide_ids: Vec<&str> =
+        requests.iter().filter_map(|r| r["createSlide"]["objectId"].as_str()).collect();
+    assert_eq!(slide_ids.len(), 4);
+    // Slides' own first slide goes last, once the deck's slides exist.
+    assert_eq!(requests.last().unwrap(), &json!({ "deleteObject": { "objectId": "p" } }));
+    let texts: Vec<&str> =
+        requests.iter().filter_map(|r| r["insertText"]["text"].as_str()).collect();
+    assert!(texts.contains(&"Enterprise led\nChurn fell"), "{texts:?}");
+    assert!(texts.contains(&"$4.2M") && texts.contains(&"Acme"), "{texts:?}");
+    // The accent the call gave colours the deck.
+    let teal = json!({ "red": 0.059, "green": 0.463, "blue": 0.431 });
+    assert!(requests.iter().any(|r| r["updateShapeProperties"]["shapeProperties"]
+        ["shapeBackgroundFill"]["solidFill"]["color"]["rgbColor"]
+        == teal));
+    assert_eq!(posted[2].0, "/slides/deck-1:batchUpdate");
+    assert_eq!(
+        posted[2].1["requests"],
+        json!([
+            { "insertText": { "objectId": format!("{}_notes", slide_ids[1]), "insertionIndex": 0, "text": "Start with enterprise." } },
+            { "insertText": { "objectId": format!("{}_notes", slide_ids[3]), "insertionIndex": 0, "text": "Take questions." } },
+        ])
+    );
+
+    // Added slides go where asked, with object IDs of their own.
+    let added = result_json(&app, 2);
+    assert_eq!(added["slidesAdded"], 1);
+    let requests = posted[3].1["requests"].as_array().unwrap();
+    assert_eq!(requests[0]["createSlide"]["insertionIndex"], 3);
+    assert!(!slide_ids.contains(&requests[0]["createSlide"]["objectId"].as_str().unwrap()));
+    assert!(requests.iter().any(|r| r.get("createTable").is_some()));
+    assert!(!requests.iter().any(|r| r.get("deleteObject").is_some()));
+
+    let outline = result_json(&app, 3);
+    assert_eq!(outline["title"], "Q3 review");
+    assert_eq!(outline["slides"][1]["text"], json!(["Highlights", "Revenue up / Churn down"]));
+
+    // What can't be laid out is refused before anything is made in Drive.
+    for (request, needle) in [(4, "unknown theme"), (5, "slide 2: a columns slide takes 2 to 4")] {
+        let refused = tool_result(&app, request);
+        assert_eq!(refused["is_error"], true, "{refused}");
+        assert!(refused["content"].as_str().unwrap().contains(needle), "{refused}");
+    }
+    assert_eq!(mock.slides_posted.lock().unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn a_deck_whose_image_cannot_be_fetched_says_what_is_left_behind() {
+    let (base, mock) = start(Mock { reject_images: true, ..Mock::default() }).await;
+    let app = app(
+        vec![
+            Step::Reply(tool_use(
+                "t1",
+                "slides_create_presentation",
+                json!({ "title": "Launch", "slides": [
+                    { "title": "Launch" },
+                    { "title": "The product", "imageUrl": "https://example.com/private.png" },
+                ] }),
+            )),
+            Step::Reply(text("done")),
+        ],
+        &base,
+        &[("GMAIL", "off"), ("CALENDAR", "off"), ("SLIDES_TOOLS", "create_presentation")],
+    )
+    .await;
+    run_to_completion(&app).await;
+    let offered = app.llm.requests()[0]["tools"].clone();
+    let names: Vec<&str> = offered
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .filter(|n| n.starts_with("slides_"))
+        .collect();
+    assert_eq!(names, ["slides_create_presentation"]);
+    let failed = tool_result(&app, 1);
+    assert_eq!(failed["is_error"], true, "{failed}");
+    let message = failed["content"].as_str().unwrap();
+    assert!(message.contains("createImage"), "{message}");
+    assert!(message.contains("public https link"), "{message}");
+    assert!(message.contains("https://docs.google.com/presentation/d/deck-1/edit"), "{message}");
+    assert_eq!(mock.slides_posted.lock().unwrap().len(), 2);
 }
