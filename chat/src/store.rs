@@ -312,6 +312,10 @@ pub struct Schedule {
     pub min_interval_secs: Option<u32>,
     #[serde(skip)]
     pub max_runs_per_day: Option<u32>,
+    /// Whether its runs hold what they would send or change in the person's accounts for them
+    /// to approve (the outbox), instead of doing it.
+    #[serde(skip)]
+    pub hold_writes: bool,
     #[serde(skip)]
     pub last_checked_at: Option<DateTime<Utc>>,
     /// Why the last check failed; `None` once one works again.
@@ -333,6 +337,37 @@ pub struct Followup {
     /// The agent an accepted suggestion became, while it exists.
     pub agent_id: Option<Uuid>,
     pub decided_at: DateTime<Utc>,
+}
+
+/// What the user decided about something the model reported it could not do in a turn (cedar's
+/// `report_limitation`): sent as feedback, or dismissed.
+#[derive(Debug, Clone, Serialize)]
+pub struct Feedback {
+    pub id: Uuid,
+    /// The turn it was reported in; `None` once that conversation is deleted.
+    pub turn_id: Option<Uuid>,
+    /// The id of the `report_limitation` call in the turn's run.
+    pub call_id: String,
+    /// `sent` or `dismissed`.
+    pub status: String,
+    /// What could not be done, as sent. `None` for a dismissed report: nothing of it is kept.
+    pub summary: Option<String>,
+    pub category: Option<String>,
+    pub needed: Option<String>,
+    /// What the person added.
+    pub comment: Option<String>,
+    pub created_at: DateTime<Utc>,
+    /// Whose it is, when an admin lists everyone's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_name: Option<String>,
+}
+
+/// What a report is sent with (see [`Store::decide_feedback`]).
+pub struct NewFeedback<'a> {
+    pub summary: &'a str,
+    pub category: &'a str,
+    pub needed: Option<&'a str>,
+    pub comment: Option<&'a str>,
 }
 
 /// `next_run_at` of an agent nothing is due for: a webhook, or a one-off that has run.
@@ -379,6 +414,7 @@ pub struct NewSchedule<'a> {
     pub hook_secret: Option<&'a str>,
     pub min_interval_secs: Option<u32>,
     pub max_runs_per_day: Option<u32>,
+    pub hold_writes: bool,
 }
 
 /// One firing of a schedule. `conversation_id` and `turn_id` are `None` when the cedar run could
@@ -541,6 +577,7 @@ fn schedule_from_row(r: &SqliteRow) -> Result<Schedule> {
         hook_secret: r.try_get("hook_secret")?,
         min_interval_secs: r.try_get::<Option<i64>, _>("min_interval_secs")?.map(|n| n as u32),
         max_runs_per_day: r.try_get::<Option<i64>, _>("max_runs_per_day")?.map(|n| n as u32),
+        hold_writes: r.try_get::<i64, _>("hold_writes")? != 0,
         last_checked_at: r.try_get::<Option<i64>, _>("last_checked_at")?.map(to_dt),
         last_error: r.try_get("last_error")?,
         failures: r.try_get::<i64, _>("failures")? as u32,
@@ -554,6 +591,21 @@ fn followup_from_row(r: &SqliteRow) -> Result<Followup> {
         status: r.try_get("status")?,
         agent_id: opt_uuid(r, "schedule_id")?,
         decided_at: to_dt(r.try_get("decided_at")?),
+    })
+}
+
+fn feedback_from_row(r: &SqliteRow) -> Result<Feedback> {
+    Ok(Feedback {
+        id: Uuid::parse_str(r.try_get("id")?)?,
+        turn_id: opt_uuid(r, "turn_id")?,
+        call_id: r.try_get("call_id")?,
+        status: r.try_get("status")?,
+        summary: r.try_get("summary")?,
+        category: r.try_get("category")?,
+        needed: r.try_get("needed")?,
+        comment: r.try_get("comment")?,
+        created_at: to_dt(r.try_get("created_at")?),
+        user_name: r.try_get("user_name").ok(),
     })
 }
 
@@ -1427,8 +1479,8 @@ impl Store {
         sqlx::query(
             "INSERT INTO schedules (id, user_id, title, prompt, model, reasoning, source_conversation_id, tools, notify, frequency, \
              weekday, time_of_day, timezone, enabled, next_run_at, created_at, updated_at, trigger_kind, trigger, hook_id, \
-             hook_secret, min_interval_secs, max_runs_per_day) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             hook_secret, min_interval_secs, max_runs_per_day, hold_writes) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(self.user.to_string())
@@ -1452,6 +1504,7 @@ impl Store {
         .bind(new.hook_secret)
         .bind(new.min_interval_secs.map(i64::from))
         .bind(new.max_runs_per_day.map(i64::from))
+        .bind(new.hold_writes as i64)
         .execute(&self.pool)
         .await?;
         Ok(self.get_schedule(id).await?.expect("just inserted"))
@@ -1492,7 +1545,7 @@ impl Store {
         let res = sqlx::query(
             "UPDATE schedules SET title = ?, prompt = ?, model = ?, reasoning = ?, tools = ?, notify = ?, frequency = ?, \
              weekday = ?, time_of_day = ?, timezone = ?, enabled = ?, next_run_at = ?, updated_at = ?, trigger_kind = ?, \
-             trigger = ?, hook_id = ?, hook_secret = ?, min_interval_secs = ?, max_runs_per_day = ? WHERE id = ?",
+             trigger = ?, hook_id = ?, hook_secret = ?, min_interval_secs = ?, max_runs_per_day = ?, hold_writes = ? WHERE id = ?",
         )
         .bind(&s.title)
         .bind(&s.prompt)
@@ -1513,6 +1566,7 @@ impl Store {
         .bind(&s.hook_secret)
         .bind(s.min_interval_secs.map(i64::from))
         .bind(s.max_runs_per_day.map(i64::from))
+        .bind(s.hold_writes as i64)
         .bind(s.id.to_string())
         .execute(&self.pool)
         .await?;
@@ -1542,6 +1596,82 @@ impl Store {
     pub async fn get_followup(&self, turn_id: Uuid, call_id: &str) -> Result<Option<Followup>> {
         let row = sqlx::query("SELECT * FROM followups WHERE turn_id = ? AND call_id = ?").bind(turn_id.to_string()).bind(call_id).fetch_optional(&self.pool).await?;
         row.as_ref().map(followup_from_row).transpose()
+    }
+
+    // -- feedback on what couldn't be done ------------------------------------------------------
+
+    /// Record the user's decision on a report from a turn: `Some` sends it as feedback, `None`
+    /// dismisses it. The first decision stands, as for follow-ups.
+    pub async fn decide_feedback(&self, turn_id: Uuid, call_id: &str, sent: Option<&NewFeedback<'_>>) -> Result<Feedback> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO feedback (id, user_id, turn_id, call_id, status, summary, category, needed, comment, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(self.user.to_string())
+        .bind(turn_id.to_string())
+        .bind(call_id)
+        .bind(if sent.is_some() { "sent" } else { "dismissed" })
+        .bind(sent.map(|f| f.summary))
+        .bind(sent.map(|f| f.category))
+        .bind(sent.and_then(|f| f.needed))
+        .bind(sent.and_then(|f| f.comment))
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        Ok(self.get_feedback_of(turn_id, call_id).await?.expect("just inserted"))
+    }
+
+    pub async fn get_feedback_of(&self, turn_id: Uuid, call_id: &str) -> Result<Option<Feedback>> {
+        let row = sqlx::query("SELECT * FROM feedback WHERE turn_id = ? AND call_id = ? AND user_id = ?")
+            .bind(turn_id.to_string())
+            .bind(call_id)
+            .bind(self.user.to_string())
+            .fetch_optional(&self.pool)
+            .await?;
+        row.as_ref().map(feedback_from_row).transpose()
+    }
+
+    /// The decisions made on the reports in a conversation's turns.
+    pub async fn list_conversation_feedback(&self, conversation_id: Uuid) -> Result<Vec<Feedback>> {
+        let rows = sqlx::query("SELECT f.* FROM feedback f JOIN turns t ON t.id = f.turn_id WHERE t.conversation_id = ? AND f.user_id = ? ORDER BY f.created_at, f.id")
+            .bind(conversation_id.to_string())
+            .bind(self.user.to_string())
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter().map(feedback_from_row).collect()
+    }
+
+    /// The reports sent as feedback, newest first: this user's, or with `everyone` (for whoever
+    /// runs the server) all users', each with its sender's name.
+    pub async fn list_feedback(&self, everyone: bool, limit: u32) -> Result<Vec<Feedback>> {
+        let rows = sqlx::query(
+            "SELECT f.*, u.name AS user_name FROM feedback f JOIN users u ON u.id = f.user_id \
+             WHERE f.status = 'sent' AND (?1 OR f.user_id = ?2) ORDER BY f.created_at DESC, f.id DESC LIMIT ?3",
+        )
+        .bind(everyone)
+        .bind(self.user.to_string())
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut out: Vec<Feedback> = rows.iter().map(feedback_from_row).collect::<Result<_>>()?;
+        if !everyone {
+            for f in &mut out {
+                f.user_name = None;
+            }
+        }
+        Ok(out)
+    }
+
+    /// Delete one sent report: one's own, or with `everyone` anyone's.
+    pub async fn delete_feedback(&self, id: Uuid, everyone: bool) -> Result<bool> {
+        let res = sqlx::query("DELETE FROM feedback WHERE id = ?1 AND status = 'sent' AND (?2 OR user_id = ?3)")
+            .bind(id.to_string())
+            .bind(everyone)
+            .bind(self.user.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(res.rows_affected() == 1)
     }
 
     /// The decisions made on the follow-ups suggested in a conversation's turns.
@@ -2038,6 +2168,7 @@ mod tests {
                 hook_secret: None,
                 min_interval_secs: None,
                 max_runs_per_day: None,
+                hold_writes: true,
             })
             .await
             .unwrap();

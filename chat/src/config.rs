@@ -27,6 +27,10 @@ pub struct Config {
     /// How much earlier conversation is inlined into the prompt when the previous cedar run is gone
     /// and can't be continued.
     pub history_max_bytes: usize,
+    /// How long a response may wait for the person (an approval, a plan to agree to) before they
+    /// are told out of the app (`CHAT_ATTENTION_DELAY_SECS`, 20): long enough that whoever is
+    /// looking at the page answers first.
+    pub attention_delay: std::time::Duration,
     /// Where Pushover messages are POSTed; overridable so tests can point at a mock.
     pub pushover_url: String,
     /// Where iPhone pushes are POSTed, when set: overrides the production and sandbox APNs
@@ -127,6 +131,7 @@ impl Config {
                 .map(|u| u.trim().trim_end_matches('/').to_string())
                 .unwrap_or_else(|| format!("http://{bind_addr}")),
             history_max_bytes: parse("CHAT_HISTORY_MAX_BYTES", get("CHAT_HISTORY_MAX_BYTES"), 40_000)?,
+            attention_delay: std::time::Duration::from_secs(parse("CHAT_ATTENTION_DELAY_SECS", get("CHAT_ATTENTION_DELAY_SECS"), 20)?),
             pushover_url: get("CHAT_PUSHOVER_URL").unwrap_or_else(|| crate::channels::PUSHOVER_URL.into()),
             apns_url: get("CHAT_APNS_URL").map(|u| u.trim().trim_end_matches('/').to_string()),
             fcm_url: get("CHAT_FCM_URL")

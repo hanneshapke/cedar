@@ -39,6 +39,8 @@ input.cedar-plan-title:focus { border-color: var(--accent); background: var(--sh
 .cedar-approval-btn { height: 28px; padding: 0 10px; border: 1px solid var(--warn-line, #e9d9b8); border-radius: 6px; background: var(--sheet); font: 500 12.5px inherit; font-family: inherit; color: var(--ink); cursor: pointer; }
 .cedar-approval-btn.primary { background: var(--ink); border-color: var(--ink); color: var(--on-ink, #fff); }
 .cedar-approval-btn:disabled { opacity: .5; cursor: default; }
+.cedar-approval-later { color: var(--muted); font-size: 12px; }
+.cedar-approval[data-state="allowed"] .cedar-approval-later, .cedar-approval[data-state="denied"] .cedar-approval-later { display: none; }
 .cedar-approval-decision { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 6px; background: var(--ink); color: var(--on-ink, #fff); font-weight: 500; }
 .cedar-approval[data-state="denied"] .cedar-approval-decision { background: var(--wash); color: var(--muted); }
 .cedar-approval[data-state="denied"] { opacity: .8; }

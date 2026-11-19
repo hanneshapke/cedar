@@ -584,6 +584,9 @@ async fn an_unattended_run_holds_what_it_would_post_until_the_owner_approves() {
     let requests = app.llm.requests();
     let system = requests[0]["system"].as_str().unwrap();
     assert!(system.contains("held in their outbox"), "{system}");
+    assert!(system.contains("never say that it was sent"), "{system}");
+    assert!(system.contains("end your answer with what is left for the user"), "{system}");
+    assert!(system.contains("note the gap with report_limitation"), "{system}");
     let result = &requests[1]["messages"].as_array().unwrap().last().unwrap()["content"][0];
     assert!(result.get("is_error").is_none(), "{result}");
     let told: Value = serde_json::from_str(result["content"].as_str().unwrap()).unwrap();

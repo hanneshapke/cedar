@@ -59,7 +59,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "locale"?, "import_attachments"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and `import_attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [Languages](#languages) for `locale`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "hold_writes"?, "locale"?, "import_attachments"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and `import_attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [The outbox](#the-outbox) for `hold_writes`, [Languages](#languages) for `locale`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
@@ -68,6 +68,9 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/runs/{id}/cancel` | Ask a queued or running run to stop. Returns `202`; the run reaches `cancelled` shortly after. `409` if it already finished. |
 | `POST /v1/runs/{id}/plan` | Agree to the plan an interactive run is waiting on: `{"steps": [{"id", "title"}, ...]}` (1–12, edited, reordered, added or removed as you like). Returns `202`; `409` if the run isn't waiting for its plan. |
 | `POST /v1/runs/{id}/approvals/{approval_id}` | Answer an `approval.required` event: `{"decision": "allow" \| "allow_always" \| "deny"}`. Returns `202`; `409` if the run isn't waiting for that approval. |
+| `GET /v1/held` | What waits in your [outbox](#the-outbox): the calls runs wanted to make but held for you, newest first, `{held: [{id, run_id, call_id, tool, input, reason, why, status, edited, output, created_at, decided_at}]}`. `?status=` narrows it to `pending`, `sent`, `failed`, `discarded` or `sending`, `?run_id=` to one run. |
+| `GET /v1/held/{id}` | One held call. `404` if it isn't yours. |
+| `POST /v1/held/{id}` | Decide about a held call: `{"decision": "approve" \| "discard", "input"?}`. `approve` makes the call now, as it was written or with the `input` you give instead, and returns it as `sent` (with the tool's `output`) or `failed` (with its error; it can be approved again). No model is involved. `409` once it was sent or discarded, or when its tool is gone (the account was disconnected). |
 | `GET /v1/events` | Server-Sent Events: every run of the key that ends, as it ends (with `?users=all`, from a [service key](#acting-for-users), every user's too). Replays from `?after=<id>` or the `Last-Event-ID` header, then follows live, and never closes on its own. See [Being told when a run ends](#being-told-when-a-run-ends). |
 | `GET /v1/runs/{id}/files` | The regular files in the run's workspace: `{workspace_id, files: [{path, size, modified_at}], truncated}`. Sorted by path, at most 1000 entries; `.git`, `.local`, `.cache`, `.venv`, `venv`, `node_modules` and `__pycache__` are skipped. `404` once the workspace has expired. |
 | `GET /v1/runs/{id}/files/{path}` | Download one file as an attachment (`Content-Type` from the extension, `Content-Disposition` with the file name). `path` is relative to `/workspace`; `400` if it contains `..`, `404` if there is no such file or the workspace has expired. Files over 32 MiB are refused. |
@@ -76,7 +79,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/tools` | The tool groups a run can choose from, with the tools this server offers in each, and why a group has none: `{groups: [{id, label, available, reason?, tools: [{name, description, writes, pollable}]}], sources}`. `pollable` marks the tools that can be [called outside a run](#calling-a-tool-outside-a-run), and `sources` lists what else can (`url`, unless `WEB_FETCH` is off). |
 | `POST /v1/tools/{name}/call` | Call one pollable tool, or the `url` source, without starting a run: `{"input": {...}}` → `{output, is_error, json?, truncated}`. `400` for a tool that isn't pollable, `404` for one that isn't offered. See [Calling a tool outside a run](#calling-a-tool-outside-a-run). |
 | `GET /v1/models` | The registered models a run can name, in picker order: `{models: [{id, label, model, reasoning_levels, default_reasoning, multimodal, max_tokens, context_window, is_default, price}], model_selection}` (see [Models](#models)). `model_selection` is whether users choose the model themselves; off, cedar chooses for a run that names none (see [Which model a run gets](#which-model-a-run-gets)). |
-| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, model_selection, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `model_selection` is whether users choose the model, see [Which model a run gets](#which-model-a-run-gets); `tool_approvals` is whether any calls can need approval), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch, import_attachments}`, or `null` with `RECORDS=off`). |
+| `GET /v1/defaults` | What a run gets when it doesn't say: `{model, model_id, model_selection, system, locale, locales, max_turns_cap, plan, tool_approvals}` (`model` and `model_id` are `null` until a model is registered; `model_selection` is whether users choose the model, see [Which model a run gets](#which-model-a-run-gets); `tool_approvals` is whether any calls can need approval, `always_allow_after` how many plain "allow" answers it takes before "always allow" is offered), plus the `attachments` limits (`{max_count, max_bytes, max_total_bytes, media_types, max_image_side}`) the `memory` limits (`{max_items, max_chars, max_profile_chars, budgets: {facts, episodes, procedures}, recall_tokens}`, or `null` with `MEMORY=off`), and the `records` limits (`{max_sets, max_items, max_record_chars, max_batch, import_attachments}`, or `null` with `RECORDS=off`). |
 | `POST /v1/runs/{id}/feedback` | Your verdict on a finished run: `{"rating": "up" \| "down" \| null}`. Promotes or archives what the run learned (see [Memory](#memory)); returns `{rating, archived}`. `409` while the run is still going. |
 | `GET /v1/memory` | What your runs remember about you, oldest first: `{items: [...], profile, limits}`. Each item is `{id, short_id, kind, text, subject, relation, topics, source, support, hedged, sensitive, pinned, mentions, meta, run_id, valid_from, valid_until, created_at, updated_at, superseded_by, archived_at, recall_count, last_recalled_at}`; `?kind=fact,episode` narrows it, `?archived=true` lists the archive (superseded, expired and forgotten rows) instead, `?q=` searches. `run_id` is the run that saved it, `null` for one added by hand or once that run is deleted. See [Memory](#memory). |
 | `POST /v1/memory` | Remember something by hand: `{"text", "kind"?, "pinned"?, "valid_until"?, "subject"?, "relation"?, "topics"?}`. Returns `201` with the item, or `200` with the existing one when the same thing is already remembered. `409` with `MEMORY=off`; `400` for empty text, more than 500 characters, a kind that isn't `fact`, `preference`, `instruction` or `temporary`, or text that looks like a secret or an identifier. |
@@ -160,6 +163,7 @@ can use), the personal tools in `TOOLS_DIR`, and `MAX_CONCURRENT_RUNS`, which al
 | `products` | `search_products` |
 | `ask_user` | `ask_user` |
 | `follow_up` | `suggest_follow_up` |
+| `feedback` | `report_limitation` |
 | `memory` | `remember`, `forget`, `recall`, and what the run is shown from memory (see [Memory](#memory)) |
 | `records` | `records_list`, `records_describe`, `records_save`, `records_lookup`, `records_drop`, and the list of the sets the run keeps (see [Records](#records)) |
 | `browser` | `browser` |
@@ -288,13 +292,14 @@ Each SSE message has `id:` (a per-run sequence number), `event:` (the type), and
 
 | Type | `data` |
 | --- | --- |
-| `run.started` | `model`, `model_id`, `reasoning`, `max_turns`, `plan`, `interactive`, and `sandbox`: `{runtime, network, policy, hosts, memory, cpus}`. `runtime` is `docker` or `openshell`; `network` is `none` when the sandbox reaches nothing, else its Docker network (Docker) or its policy's name (OpenShell); `hosts` are the hosts an OpenShell policy reaches, `null` on Docker |
+| `run.started` | `model`, `model_id`, `reasoning`, `max_turns`, `plan`, `interactive`, `hold_writes`, and `sandbox`: `{runtime, network, policy, hosts, memory, cpus}`. `runtime` is `docker` or `openshell`; `network` is `none` when the sandbox reaches nothing, else its Docker network (Docker) or its policy's name (OpenShell); `hosts` are the hosts an OpenShell policy reaches, `null` on Docker |
 | `plan` | `steps` (`[{id, title}]`), `editable`, `awaiting`, and `origin: "tool"` for a plan the model proposed with `propose_plan` (see [Plans and approvals](#plans-and-approvals)) |
 | `plan.updated` | `steps`, `by` (`user`, or `timeout` when no answer came) |
 | `assistant.reasoning` | `turn`, `text`, `duration_ms`, `done`: the model's reasoning, when its server returns it (`reasoning_content` or `reasoning`). Not kept in the conversation |
 | `assistant.text` | `turn`, `text` |
-| `approval.required` | `id`, `call_id`, `tool`, `input`, `rule`, `reason`, `scope` |
+| `approval.required` | `id`, `call_id`, `tool`, `input`, `rule`, `reason`, `scope` (what "always allow" would cover; `null` when the call is asked about every time, or while "always" isn't offered yet), and `always`: `{scope, allowed, after, offered}` for a call that can be always allowed (see [Plans and approvals](#plans-and-approvals)) |
 | `approval.resolved` | `id`, `decision` (`allow`, `allow_always`, `deny` or `timeout`), `by` |
+| `call.held` | `id`, `call_id`, `tool`, `input`, `reason`, `why` (`unattended` or `timeout`): a call was not made but kept in the [outbox](#the-outbox). The call's `tool.result` then holds `{"held": {id, tool, reason, why}, "note"}` |
 | `tool.call` | `id`, `name`, `input` |
 | `tool.result` | `id`, `output`, `is_error`, `duration_ms`, and `sources` (`[{n, url, title}]`) for pages, files and search results the model can cite |
 | `sandbox.denied` | `call_id`, `program` (the path OpenShell named, `null` for a refused HTTP request), `host`, `port`, `what` (`connect`, or the method and path of a refused request), `reason`: an OpenShell sandbox's policy refused something while a `bash` or `run_python` call ran (see [The sandbox and its network policy](#the-sandbox-and-its-network-policy)) |
@@ -342,10 +347,19 @@ same way, and a second call in the same run is refused, so a request gets at mos
   user declined), and `allow_always` runs it and remembers its `scope` (a host, package names)
   for the API key, so the same kind of call goes ahead without asking from then on.
 
+**"Always allow" is earned.** It is offered once you have plainly allowed the same thing
+`ALWAYS_ALLOW_AFTER` times (3 by default), counted per host or package since you last declined
+it; declining starts the count again. Until then the event's `scope` is `null`, so no client
+shows the button, and `always` says how far along it is (`{scope, allowed, after, offered}`). An
+`allow_always` sent before it is offered counts as `allow`. `ALWAYS_ALLOW_AFTER=0` offers it
+from the first time, as before. Only you can grant it: a run cannot change what it is allowed.
+
 Each wait ends after `APPROVAL_TIMEOUT_SECS`: the plan as proposed is followed, and the call is
-not made. Time spent waiting doesn't count toward `RUN_TIMEOUT_SECS`. A run that isn't
+not made. A call that would have sent or changed something in one of your accounts (mail, the
+calendar, files, Slack) is not dropped then: it is kept in [the outbox](#the-outbox) for you to
+approve later. Time spent waiting doesn't count toward `RUN_TIMEOUT_SECS`. A run that isn't
 interactive (the default, and what unattended runs should use) shows its plan without waiting and
-asks nothing.
+asks nothing; with `hold_writes` it holds what it would send (below).
 
 The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-separated list):
 
@@ -358,6 +372,38 @@ The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-se
 | `deletes` | `rm`, `rmdir`, `shred`, `unlink` and `find -delete` in `bash`; asked every time |
 | `network` | on Docker, any other `bash` or `run_python` call when the sandbox has a network; on OpenShell, a connection the policy refused, asked about afterwards (see [OpenShell sandboxes](#openshell-sandboxes-opt-in)) |
 | `community` | every call of a [community tool](#community-tools); "Always" covers that release only |
+
+### The outbox
+
+A run nobody answers can't ask for approval, so it either has no tools that write or acts with
+nobody looking. `"hold_writes": true` on `POST /v1/runs` is the third way: in a run that isn't
+interactive, every call that would send or change something in a connected account (the Gmail,
+Calendar, Drive, Sheets and Slack tools that write; reading is never held) is **not made**. It is
+kept as a held call, exactly as the model wrote it, a `call.held` event says so, and the model is
+told the call waits for you and to go on without it.
+
+`GET /v1/held` lists what waits. `POST /v1/held/{id}` with `approve` makes the stored call, or the
+one you edited it into (`input`), without a model: what you approve is what happens, whatever the
+run read in the meantime. `discard` drops it. A call the tool refuses is `failed` and can be
+approved again; one that was being sent when cedar stopped is marked `failed` with a note, since
+whether it went out is unknown. At most 20 calls of one run are held, the same call twice in a run
+is kept once, and held calls go when their run is deleted. cedar-chat turns `hold_writes` on for
+[agents](chat/README.md#the-outbox) and shows the outbox on its Agents page.
+
+### Saying what couldn't be done
+
+The `report_limitation` tool lets the model note something it could not do for the user: no tool
+for it, an account that isn't connected, a site that refused it, a limit it hit. Like
+`suggest_follow_up`, it **records nothing**: its result is `{"limitation": {"summary",
+"category", "needed"?}, "note"}`, which a client shows as a card, and the user decides whether it
+is sent as feedback (cedar-chat keeps it [on its own server](chat/README.md#feedback)). `FEEDBACK=off`
+removes the tool.
+
+The system prompt tells each run how it hands over, by what the run can do: in an interactive run,
+which calls wait for an OK and that a declined one is not to be tried another way; in one that
+holds its writes, that they wait in the outbox and must be written complete and final; in any
+other unattended run, to act only where the prompt says to. Every run is asked to end an answer
+that leaves something open with what is left for the user.
 
 ## Being told when a run ends
 
@@ -696,6 +742,7 @@ Settings come from environment variables. The important ones:
 | `PLAN` | `off` (`on` or `auto` to have runs that don't say plan first, `tool` to let the model propose a plan when it judges a request needs one; see [Plans and approvals](#plans-and-approvals)) |
 | `TOOL_APPROVALS` | `on` (which calls wait for approval in interactive runs: `off`, or a list of `email`, `slack`, `downloads`, `installs`, `deletes`, `network`, `community`) |
 | `APPROVAL_TIMEOUT_SECS` | 300 (how long an interactive run waits for its plan to be agreed or a call to be approved) |
+| `ALWAYS_ALLOW_AFTER` | 3 (how often the same thing must be plainly allowed before an approval offers "always allow"; 0 offers it from the first time) |
 | `TOOL_OUTPUT_MAX_BYTES` | 32768 per stream |
 | `BRAVE_API_KEY` | empty (set it to enable the `web_search` tool) |
 | `BRAVE_API_BASE_URL` | `https://api.search.brave.com/res/v1/web/search` |
@@ -711,6 +758,7 @@ Settings come from environment variables. The important ones:
 | `TRANSIT` | `on` (set `off` to remove the `plan_trip` tool) |
 | `ASK_USER` | `on` (set `off` to remove the `ask_user` tool, so the model never stops a run to ask a question) |
 | `FOLLOW_UPS` | `on` (set `off` to remove the `suggest_follow_up` tool, so the model can't suggest a later run) |
+| `FEEDBACK` | `on` (set `off` to remove the `report_limitation` tool, with which the model notes what it could not do) |
 | `MEMORY` | `on` (set `off` to remove the `remember`, `forget` and `recall` tools and stop showing runs what they remember; see [Memory](#memory)) |
 | `MEMORY_MAX_ITEMS` | 500 (how many facts, preferences, instructions and temporary memories one API key keeps active; past it the lowest-ranked are archived) |
 | `MEMORY_EXTRACT` | `on` (set `off` to stop noting the facts the user states, from the model call at the end of every interactive run; see [Memory](#memory)) |
@@ -798,6 +846,7 @@ produce its result from what it has, since a run that is stopped delivers nothin
 | `search_products` | Finds products to buy in any category, from any shop, and recommends the best. Takes `query` (what the user wants, e.g. `trail running shoes for wide feet`), optional `needs` (what matters to them: use, fit, style, must-haves), `min_price`, `max_price`, and `count` (options to recommend, 1–6, default 4). It runs two Brave web searches, one for reviews and roundups and one for shops, and, with a Best Buy key, searches Best Buy's catalog too. It reads up to eight of the pages it found (shops first, then reviews; through the same public-addresses-only client as `fetch_url`) for the schema.org product data shops embed: name, brand, photos, price and currency, stock, the customer rating with its review count, and a few reviews, falling back on Open Graph product tags; a review article is kept as text. Then the run's own model gets that evidence in one tool-free request and picks the best options for the request, each with why it fits, pros and cons, who it suits, the sources behind it, and the other options it compares with. The reply is held to the evidence: links and photos only come from the pages and search results, a price shown as checked comes from a store page (a price only review text states is kept, marked unchecked; one no source states is dropped), and a rating only counts with its review count. Each rating is also read on its own: the `adjusted` rating shrinks the average toward 4.0 as if fifteen typical reviews were added, with a `verdict` and a `confidence`. The tokens the tool's request takes are added to the run's, as a `usage` event with `purpose: "tool"`. If the model can't be asked or its reply can't be used, the products found are ranked by their adjusted ratings instead (`method: "ratings"`, with a `note`). Returns JSON with the `summary`, the `options` (`badges`, `price`, `price_checked`, `store`, `images`, `reviews`, `why`, `pros`, `cons`, `best_for`, `sources`, `comparable`, ...), the cited `sources`, and how many pages and products were `considered`. A search that finds nothing is an error. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Offered when a Brave Search key or a Best Buy key is set (in the environment or saved by an admin; see [Integrations](#integrations)), unless `PRODUCTS=off`. |
 | `ask_user` | Asks the user clarifying questions when a request is ambiguous and the answer would change what the agent does. Takes `questions` (1–4 objects, each with a `question`, an optional short `header`, up to 8 `options` with a `label` and optional `description`, given as 2 or more or left out for an open question, and `multi_select` to let several options be chosen). An "Other" option is dropped, since the user can always answer in their own words. The run then ends as `completed` with `stop_reason: "ask_user"` and the questions as its `final_text`; the tool result holds them as JSON, which the chat interfaces draw as a form (radio buttons, or checkboxes with `multi_select`, plus a free-form answer). The answer is the prompt of the next run, started with `parent_id`. Unless `ASK_USER=off`. |
 | `suggest_follow_up` | Suggests running a prompt again later, for "remind me", "check again on Friday" and "tell me when it ships". Takes a `title`, a `prompt` that stands on its own (the follow-up starts in a new conversation), and when: `in_minutes` from now, or `at` as an exact time with its UTC offset (at least a minute and at most a year away). **It schedules nothing**: cedar has no scheduler. The result is `{"follow_up": {"title", "prompt", "at"}, "note"}` with `at` in UTC, which a client shows as a suggestion; [cedar-chat](chat/README.md#follow-ups-the-agent-suggests) draws a card and makes a one-off agent only when the user accepts it. So a page or a mail the run read can make the model suggest something, but not start anything. The run goes on after the call. Unless `FOLLOW_UPS=off`. |
+| `report_limitation` | Notes something the user asked for that the run could not do with what it has here. Takes a one-sentence `summary` without personal details, a `category` (`missing_tool`, `not_connected`, `blocked`, `limit` or `other`) and optionally what is `needed`. It records nothing: the result is `{"limitation": {...}, "note"}`, which the chat shows as a card with *Send feedback* and *Dismiss* (see [Saying what couldn't be done](#saying-what-couldnt-be-done)). Set `FEEDBACK=off` to remove it |
 | `gmail_*`, `calendar_*` | The tools of Google's Gmail and Calendar MCP servers that `GMAIL_TOOLS` and `CALENDAR_TOOLS` allow, under their server's names with a `gmail_` or `calendar_` prefix (`gmail_search_threads`, `calendar_list_events`). Their descriptions and input schemas are the server's own. Only offered when `GMAIL=on` or `CALENDAR=on`; see [Gmail and Calendar](#gmail-and-calendar). |
 | `slack_*` | `slack_list_channels`, `slack_read_messages`, `slack_list_users` and `slack_send_message`: the team's Slack through Slack's Web API, as a Slack app. Only offered when a Slack bot token is set or saved; see [Slack](#slack). |
 | personal tools | Python scripts in `TOOLS_DIR`, one folder each, offered under the folder's name with the description and input schema its `tool.json` gives. Each call runs in a container (or OpenShell sandbox) of its own that sees the workspace and only that tool, with the call's input as JSON on stdin; stdout is the result, plus the workspace files the script created or modified. Only offered when `TOOLS_DIR` is set; see [Personal tools in Python](#personal-tools-in-python). |
@@ -1449,7 +1498,7 @@ The agent runs arbitrary commands, so isolation is the point of the design:
 - The browser (`BROWSER=on`) needs internet access. cedar checks the URLs the model navigates to, but not where the browser goes from there: a link, a redirect, or a page's own script can take it anywhere its Docker network (`BROWSER_NETWORK`) reaches, including this host and your internal network. Give it a network that only reaches the internet before turning it on outside a trusted setup. Each run's browser starts with a fresh profile, so it has no cookies or sign-ins, and pages it reads can carry prompt injections like any fetched page.
 - [Personal tools](#personal-tools-in-python) run in a container per call that sees only their own folder, their own package environment, the run's workspace, and their own declared secrets; they get a network only when they declare hosts, and then all of `TOOLS_NETWORK`. A tool can still read and change anything in the workspace, and data it is given can leave through its network. [Community tools](#community-tools) are code other people wrote: read what one asks for before installing it, and keep `TOOL_APPROVALS` on so their calls wait for the user's OK in interactive runs (non-interactive runs, such as cedar-chat's [agents](chat/README.md#agents), call them without asking).
 - [A tool called outside a run](#calling-a-tool-outside-a-run) leaves no run behind, so no conversation or trace shows what it read; only a log line and a database row say that the call was made, by which key, and how long it took. Any API key may make such calls, to the tools that only read (mail and calendar among them, for the one Google account every key shares) and to personal tools, whose code then runs with its declared network and secrets and nobody approving it. Give a key only to clients you would let start a run.
-- Runs that start by themselves from something outside (cedar-chat's [agents](chat/README.md#runs-that-start-from-outside) on a condition, a webhook, mail or the calendar) are given text other people wrote as part of their prompt, and are not interactive, so no tool call waits for approval. The chat marks that text off as data, gives such an agent tools without personal tools or Google writes unless told otherwise, and limits how often it runs. None of that makes a prompt injection impossible: choose such an agent's tools as you would for a stranger's input, and keep the tools that send, write or spend out of it.
+- Runs that start by themselves from something outside (cedar-chat's [agents](chat/README.md#runs-that-start-from-outside) on a condition, a webhook, mail or the calendar) are given text other people wrote as part of their prompt, and are not interactive, so no tool call waits for approval. The chat marks that text off as data, gives such an agent tools without personal tools or Google writes unless told otherwise, and limits how often it runs. None of that makes a prompt injection impossible: choose such an agent's tools as you would for a stranger's input, and keep the tools that send, write or spend out of it, or have the run hold what it would send (`hold_writes`, see [The outbox](#the-outbox)): a held call is made only when its owner approves it, as written, so an injected instruction can at most put a call in front of them.
 - [Memory](#memory) outlives the conversation it was saved in, so an instruction planted in it would too. The layers against that: only interactive runs can write facts about the user, and a fact is saved only when it quotes the user's own words from that conversation (a check in code, so nothing a tool, page, email or document said can be saved as something the user said); text that looks like a secret or an identifier is refused; what is shown is framed as the user's facts and the agent's notes that don't override the system prompt; every write is visible (a tool step, or the `memory.updated` event with what was saved and what was refused) and every change is an audit row; episodes and procedures are the agent's own account of what it did, written from the conversation's text and never from tool results; and everything can be read, edited, archived and deleted through `/v1/memory` (Settings → Memory in the chat). Memories stay in cedar's database and go to the LLM server with every run that has the `memory` group on, like the conversation itself. Set `MEMORY=off` if that is not acceptable.
 - Downloads are served from the workspace volume only, through a read-only container; the host filesystem stays out of reach. A downloaded file is whatever the agent produced, so treat it like any other untrusted download.
 
@@ -1479,6 +1528,7 @@ The integration tests drive the real router with a scripted LLM, a fake sandbox,
 
 - No token-level streaming from the model; events arrive per model turn and per tool call.
 - A run is a single prompt. To follow up, start a new run that [continues](#continuing-a-run) the finished one.
+- A held call (see [The outbox](#the-outbox)) is one that needs nothing of its run to be made later: a write to a connected account. What a run does in its sandbox (installing, deleting, downloading) can't be held, so an unattended run still does that at once.
 - cedar has no scheduler of its own: a run starts when a client asks for it. Runs on a clock, a condition, a webhook or new mail are [cedar-chat's agents](chat/README.md#agents), which watch through `POST /v1/tools/{name}/call`.
 - Workspace files can be listed and downloaded one at a time, up to 32 MiB each, only while the workspace exists (`WORKSPACE_TTL_SECS` after the last run). There is no upload into the workspace; [attachments](#attachments) go to the model, not to `/workspace`.
 - One instance: SQLite and the run queue live in the process.

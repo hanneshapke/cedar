@@ -1049,6 +1049,16 @@ function applyEvent(view, event) {
           placeNote(view, n);
           view.stepsEl = null;
         }
+        // Something Cedar could not do offers to be sent as feedback; a call held for approval
+        // instead of made shows what would go out, with the buttons that decide about it.
+        const limitation = tool.name === 'report_limitation' && !tool.is_error && cedarHandover.limitation.parse(tool.output);
+        const held = !limitation && !tool.is_error && cedarHandover.held.parse(tool.output);
+        if (limitation || held) {
+          const n = note('clarify', escapeHtml(tr(limitation ? 'handover.limitation.heading' : 'handover.held.heading')), '');
+          n.lastChild.append(limitation ? cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: tool.id }) : cedarHandover.held.element(held));
+          placeNote(view, n);
+          view.stepsEl = null;
+        }
         // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
         // A chart drawn as a card isn't shown again.
         if (!tool.is_error && !(tool.name === 'generate_chart' && cedarChart.parse(tool.output, tool.input))) {
@@ -1325,6 +1335,7 @@ async function openConversation(id) {
   state.current.agent = detail.agent;
   // What was already decided about the follow-ups suggested in it: their cards say so.
   cedarFollowUp.known(detail.followups);
+  cedarHandover.known(detail.limitations);
   cedarSettings.conversationChanged();
   cedarAttach.clear();
   restorePickers(detail.conversation);
