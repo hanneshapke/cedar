@@ -26,7 +26,7 @@
 const cedarSettings = (() => {
   const ADMIN_KEY = 'cedar-chat-admin';
   /** The tool groups that act for a connected account (Google's or Slack's); their single tools can be chosen. */
-  const GOOGLE_GROUPS = ['gmail', 'calendar', 'drive', 'sheets', 'slack'];
+  const GOOGLE_GROUPS = ['gmail', 'calendar', 'drive', 'sheets', 'slides', 'slack'];
   // A model's reply limit when it is registered without one, and the highest cedar takes.
   const DEFAULT_MAX_TOKENS = 16384;
   const MAX_MAX_TOKENS = 1000000;

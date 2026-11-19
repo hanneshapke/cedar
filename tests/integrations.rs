@@ -223,6 +223,7 @@ async fn the_catalog_lists_every_group_and_why_some_are_missing() {
             "calendar",
             "drive",
             "sheets",
+            "slides",
             "slack",
             "custom"
         ]
@@ -750,7 +751,7 @@ async fn connecting_google_stores_the_account_and_turns_gmail_on() {
     assert_eq!(status["google"]["configured"], false);
     assert_eq!(
         status["google"]["services"],
-        json!(["gmail", "drive", "sheets"])
+        json!(["gmail", "drive", "sheets", "slides"])
     );
     assert_eq!(
         status["google"]["client"],
@@ -833,6 +834,7 @@ async fn connecting_google_stores_the_account_and_turns_gmail_on() {
             "https://www.googleapis.com/auth/gmail.compose",
             "https://www.googleapis.com/auth/calendar.readonly",
             "https://www.googleapis.com/auth/drive.readonly",
+            "https://www.googleapis.com/auth/drive.file",
         ])
     );
     let (_, catalog) = app.get("/v1/tools", KEY_A).await;
@@ -883,7 +885,7 @@ async fn a_google_client_saved_by_an_admin_lets_the_account_be_connected() {
     assert_eq!(status["google"]["enabled"], true);
     assert_eq!(
         status["google"]["services"],
-        json!(["gmail", "drive", "sheets"])
+        json!(["gmail", "drive", "sheets", "slides"])
     );
     assert_eq!(status["google"]["configured"], false);
     assert_eq!(

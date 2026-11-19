@@ -342,7 +342,7 @@ why adding users changes nothing for a server that had one.
 The Google account under Settings → **Server** is the primary user's. Everyone else connects
 their own, without the admin token: Settings → **Tools** shows *Your Google account* with a
 **Connect Google** button, once an admin has saved the OAuth client. Until they do, their messages
-and agents have no Gmail, Calendar, Drive or Sheets tools; nobody's runs can read another person's
+and agents have no Gmail, Calendar, Drive, Sheets or Slides tools; nobody's runs can read another person's
 mail. If the OAuth client is still in *Testing* in the Google Cloud console, each person's address
 has to be on its list of test users.
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Presentations in Google Slides.** Ask for a deck and the agent makes one in your Drive: it writes the outline, slide by slide, and cedar does the design. `slides_create_presentation` takes a title, a theme (`minimal`, `midnight`, `editorial`, `forest`, `bold`), an optional brand colour and footer, and slides in ten layouts (`title`, `section`, `bullets`, `columns`, `stats`, `quote`, `table`, `image`, `steps`, `closing`) with speaker notes; cedar places everything on one grid, picks text sizes that fit, and warns about slides that are too full. `slides_append_slides` adds slides to a deck cedar made and `slides_get_presentation` reads one's outline. A new tool group, `slides`, on by default with the other Google ones (`SLIDES=off`, `SLIDES_TOOLS`, `SLIDES_API_URL`). "Connect Google" now asks for `drive.file` too (cedar can create files and change only the ones it created), so connected accounts need a *Reconnect*, and the Cloud project needs the Slides API. See [Google Slides](README.md#google-slides).
+
 ## 0.11.0
 
 - **The Slack app can be set up in Settings.** An admin pastes the app's two tokens into Settings → Slack; they are checked with Slack, saved, and the app connects at once, without a restart, and can be replaced or removed the same way. This is how the desktop app gets Slack. Tokens set in the environment (`CHAT_SLACK_APP_TOKEN`, `CHAT_SLACK_BOT_TOKEN`) still win, and Settings says so.

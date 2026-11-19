@@ -131,7 +131,7 @@ every service key can act for every user. A service key also gets one stream of 
 A user's runs never act for the server's Google account (the one an admin connects, or
 `GOOGLE_REFRESH_TOKEN`): that one is for the keys' own runs. Each user connects an account of
 their own, through the same OAuth client, and until they have, their runs are offered no Gmail,
-Calendar, Drive or Sheets tools and `GET /v1/tools` lists those groups as unavailable to them:
+Calendar, Drive, Sheets or Slides tools and `GET /v1/tools` lists those groups as unavailable to them:
 
 | Route | What it does |
 | --- | --- |
@@ -168,7 +168,7 @@ can use), the personal tools in `TOOLS_DIR`, and `MAX_CONCURRENT_RUNS`, which al
 | `memory` | `remember`, `forget`, `recall`, and what the run is shown from memory (see [Memory](#memory)) |
 | `records` | `records_list`, `records_describe`, `records_save`, `records_lookup`, `records_drop`, and the list of the sets the run keeps (see [Records](#records)) |
 | `browser` | `browser` |
-| `gmail`, `calendar`, `drive`, `sheets` | every `gmail_*`, `calendar_*`, `drive_*` or `sheets_*` tool, or name single ones (`gmail_search_threads`) |
+| `gmail`, `calendar`, `drive`, `sheets`, `slides` | every `gmail_*`, `calendar_*`, `drive_*`, `sheets_*` or `slides_*` tool, or name single ones (`gmail_search_threads`) |
 | `slack` | every `slack_*` tool, or name single ones (`slack_read_messages` to read without posting) |
 | `custom` | every [personal Python tool](#personal-tools-in-python) in `TOOLS_DIR`, or name single ones |
 
@@ -379,7 +379,7 @@ The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-se
 A run nobody answers can't ask for approval, so it either has no tools that write or acts with
 nobody looking. `"hold_writes": true` on `POST /v1/runs` is the third way: in a run that isn't
 interactive, every call that would send or change something in a connected account (the Gmail,
-Calendar, Drive, Sheets and Slack tools that write; reading is never held) is **not made**. It is
+Calendar, Drive, Sheets, Slides and Slack tools that write; reading is never held) is **not made**. It is
 kept as a held call, exactly as the model wrote it, a `call.held` event says so, and the model is
 told the call waits for you and to go on without it.
 
@@ -793,7 +793,7 @@ Settings come from environment variables. The important ones:
 | `CEDAR_ADMIN_KEYS` | empty (comma-separated subset of `CEDAR_API_KEYS` that may manage [integrations](#integrations)) |
 | `CEDAR_SERVICE_KEYS` | empty (comma-separated subset of `CEDAR_API_KEYS` that may [act for users](#acting-for-users) with `X-Cedar-User`) |
 | `CEDAR_SECRET_KEY` | empty (64 hex characters, `openssl rand -hex 32`; encrypts integration credentials saved through the API, which can't be saved without it) |
-| `GOOGLE_SCOPES` | `openid email` plus `gmail.readonly`, `gmail.compose`, `calendar.readonly` (what "Connect Google" asks for; space- or comma-separated full scope URLs) |
+| `GOOGLE_SCOPES` | `openid email` plus `gmail.readonly`, `gmail.compose`, `calendar.readonly`, `drive.readonly`, `drive.file` (what "Connect Google" asks for; space- or comma-separated full scope URLs) |
 | `GMAIL_TOOLS` | `search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft` (`*` for every tool the server lists) |
 | `CALENDAR_TOOLS` | `list_calendars,list_events,get_event,search_events,suggest_time` |
 | `GMAIL_MCP_URL` / `CALENDAR_MCP_URL` | `https://gmailmcp.googleapis.com/mcp/v1` / `https://calendarmcp.googleapis.com/mcp/v1` |
@@ -987,7 +987,8 @@ docker rm -f cb
 ### Gmail and Calendar
 
 cedar offers tools for one Google account's mail and calendar (and its files in Drive, see
-[Google Drive, Docs and Sheets](#google-drive-docs-and-sheets)) once a Google OAuth client is set
+[Google Drive, Docs and Sheets](#google-drive-docs-and-sheets), and presentations, see
+[Google Slides](#google-slides)) once a Google OAuth client is set
 up and an account connected through it; `GMAIL=off` or `CALENDAR=off` removes the tools. They run
 in the cedar process (the sandbox has no network, and the Google tokens stay out of it) and use
 one of two backends, chosen with `GOOGLE_BACKEND`:
@@ -1013,9 +1014,10 @@ you; the environment works too, for a server without a chat or one you configure
 **From the chat UI** (Settings → Server, which needs `CEDAR_SECRET_KEY` and an admin key, see
 [Integrations](#integrations); the desktop app has both):
 
-1. In a Google Cloud project, enable the Gmail, Google Calendar, Google Drive and Google Sheets
-   APIs (`gcloud services enable gmail.googleapis.com calendar-json.googleapis.com
-   drive.googleapis.com sheets.googleapis.com --project=PROJECT_ID`; for `GOOGLE_BACKEND=mcp`,
+1. In a Google Cloud project, enable the Gmail, Google Calendar, Google Drive, Google Sheets
+   and Google Slides APIs (`gcloud services enable gmail.googleapis.com
+   calendar-json.googleapis.com drive.googleapis.com sheets.googleapis.com
+   slides.googleapis.com --project=PROJECT_ID`; for `GOOGLE_BACKEND=mcp`,
    `gmailmcp.googleapis.com calendarmcp.googleapis.com` as well).
 2. Set up the consent screen (Google Auth Platform in the console) with the scopes below, and
    publish it (*In production*). While it stays in *Testing*, Google expires the refresh token
@@ -1045,11 +1047,13 @@ to the Playground's client and Google refuses it (`unauthorized_client`). That n
 application* client with `https://developers.google.com/oauthplayground` as an authorized
 redirect URI. The default tools need `https://www.googleapis.com/auth/gmail.readonly`,
 `https://www.googleapis.com/auth/gmail.compose` (drafts),
-`https://www.googleapis.com/auth/calendar.readonly` and
-`https://www.googleapis.com/auth/drive.readonly` (Drive, Docs and Sheets).
+`https://www.googleapis.com/auth/calendar.readonly`,
+`https://www.googleapis.com/auth/drive.readonly` (Drive, Docs and Sheets) and
+`https://www.googleapis.com/auth/drive.file` (Slides: making files, and changing only the ones
+cedar made).
 
 When a cedar upgrade asks for a scope the connected account didn't grant (0.3.7 added
-`drive.readonly`), the tools answer Google's "insufficient scopes" error until the account is
+`drive.readonly`, and the Slides tools `drive.file`), the tools answer Google's "insufficient scopes" error until the account is
 connected again; the Server page says which scopes are missing, and *Reconnect* grants them.
 
 cedar trades the refresh token for an access token when it first needs one and again shortly
@@ -1101,6 +1105,53 @@ Drive and Sheets APIs enabled in the Cloud project, and the `drive.readonly` sco
 - `sheets_read_range` reads a tab by name in windows of rows (`startRow`, `maxRows`, 100 by
   default and at most 1000) or an A1 range as given, formatted as the sheet shows the values, or
   raw, or as formulas.
+
+### Google Slides
+
+With the same account, cedar makes presentations. The model writes a deck as an outline, slide by
+slide, and cedar lays it out: every position, size, font and colour is chosen by cedar from one
+theme, so a deck comes out consistent however it was asked for. The result is an ordinary Google
+Slides file in the user's Drive, drawn with text boxes, real bulleted lists, shapes and tables on
+16:9 pages, which its owner goes on editing like any other.
+
+The `slides` tool group is on by default and needs the Slides API enabled in the Cloud project
+and the `drive.file` scope, which "Connect Google" asks for. That scope lets cedar create files
+and change the ones it created, and nothing else in the Drive: it can't touch a presentation the
+user made themselves. `SLIDES=off` removes the tools, `SLIDES_TOOLS` chooses single ones.
+
+- `slides_create_presentation` takes `title`, `slides`, and optionally `theme`, `accent` (a
+  brand colour like `#E11D48`, used in place of the theme's own) and `footer` (a line at the foot
+  of every content slide), and returns the presentation's ID and link.
+- `slides_append_slides` adds slides to a presentation cedar made, at the end or from `insertAt`.
+- `slides_get_presentation` gives a presentation's outline: the text on each slide, in order.
+
+Each slide names a `layout`, or leaves it to follow from what the slide holds:
+
+| Layout | What it shows | Fields |
+| --- | --- | --- |
+| `title` | The opening slide, on the theme's cover colour | `title`, `subtitle`, `kicker`, `meta` |
+| `section` | A divider opening a part of the deck; sections are numbered | `title`, `subtitle`, `kicker` |
+| `bullets` | A heading with a list, a paragraph, or a paragraph leading into a list | `title`, `bullets` (strings, or `{text, sub: [...]}`), `body` |
+| `columns` | 2 to 4 cards side by side, to compare | `title`, `columns: [{heading, bullets, body}]` |
+| `stats` | 1 to 4 large numbers with what they count | `title`, `stats: [{value, label}]`, `caption` |
+| `quote` | A quotation and who said it | `quote`, `attribution` |
+| `table` | Up to 8 columns and 12 rows, ruled between rows, numbers lined up on the right | `title`, `table: {headers, rows}`, `caption` |
+| `image` | A picture, alone or beside text | `imageUrl`, `title`, `bullets`, `body`, `caption` |
+| `steps` | 2 to 6 numbered steps of a process or timeline | `title`, `steps: [{title, text}]` |
+| `closing` | The last slide | `title`, `subtitle`, `meta` |
+
+Any slide takes `notes`, which become its speaker notes, and `**bold**` works in bullets and
+body text. The themes are `minimal` (the default: white, dark covers, blue accent), `midnight`
+(dark throughout), `editorial` (warm paper, serif headings), `forest` (soft green, serif
+headings) and `bold` (white with vivid covers); each keeps its text at WCAG AA contrast.
+
+The Slides API can't shrink text to fit, so cedar picks each text size from an estimate of how
+the text wraps, and the result lists a warning for any slide whose text may still run past its
+space, so the model can shorten or split it. What can't be laid out at all (15 bullets on a
+slide, an unknown layout) is refused with the slide's number before anything is made in Drive.
+An image must be a public `https` link to a PNG, JPEG or GIF, because Google fetches it itself; a
+chart saved in the workspace can't be placed. Since these tools write, a run that
+[holds its writes](#the-outbox) keeps a deck in the outbox until it is approved.
 
 Nothing here creates, changes, shares or deletes anything in Drive. What documents say is shown
 to the model as information, with the same warning as for emails.

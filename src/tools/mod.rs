@@ -25,6 +25,7 @@ mod files;
 mod flights;
 mod gmail;
 mod sheets;
+mod slides;
 pub mod slack;
 mod google;
 mod map;
@@ -197,7 +198,7 @@ pub trait Tool: Send + Sync {
     }
 }
 
-/// The tools that act for one Google account: Gmail, Calendar, Drive and Sheets through the REST
+/// The tools that act for one Google account: Gmail, Calendar, Drive, Sheets and Slides through the REST
 /// APIs, or the MCP servers that stand in for them. They share one [`GoogleOAuth`], and so one
 /// cached access token.
 pub struct AccountTools {
@@ -211,7 +212,7 @@ impl AccountTools {
         Self { tools: Vec::new(), remote: Vec::new() }
     }
 
-    /// The Google tools the server offers (`GMAIL`, `CALENDAR`, `DRIVE`, `SHEETS`), acting for
+    /// The Google tools the server offers (`GMAIL`, `CALENDAR`, `DRIVE`, `SHEETS`, `SLIDES`), acting for
     /// the account `refresh_token` belongs to, which `client` connected.
     pub fn google(
         cfg: &Config,
@@ -232,6 +233,7 @@ impl AccountTools {
                 "calendar" => calendar::tools(api, auth.clone())?,
                 "drive" => drive::tools(api, auth.clone())?,
                 "sheets" => sheets::tools(api, auth.clone())?,
+                "slides" => slides::tools(api, auth.clone())?,
                 other => anyhow::bail!("no REST API tools for {other}"),
             };
             tools.extend(made.into_iter().map(Arc::from));
@@ -653,6 +655,7 @@ const GROUP_WORDS: &[(&str, &[&str])] = &[
     ("calendar", &["calendar", "meeting", "schedule", "appointment", "agenda", "availability", "event", "busy", "free"]),
     ("drive", &["drive", "doc", "docs", "gdoc", "folder", "google"]),
     ("sheets", &["sheet", "spreadsheet", "google"]),
+    ("slides", &["slide", "slides", "deck", "presentation", "powerpoint", "keynote", "pitch"]),
     (slack::PREFIX, &["slack", "channel", "dm"]),
 ];
 
@@ -715,16 +718,17 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("calendar", "Calendar"),
     ("drive", "Google Drive & Docs"),
     ("sheets", "Google Sheets"),
+    ("slides", "Google Slides"),
     (slack::PREFIX, "Slack"),
     (custom::GROUP, "Personal tools"),
 ];
 
 /// The groups that act for the connected Google account; each tool's name starts with its group.
-pub const GOOGLE_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets"];
+pub const GOOGLE_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", "slides"];
 
 /// The groups that act for a connected account, Google's or Slack's: their tools read what other
 /// people wrote, some of them write, and each one's name starts with its group.
-pub const ACCOUNT_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", slack::PREFIX];
+pub const ACCOUNT_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", "slides", slack::PREFIX];
 
 /// The group a tool belongs to, by name. Personal tools can have any name, so use
 /// [`ToolSet::group`] where the set is at hand.
@@ -749,6 +753,7 @@ pub fn group_of(name: &str) -> &'static str {
         n if n.starts_with("calendar_") => "calendar",
         n if n.starts_with("drive_") => "drive",
         n if n.starts_with("sheets_") => "sheets",
+        n if n.starts_with("slides_") => "slides",
         n if n.starts_with("slack_") => slack::PREFIX,
         _ => "core",
     }
@@ -1016,6 +1021,14 @@ impl<'a> ToolView<'a> {
                 note.push_str(" sheets_ tools (a spreadsheet's tabs and cells)");
             }
             note.push('.');
+        }
+        if self.get("slides_create_presentation").is_some() {
+            note.push_str(
+                " When the user wants a presentation, a deck or slides, make it with \
+                 slides_create_presentation, which designs a Google Slides deck from your \
+                 outline, rather than building a file in the sandbox (unless they ask for a \
+                 PowerPoint file), and give them its link.",
+            );
         }
         if gmail || calendar || drive || sheets {
             note.push_str(
@@ -1726,6 +1739,9 @@ mod tests {
         assert!(!writes("drive_download_file"));
         assert!(!writes("sheets_read_range"));
         assert!(writes("sheets_append_rows"));
+        assert_eq!(group_of("slides_get_presentation"), "slides");
+        assert!(writes("slides_create_presentation") && writes("slides_append_slides"));
+        assert!(!writes("slides_get_presentation"));
         assert!(!writes("gmail_search_threads"));
         assert!(!writes("calendar_suggest_time"));
         assert!(writes("gmail_create_draft"));
