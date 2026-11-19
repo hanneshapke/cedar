@@ -133,7 +133,7 @@ pub async fn handle(state: &AppState, notification: &Value) -> Result<(), AppErr
         // No tab open is fine.
         let _ = state.notices.send((user, notice));
         // A turn a Slack message started is answered in its thread.
-        if state.slack.is_some() {
+        if state.slack.get().is_some() {
             let (state, turn) = (state.clone(), turn.clone());
             tokio::spawn(async move { crate::slack::turn_finished(&state, &turn).await });
         }

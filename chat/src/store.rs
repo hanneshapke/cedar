@@ -1419,6 +1419,34 @@ impl Store {
         Ok(())
     }
 
+    /// The server's: the Slack app's tokens as saved in Settings -> Slack (`slack`), `{app_token,
+    /// bot_token}`, when they are saved there rather than set in the environment.
+    pub async fn slack_app(&self) -> Result<Option<(String, String)>> {
+        let raw: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'slack_app'").fetch_optional(&self.pool).await?;
+        let Some(raw) = raw else { return Ok(None) };
+        let v: Value = serde_json::from_str(&raw)?;
+        match (v["app_token"].as_str(), v["bot_token"].as_str()) {
+            (Some(app), Some(bot)) => Ok(Some((app.to_string(), bot.to_string()))),
+            _ => Ok(None),
+        }
+    }
+
+    /// Save the Slack app's tokens, or (`None`) forget them.
+    pub async fn set_slack_app(&self, tokens: Option<(&str, &str)>) -> Result<()> {
+        match tokens {
+            Some((app, bot)) => {
+                sqlx::query("INSERT INTO settings (key, value) VALUES ('slack_app', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+                    .bind(serde_json::json!({ "app_token": app, "bot_token": bot }).to_string())
+                    .execute(&self.pool)
+                    .await?;
+            }
+            None => {
+                sqlx::query("DELETE FROM settings WHERE key = 'slack_app'").execute(&self.pool).await?;
+            }
+        }
+        Ok(())
+    }
+
     // -- schedules --------------------------------------------------------------------------
 
     pub async fn create_schedule(&self, new: &NewSchedule<'_>) -> Result<Schedule> {

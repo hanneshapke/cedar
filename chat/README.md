@@ -299,9 +299,9 @@ remove the tool.
 | `CHAT_UPDATE_DIR` | unset | The directory the root `cedar-update` unit watches (`/var/lib/cedar/update` in [DEPLOYMENT.md](../DEPLOYMENT.md#updates)). When set, an admin's *Update* in the banner installs the release; otherwise the banner shows the commands to run |
 | `CHAT_UPDATE_URL` | `https://api.github.com/repos/hanneshapke/cedar/releases/latest` | Where the latest release is looked up (for tests) |
 | `CHAT_CONTRIBUTIONS_URL` | the project's corpus | The base URL of a [cedar-contrib](../contrib/README.md) ingest that a conversation can be [contributed](#contributing-a-conversation) to; unset, the project's own ingest. `off`, and nothing can be sent; the review dialog still exports a bundle to a file |
-| `CHAT_SLACK_APP_TOKEN` | unset | The Slack app's app-level token (`xapp-…`, scope `connections:write`), which opens the Socket Mode connection people talk to Cedar through (see [Slack](#slack)). Set with `CHAT_SLACK_BOT_TOKEN`, or neither |
+| `CHAT_SLACK_APP_TOKEN` | unset | The Slack app's app-level token (`xapp-…`, scope `connections:write`), which opens the Socket Mode connection people talk to Cedar through (see [Slack](#slack)). Set with `CHAT_SLACK_BOT_TOKEN`, or neither; without them an admin can save both in Settings → Slack instead |
 | `CHAT_SLACK_BOT_TOKEN` | unset | The same app's bot token (`xoxb-…`), which answers in Slack. It may be the token cedar's `SLACK_BOT_TOKEN` has |
-| `CHAT_SLACK_API_URL` | `https://slack.com/api` | The root of Slack's Web API (for tests) |
+| `CHAT_SLACK_API_URL` | `https://slack.com/api` | The root of Slack's Web API, for tokens from the environment or Settings (for tests) |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
@@ -701,11 +701,16 @@ NAT or on a tailnet, with no public address.
    scopes keeps that token.
 3. Under *Basic Information* → *App-Level Tokens*, *Generate Token and Scopes* with the scope
    `connections:write`, and copy it (`xapp-…`).
-4. Start cedar-chat with both:
+4. Give cedar-chat both tokens, one of two ways:
+   - **In Settings → Slack** (an admin: unlock Settings → Server with `CHAT_ADMIN_TOKEN` first).
+     Paste the two tokens under *Slack app* and *Check & save*: they are checked with Slack (the
+     bot token with `auth.test`, the app-level token by opening a Socket Mode connection), saved,
+     and the app connects at once, with no restart. This is the way in the desktop app.
+   - **In the environment**, which wins over Settings and can't be changed there:
 
-   ```sh
-   CHAT_SLACK_APP_TOKEN=xapp-… CHAT_SLACK_BOT_TOKEN=xoxb-… cargo run -p cedar-chat
-   ```
+     ```sh
+     CHAT_SLACK_APP_TOKEN=xapp-… CHAT_SLACK_BOT_TOKEN=xoxb-… cargo run -p cedar-chat
+     ```
 
    The log says `Slack app connected` with the workspace's name, and Settings → Slack says so too.
 5. Invite the app to the channels it should answer in (`/invite @cedar`). Direct messages need no
@@ -757,8 +762,10 @@ on a shared one, everyone links their own, and their runs, memories and conversa
 ### Privacy
 
 What someone writes to the app goes to the model server like any message on the page, and what it
-answers goes to Slack. The tokens stay in this process and are only sent to `CHAT_SLACK_API_URL`
-(and the WebSocket address Slack gives it); they are not stored in the database. Messages from
+answers goes to Slack. The tokens are only sent to `CHAT_SLACK_API_URL` (and the WebSocket
+address Slack gives it). Set in the environment, they stay in this process; saved in Settings,
+they are kept in this server's database (`CHAT_DATABASE_URL`) as they are, like the notification
+credentials, and never sent back to the page. Messages from
 accounts that aren't linked are not kept or sent anywhere; the app only looks up their name and
 language to word the code's message.
 
@@ -1007,7 +1014,9 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/slack` | Settings → Slack: `{available, workspace, links}`. `available` is whether this server has a [Slack app](#slack); `workspace` is `{team, team_name, bot}` once it is connected (else `null`); `links` are the caller's linked Slack accounts, each `{team, team_name, slack_user, name, created_at}` |
+| `GET /api/slack` | Settings → Slack: `{available, source, workspace, links}`. `available` is whether this server has a [Slack app](#slack), `source` where its tokens come from (`env`, `settings`, or `null`); `workspace` is `{team, team_name, bot}` once it is connected (else `null`); `links` are the caller's linked Slack accounts, each `{team, team_name, slack_user, name, created_at}` |
+| `PUT /api/slack/app` | Admin: save the Slack app's tokens, `{"app_token", "bot_token"}`, once Slack takes both, and connect with them (no restart) → `{source, workspace}`. `400` with Slack's reason for a token it refuses (or one of the wrong kind); `409` while the environment sets them |
+| `DELETE /api/slack/app` | Admin: forget the saved tokens and disconnect: `204`; `409` while the environment sets them. Linked accounts stay linked |
 | `POST /api/slack/link` | Link the Slack account a code was sent to: `{"code"}` (any case, with or without the dash) → `201 {link}`, and the account is told in Slack. `400` for a code that isn't one, was used, or ran out (15 minutes); `404` without a Slack app |
 | `DELETE /api/slack/links/{team}/{slack_user}` | Unlink one of the caller's Slack accounts: `204`, or `404`. Its threads stay the caller's conversations; nobody continues them from Slack until it is linked again |
 | `GET /api/me` | Who the token belongs to: `{id, name, primary, has_token, created_at}` (see [Users](#users)) |

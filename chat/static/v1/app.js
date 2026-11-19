@@ -1281,7 +1281,7 @@ async function init() {
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: () => { loadConversations(); cedarAgents.refresh(); } });
   cedarPairing.init({ api, toast });
-  cedarSlack.init({ api, toast });
+  cedarSlack.init({ api, toast, authHeaders });
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();
