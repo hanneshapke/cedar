@@ -56,6 +56,11 @@ pub struct Config {
     /// of a cedar-contrib ingest; see `contrib`): `DEFAULT_CONTRIBUTIONS_URL` unless another is
     /// named. `off`, and nothing can be sent; the review dialog still exports a bundle to a file.
     pub contributions_url: Option<String>,
+    /// Where a person can report, as an issue they file themselves, something Cedar could not do
+    /// (`CHAT_FEEDBACK_ISSUES_URL`): the "new issue" address of a repository, which the page
+    /// opens with the report filled in. The project's own unless another is named; `off`, and
+    /// the link isn't offered. This server sends nothing there itself.
+    pub feedback_issues_url: Option<String>,
     /// The Slack app people talk to Cedar through (see `slack`): its app-level token
     /// (`CHAT_SLACK_APP_TOKEN`, `xapp-...`), which opens the Socket Mode connection events come
     /// over, and its bot token (`CHAT_SLACK_BOT_TOKEN`, `xoxb-...`), which answers. Both or neither.
@@ -77,6 +82,10 @@ pub const DEFAULT_SLACK_API_URL: &str = "https://slack.com/api";
 /// the project's own cedar-contrib ingest. Nothing goes there until a person turns contributing
 /// on in Settings and sends a conversation.
 pub const DEFAULT_CONTRIBUTIONS_URL: &str = "https://contrib-api-7fdw4asdra-uw.a.run.app";
+
+/// Where "Report it to the project" opens an issue unless `CHAT_FEEDBACK_ISSUES_URL` names another
+/// repository's or is `off`.
+pub const DEFAULT_FEEDBACK_ISSUES_URL: &str = "https://github.com/hanneshapke/cedar/issues/new";
 
 /// Who may add, change and remove models in Settings -> Server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +162,11 @@ impl Config {
                 Some(v) if matches!(v.to_ascii_lowercase().as_str(), "off" | "none" | "no" | "false" | "0") => None,
                 Some(v) => Some(v),
             },
+            feedback_issues_url: match get("CHAT_FEEDBACK_ISSUES_URL").map(|u| u.trim().to_string()) {
+                None => Some(DEFAULT_FEEDBACK_ISSUES_URL.into()),
+                Some(v) if matches!(v.to_ascii_lowercase().as_str(), "off" | "none" | "no" | "false" | "0") => None,
+                Some(v) => Some(v),
+            },
             slack: match (get("CHAT_SLACK_APP_TOKEN"), get("CHAT_SLACK_BOT_TOKEN")) {
                 (None, None) => None,
                 (Some(app), Some(bot)) => Some(SlackConfig {
@@ -174,6 +188,12 @@ impl Config {
             }
             if !(slack.api_url.starts_with("http://") || slack.api_url.starts_with("https://")) {
                 bail!("CHAT_SLACK_API_URL must start with http:// or https://");
+            }
+        }
+        if let Some(u) = &cfg.feedback_issues_url {
+            // The page opens it as a link, so nothing but a plain https address without a query.
+            if !u.starts_with("https://") || u.contains(['?', '#', '"', '<', '>', ' ']) {
+                bail!("CHAT_FEEDBACK_ISSUES_URL must be an https:// address without a query, such as https://github.com/owner/repo/issues/new");
             }
         }
         if let Some(u) = &cfg.contributions_url {
@@ -251,6 +271,23 @@ mod tests {
         assert_eq!(cfg.update_dir.as_deref(), Some(std::path::Path::new("/var/lib/cedar/update")));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_CHECK", "sometimes")])).is_err());
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_UPDATE_URL", "api.github.com")])).is_err());
+    }
+
+    #[test]
+    fn feedback_issues_url() {
+        let cfg = |v: Option<&str>| {
+            Config::from_lookup(|k| match k {
+                "CEDAR_API_KEY" => Some("k".to_string()),
+                "CHAT_FEEDBACK_ISSUES_URL" => v.map(String::from),
+                _ => None,
+            })
+        };
+        assert_eq!(cfg(None).unwrap().feedback_issues_url.as_deref(), Some(DEFAULT_FEEDBACK_ISSUES_URL));
+        assert!(cfg(Some("off")).unwrap().feedback_issues_url.is_none());
+        assert_eq!(cfg(Some("https://git.example/acme/cedar/issues/new")).unwrap().feedback_issues_url.as_deref(), Some("https://git.example/acme/cedar/issues/new"));
+        for bad in ["http://git.example/issues/new", "javascript:alert(1)", "https://git.example/issues/new?title=x"] {
+            assert!(cfg(Some(bad)).is_err(), "{bad}");
+        }
     }
 
     #[test]

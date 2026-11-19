@@ -297,6 +297,7 @@ remove the tool.
 | `CHAT_MODELS_ACCESS` | `users` | Who may add, change and remove [the models](#models): `users` (everyone the access token lets in) or `admins` (the admin token; set this on a server several people use). API keys and the Google account stay with admins either way |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, except for a browser that opened the chat at a loopback address (`127.0.0.1`, `localhost`), which is sent back to that address |
 | `CHAT_ATTENTION_DELAY_SECS` | `20` | How long a response may wait for you (an approval, a plan to agree to) before you are told by your notification method (see [When a response waits for you](#when-a-response-waits-for-you)) |
+| `CHAT_FEEDBACK_ISSUES_URL` | `https://github.com/hanneshapke/cedar/issues/new` | Where *Report it to the project* opens an issue for [a report](#feedback) the person files themselves: an `https` "new issue" address that takes `title` and `body`. `off` removes the link. The server sends nothing there |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for an agent in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
@@ -680,6 +681,14 @@ noted as a card under the reply: one sentence, a category, what would make it po
   holds the sentence on the card and nothing of the conversation. Nothing is sent anywhere else.
 - **Dismiss** records only that you saw it.
 - The first decision stands, on every device.
+
+A report you sent can also go to the project: **Report it to the project**, on the card and in
+Settings, opens a new GitHub issue with the report filled in (the sentence, the category, what
+would help, your note). This server sends nothing itself. You read the issue in GitHub's own form
+and submit it with your own account, so it is public and under your name, and nothing else of the
+conversation is in it. `CHAT_FEEDBACK_ISSUES_URL` names another repository's "new issue" address
+(a fork's, or a company's own tracker that takes `title` and `body` the same way), and `off`
+removes the link.
 
 **Settings → Feedback** lists what you sent, counted by category, and lets you delete a report.
 Whoever runs the server sees everyone's there once the admin token is entered (or with

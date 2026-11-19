@@ -658,6 +658,9 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
         // Whether a conversation can be sent to a corpus (CHAT_CONTRIBUTIONS_URL); the review
         // dialog exports to a file either way.
         "contributions": state.cfg.contributions_url.is_some(),
+        // Where the page opens an issue for a report the person wants the project to see
+        // (CHAT_FEEDBACK_ISSUES_URL); null when that isn't offered. They file it themselves.
+        "feedback_issues_url": state.cfg.feedback_issues_url,
     }))
 }
 

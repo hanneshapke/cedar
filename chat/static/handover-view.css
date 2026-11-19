@@ -18,7 +18,8 @@
 .cedar-handover-done { flex: 1; color: var(--accent); font-weight: 500; }
 .cedar-handover-error { flex: 1 1 220px; color: #b3402e; font-size: 12.5px; overflow-wrap: anywhere; }
 @media (prefers-color-scheme: dark) { .cedar-handover-error { color: #f08a78; } }
-.cedar-handover-foot .copy-btn, .cedar-handover-foot .primary, .cedar-feedback-row .copy-btn { padding: 5px 12px; border-radius: 7px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.cedar-handover-foot .copy-btn, .cedar-handover-foot .primary, .cedar-feedback-row .copy-btn { padding: 5px 12px; border-radius: 7px; font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: none; }
+.cedar-feedback-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .cedar-handover-foot .copy-btn, .cedar-feedback-row .copy-btn { border: 1px solid var(--line); background: none; color: var(--ink); }
 .cedar-handover-foot button:disabled { opacity: .5; cursor: default; }
 .cedar-handover-input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--sheet); color: var(--ink); font: inherit; font-size: 13px; resize: vertical; }

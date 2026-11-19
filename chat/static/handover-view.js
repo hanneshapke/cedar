@@ -65,6 +65,39 @@ const cedarHandover = (() => {
     return data;
   }
 
+  // Where a report can be filed as an issue (the server's CHAT_FEEDBACK_ISSUES_URL), asked once.
+  // /api/config is public, so this needs no token.
+  let issuesUrl;
+  function issuesTarget() {
+    issuesUrl ||= fetch('/api/config').then((r) => (r.ok ? r.json() : null)).then((c) => {
+      const url = typeof c?.feedback_issues_url === 'string' ? c.feedback_issues_url : '';
+      return url.startsWith('https://') ? url : '';
+    }).catch(() => '');
+    return issuesUrl;
+  }
+
+  /**
+   * A link that opens a new issue with the report filled in, for the person to read and submit
+   * themselves, under their own account: this page sends nothing. The issue is in English, as
+   * its readers are the project's maintainers, and holds only what the card shows. Resolves to
+   * null when the server offers no such address.
+   */
+  async function issueLink(report) {
+    const base = await issuesTarget();
+    if (!base || !report?.summary) return null;
+    const lines = ['**What Cedar could not do**', report.summary, '', `**Category:** ${CATEGORIES.includes(report.category) ? report.category : 'other'}`];
+    if (report.needed) lines.push(`**Would need:** ${report.needed}`);
+    if (report.comment) lines.push('', '**Note**', report.comment);
+    lines.push('', '_Filed from the feedback card in Cedar\'s chat. It holds only what the card showed, nothing else of the conversation._');
+    const query = new URLSearchParams({ title: `Feedback: ${report.summary}`.slice(0, 200), body: lines.join('\n'), labels: 'feedback' });
+    const a = el('a', 'copy-btn cedar-handover-issue', tr('handover.issue.open'));
+    a.href = `${base}?${query}`;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.title = tr('handover.issue.note');
+    return a;
+  }
+
   const time = (iso) => new Date(iso || Date.now()).toLocaleString(cedarI18n.locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
   // -- what Cedar could not do -------------------------------------------------------------------
@@ -107,6 +140,9 @@ const cedarHandover = (() => {
       card.classList.toggle('settled', !!done);
       if (done) {
         foot.append(el('span', done.status === 'sent' ? 'cedar-handover-done' : 'cedar-handover-note', tr(done.status === 'sent' ? 'handover.limitation.sent' : 'handover.limitation.dismissed')));
+        // What stays on this server reaches whoever runs it; the project hears of it only if
+        // the person files it there themselves.
+        if (done.status === 'sent') issueLink({ ...spec, comment: done.comment }).then((a) => { if (a && decided.get(key) === done) foot.append(a); });
         return;
       }
       const act = (label, cls, body) => button(label, cls, async () => {
@@ -330,7 +366,10 @@ const cedarHandover = (() => {
       const meta = [tr(`handover.category.${CATEGORIES.includes(f.category) ? f.category : 'other'}`), time(f.created_at)];
       if (f.user_name) meta.unshift(f.user_name);
       main.append(el('div', 'cedar-set-note', meta.join(' · ')));
-      row.append(main, button(tr('handover.feedback.delete'), 'copy-btn', async (e) => {
+      const acts = el('div', 'cedar-feedback-acts');
+      issueLink(f).then((a) => { if (a) acts.prepend(a); });
+      row.append(main, acts);
+      acts.append(button(tr('handover.feedback.delete'), 'copy-btn', async (e) => {
         e.currentTarget.disabled = true;
         try {
           await api('DELETE', `/feedback/${f.id}${everyone ? '?users=all' : ''}`, undefined, { admin: everyone });
