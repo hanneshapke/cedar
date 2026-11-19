@@ -805,10 +805,18 @@ it), then the memories by kind (*About you*, *Conversations*, *Ways of working*)
 *Archive*, newest first, each with the words it was taken from, the date, a link to the
 conversation it came from and how often it was used, with **Pin** (always shown to cedar),
 **Archive** or **Restore**, and **Remove** (for good) on each, **Export** for a backup, and
-**Forget all**. A change applies from the next message on, in every conversation. The thumbs on a
+**Forget all**. **Graph** draws the same memories as a network (`memory-graph.js` and
+`memory-graph.css`): every memory a mark (a circle for what is about you, a square for a
+conversation, a diamond for a way of working; bigger the more it weighs in recall, ringed when
+pinned, hollow when archived) and a line between two that came from the same conversation, share a
+topic, were used together, or replaced one another. Pointing at a mark lights up what it is linked
+to; choosing it shows the memory below the picture with its usual actions and the list of what it
+is linked to and why. The legend hides and shows each kind of mark and line, *Include the archive*
+adds what was replaced or archived, and the picture is dragged to move and zoomed with the buttons
+or a pinch. A change applies from the next message on, in every conversation. The thumbs on a
 reply are passed on to cedar, which counts them for or against what it learned in that run. The
 iOS and Android apps have the same page in Settings: the profile, the kinds and the archive, with
-pin, archive, restore and delete on each memory.
+pin, archive, restore and delete on each memory. The graph is on the web and in the desktop app only.
 
 Memory is the `memory` tool group, so **Settings → Tools** turns it off for new conversations and
 the conversation's **Tools** button for one conversation. If you ever unticked a group there,
@@ -1082,6 +1090,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers: `{models, selection}`. `selection` is cedar's `model_selection` setting: `false` (the default) means cedar chooses the model of every message, the pickers are hidden, and a `model` or `reasoning` sent with a message, saved in Settings or on an agent is not passed on |
 | `PUT /api/integrations/model-selection` | Turn choosing models on or off (`{"enabled": true \| false}`, cedar's `model_selection`); open to whoever may manage the models (`CHAT_MODELS_ACCESS`). Returns `{selection}`. The Advanced settings page's "Choose the model yourself" |
 | `GET /api/memory` | What cedar remembers about the user (`GET /v1/memory`): `{supported, items, limits}`, each item `{id, text, run_id, created_at, updated_at}` plus the `conversation_id` and `title` of the conversation it was saved in (`null` when there is none here). A cedar from before memory gives `supported: false` and no items. See [Memory](#memory) |
+| `GET /api/memory/graph` | Memory as a network (`GET /v1/memory/graph`): `{supported, nodes, edges, total, left_out}`, each node with its `conversation_id` and `title` as above. `?archived=true` and `?limit=` are passed on. A cedar from before the graph gives `supported: false` |
 | `POST /api/memory` | `{"text"}`: remember something by hand, relayed to `POST /v1/memory` |
 | `DELETE /api/memory/{id}` | Forget one memory (`404` if cedar has no such item) |
 | `DELETE /api/memory` | Forget everything cedar remembers about the user |

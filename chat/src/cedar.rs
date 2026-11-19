@@ -178,6 +178,16 @@ impl CedarClient {
         }
     }
 
+    /// Memory as a network (`GET /v1/memory/graph`): `{nodes, edges, total, left_out}`. `None`
+    /// from a cedar from before the graph. An older one with memory takes `graph` for a memory's
+    /// id and answers 404 as well.
+    pub async fn memory_graph(&self, query: &[(&str, &str)]) -> Result<Option<Value>, AppError> {
+        match self.json(self.http.get(self.url("/memory/graph")).query(query)).await {
+            Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => Ok(None),
+            other => other.map(Some),
+        }
+    }
+
     /// Remember something by hand (`{text, kind?, pinned?, valid_until?}`); cedar answers with the item.
     pub async fn add_memory(&self, body: &Value) -> Result<Value, AppError> {
         self.json(self.http.post(self.url("/memory")).json(body)).await

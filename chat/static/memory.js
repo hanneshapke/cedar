@@ -7,14 +7,21 @@
 // instructions the user stated (each with the words it was taken from and the conversation it
 // came from), what past conversations were about, and ways of working that went well; and the
 // archive, where superseded, expired and forgotten memories stay until deleted. Each row can be
-// pinned (always shown to Cedar), archived or restored, and removed for good. The page draws its
-// own section, like the Language page, and needs only its script tag after settings-shell.js.
+// pinned (always shown to Cedar), archived or restored, and removed for good. The Graph view
+// draws the same memories as a network (`/api/memory/graph`, with memory-graph.js, when that is
+// loaded): what came from one conversation, shares a topic, was used together or replaced
+// another, with the chosen memory and what it is linked to listed below the picture. The page
+// draws its own section, like the Language page, and needs only its script tag after
+// settings-shell.js.
 
 (() => {
   let data = null;      // the last GET /api/memory: { supported, items, profile, limits }
   let total = null;     // how many active memories there are of every kind, for the menu summary
   let tools = undefined; // the saved default tool selection (null: every group)
-  let view = 'about';    // 'about' | 'episodes' | 'procedures' | 'archived'
+  let view = 'about';    // 'about' | 'episodes' | 'procedures' | 'archived' | 'graph'
+  let graph = null;      // the last GET /api/memory/graph, in the graph view
+  let graphArchived = false; // whether the graph includes the archive
+  let graphSelected = null;  // the id of the memory chosen in the graph
 
   const VIEWS = {
     about: { kinds: ['fact', 'preference', 'instruction', 'temporary'], archived: false },
@@ -24,6 +31,7 @@
   };
   // Every active kind: the menu counts all memories, not just the ones the open view lists.
   const ALL_KINDS = [...new Set(Object.values(VIEWS).flatMap((v) => v.kinds))];
+  const hasGraph = () => typeof cedarMemoryGraph !== 'undefined';
 
   function el(tag, className, text) {
     const e = document.createElement(tag);
@@ -197,6 +205,70 @@
     return block;
   }
 
+  /** The graph view: the picture, then the chosen memory and what it is linked to. */
+  function graphParts(section) {
+    const parts = [];
+    const head = el('div', 'cedar-set-block-head');
+    head.append(el('span', 'settings-eyebrow', graph?.supported
+      ? tr('memory.graph.count', { nodes: graph.nodes.length, edges: graph.edges.length })
+      : tr('memory.view.graph')));
+    const archive = el('label', 'cedar-set-note');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = graphArchived;
+    box.addEventListener('change', () => { graphArchived = box.checked; reload(section); });
+    archive.append(box, ' ', tr('memory.graph.includeArchive'));
+    if (graph?.supported) head.append(archive);
+    parts.push(head);
+    if (!graph?.supported) {
+      parts.push(el('p', 'cedar-set-note', tr('memory.graph.unsupported')));
+      return parts;
+    }
+    if (!graph.nodes.length) {
+      parts.push(el('p', 'cedar-set-note', tr('memory.graph.empty')));
+      return parts;
+    }
+    parts.push(el('p', 'cedar-set-note', tr('memory.graph.intro')));
+    if (graph.left_out) parts.push(el('p', 'cedar-set-note', tr('memory.graph.leftOut', { count: graph.nodes.length, total: graph.total })));
+    const detail = el('div', 'cedar-mgraph');
+    const choose = (id) => {
+      graphSelected = id;
+      draw(section);
+    };
+    const showDetail = () => {
+      const item = graph.nodes.find((n) => n.id === graphSelected);
+      if (!item) {
+        detail.replaceChildren(el('p', 'cedar-set-note', tr('memory.graph.choose')));
+        return;
+      }
+      const list = el('div', 'cedar-set-models');
+      list.append(row(item, section));
+      const linked = cedarMemoryGraph.links(graph, item.id);
+      if (!linked.length) {
+        detail.replaceChildren(list, el('p', 'cedar-set-note', tr('memory.graph.noLinks')));
+        return;
+      }
+      const links = el('ul', 'cedar-mgraph-links');
+      for (const { node, reasons } of linked) {
+        const b = button('', () => choose(node.id), 'cedar-mgraph-link');
+        const group = node.kind === 'episode' ? 'episodes' : node.kind === 'procedure' ? 'procedures' : 'about';
+        const mark = el('span', `cedar-set-badge g-${group}`, tr(`memory.kind.${node.kind}`));
+        b.append(mark, el('span', 'what', node.text), el('span', 'why', reasons.join(' · ')));
+        const li = el('li');
+        li.append(b);
+        links.append(li);
+      }
+      detail.replaceChildren(list, el('span', 'settings-eyebrow', tr('memory.graph.linkedTo', { count: linked.length })), links);
+    };
+    parts.push(cedarMemoryGraph.element(graph, {
+      selected: graphSelected,
+      onSelect: (id) => { graphSelected = id; showDetail(); },
+    }));
+    showDetail();
+    parts.push(detail);
+    return parts;
+  }
+
   function draw(section) {
     shell()?.refresh('memory');
     if (!data) return;
@@ -215,7 +287,7 @@
     const block = el('div', 'cedar-set-block');
     const tabs = el('div', 'cedar-set-block-head');
     const chips = el('div', '');
-    for (const id of Object.keys(VIEWS)) {
+    for (const id of [...Object.keys(VIEWS), ...(hasGraph() ? ['graph'] : [])]) {
       const chip = button(tr(`memory.view.${id}`), () => { view = id; reload(section); }, 'settings-ghost');
       if (id === view) chip.setAttribute('aria-pressed', 'true');
       chips.append(chip, ' ');
@@ -224,6 +296,12 @@
     actions.append(button(tr('memory.export'), exportAll, 'settings-ghost'), ' ', button(tr('memory.forgetAll'), () => forgetAll(section), 'settings-ghost'));
     tabs.append(chips, actions);
     block.append(tabs);
+    if (view === 'graph') {
+      block.append(...graphParts(section));
+      parts.push(block, el('p', 'cedar-set-note', tr('memory.privacy')));
+      section.replaceChildren(...parts);
+      return;
+    }
     const head = el('div', 'cedar-set-block-head');
     head.append(el('span', 'settings-eyebrow', tr('memory.count', { count: data.items.length })));
     block.append(head);
@@ -240,16 +318,20 @@
   }
 
   async function reload(section) {
-    const v = VIEWS[view];
+    // The graph view lists nothing itself; it keeps the rows about the user for the profile and "Forget all".
+    const v = VIEWS[view] || VIEWS.about;
     const params = new URLSearchParams();
     if (v.kinds.length) params.set('kind', v.kinds.join(','));
     if (v.archived) params.set('archived', 'true');
     try {
-      const [memory, all, prefs] = await Promise.all([
+      const [memory, all, prefs, net] = await Promise.all([
         api('GET', `/memory?${params}`),
         api('GET', `/memory?${new URLSearchParams({ kind: ALL_KINDS.join(',') })}`).catch(() => null),
         api('GET', '/settings').catch(() => null),
+        // A chat server from before the graph has no such route.
+        view === 'graph' ? api('GET', `/memory/graph${graphArchived ? '?archived=true' : ''}`).catch(() => ({ supported: false })) : null,
       ]);
+      graph = net;
       data = memory;
       total = all && all.supported ? all.items.length : null;
       tools = prefs ? prefs.tools : undefined;

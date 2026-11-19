@@ -228,6 +228,7 @@ pub fn router_with(
         )
         .route("/memory/profile", get(get_profile).put(set_profile))
         .route("/memory/export", get(export_memory))
+        .route("/memory/graph", get(memory_graph))
         .route("/memory/import", post(import_memory))
         .route("/memory/{id}", get(get_memory).patch(edit_memory).delete(forget_memory))
         .route("/memory/{id}/history", get(memory_history))
@@ -893,6 +894,27 @@ async fn edit_memory(
         Ok(None) => Err(AppError::NotFound("memory not found")),
         Err(r) => Err(refused(r)),
     }
+}
+
+#[derive(Deserialize, Default)]
+struct GraphQuery {
+    /// Archived and superseded rows too, with the edges to what replaced them.
+    #[serde(default)]
+    archived: bool,
+    /// The most nodes; the highest-ranked rows are kept.
+    limit: Option<usize>,
+}
+
+/// The caller's memory as a network (see [`memory::graph`]): `{nodes, edges, total, left_out}`,
+/// each node a memory with its `rank` and `degree`, each edge `{source, target, kind, weight,
+/// topics?}`.
+async fn memory_graph(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    axum::extract::Query(q): axum::extract::Query<GraphQuery>,
+) -> Result<Json<memory::graph::Graph>, AppError> {
+    let limit = q.limit.unwrap_or(memory::graph::DEFAULT_NODES);
+    Ok(Json(state.memories.graph(&owner.0, q.archived, limit).await?))
 }
 
 /// A memory's versions and audit rows: `{versions: [...], ops: [...]}`.

@@ -123,6 +123,8 @@ const MODELS_JS: &str = include_str!("../static/models.js");
 const MODELS_CSS: &str = include_str!("../static/models.css");
 const SETTINGS_SHELL_JS: &str = include_str!("../static/settings-shell.js");
 const MEMORY_JS: &str = include_str!("../static/memory.js");
+const MEMORY_GRAPH_JS: &str = include_str!("../static/memory-graph.js");
+const MEMORY_GRAPH_CSS: &str = include_str!("../static/memory-graph.css");
 const RECORDS_JS: &str = include_str!("../static/records.js");
 const TRACE_VIEW_JS: &str = include_str!("../static/trace-view.js");
 const TRACE_VIEW_CSS: &str = include_str!("../static/trace-view.css");
@@ -407,6 +409,7 @@ pub fn router(state: AppState) -> Router {
         .route("/memory", get(list_memory).post(add_memory).delete(delete_all_memory))
         .route("/memory/profile", get(get_memory_profile).put(put_memory_profile))
         .route("/memory/export", get(export_memory))
+        .route("/memory/graph", get(memory_graph))
         .route("/memory/{id}", axum::routing::patch(patch_memory).delete(delete_memory))
         .route("/memory/{id}/history", get(memory_history))
         .route("/records", get(list_records).delete(delete_all_records))
@@ -479,6 +482,8 @@ pub fn router(state: AppState) -> Router {
         .route("/models.css", get(|| async { asset(CSS, MODELS_CSS) }))
         .route("/settings-shell.js", get(|| async { asset(JS, SETTINGS_SHELL_JS) }))
         .route("/memory.js", get(|| async { asset(JS, MEMORY_JS) }))
+        .route("/memory-graph.js", get(|| async { asset(JS, MEMORY_GRAPH_JS) }))
+        .route("/memory-graph.css", get(|| async { asset(CSS, MEMORY_GRAPH_CSS) }))
         .route("/records.js", get(|| async { asset(JS, RECORDS_JS) }))
         .route("/trace-view.js", get(|| async { asset(JS, TRACE_VIEW_JS) }))
         .route("/trace-view.css", get(|| async { asset(CSS, TRACE_VIEW_CSS) }))
@@ -1734,6 +1739,28 @@ async fn list_memory(Scoped(state): Scoped, Query(q): Query<HashMap<String, Stri
         item["title"] = json!(source.and_then(|(_, title)| title.clone()));
     }
     Ok(Json(json!({ "supported": true, "items": items, "profile": body["profile"].take(), "limits": body["limits"].take() })))
+}
+
+/// Settings -> Memory -> Graph: cedar's memory as a network, `{supported, nodes, edges, total,
+/// left_out}`, each node a memory with the `conversation_id` and `title` of the conversation it
+/// was saved in, as in the list. `?archived=true` and `?limit=` go through to cedar. A cedar from
+/// before the graph gives `supported: false`.
+async fn memory_graph(Scoped(state): Scoped, Query(q): Query<HashMap<String, String>>) -> Result<Json<Value>, AppError> {
+    let query: Vec<(&str, &str)> = q.iter().filter(|(k, _)| ["archived", "limit"].contains(&k.as_str())).map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let Some(mut body) = state.cedar.memory_graph(&query).await? else {
+        return Ok(Json(json!({ "supported": false, "nodes": [], "edges": [], "total": 0, "left_out": 0 })));
+    };
+    let mut nodes = body["nodes"].as_array().cloned().unwrap_or_default();
+    let runs: Vec<Uuid> = nodes.iter().filter_map(|i| i["run_id"].as_str()?.parse().ok()).collect();
+    let sources = state.store.conversations_of_runs(&runs).await?;
+    for node in &mut nodes {
+        let source = node["run_id"].as_str().and_then(|r| r.parse::<Uuid>().ok()).and_then(|r| sources.get(&r));
+        node["conversation_id"] = json!(source.map(|(id, _)| id));
+        node["title"] = json!(source.and_then(|(_, title)| title.clone()));
+    }
+    body["nodes"] = json!(nodes);
+    body["supported"] = json!(true);
+    Ok(Json(body))
 }
 
 #[derive(Deserialize)]

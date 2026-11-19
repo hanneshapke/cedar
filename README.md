@@ -88,6 +88,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `GET /v1/memory/profile` | The profile: `{profile: {text, user_edited, updated_at}}` or `{profile: null}`. |
 | `PUT /v1/memory/profile` | Write the profile by hand: `{"text"}` (at most 1,600 characters; empty clears it). It then stays as written and the consolidation pass leaves it alone. |
 | `GET /v1/memory/export` | Everything, for a backup: `{version: 2, profile, items}` (active and archived). `POST /v1/memory/import` adds an export's active rows and its profile (when there is none): returns `{added}`. |
+| `GET /v1/memory/graph` | Memory as a network: `{nodes, edges, total, left_out}`. Each node is a memory as in `GET /v1/memory`, plus its `rank` (how much it weighs in recall) and `degree`; each edge is `{source, target, kind, weight, topics?}`, with `kind` one of `conversation` (saved by the same run), `topic` (shared tags, listed in `topics`; `weight` is how many), `recalled` (shown together to a run because its request called for both; `weight` is how often), and `superseded` or `merged` (from the old row to the one that replaced it). Active rows only; `?archived=true` adds archived and superseded ones. At most `?limit=` nodes (300; up to 1,000), the highest-ranked, with the rest counted in `left_out`. See [Memory](#memory). |
 | `GET /v1/records` | The record sets your runs keep for you, oldest first: `{sets: [{id, name, description, key_fields, health_data, count, columns, created_at, updated_at}], limits: {max_sets, max_items, max_record_chars, max_batch}}`. See [Records](#records). |
 | `GET /v1/records/{name}` | One set with all its records, oldest first: `{set, records: [{id, key, data, run_id, created_at, updated_at}]}`. `run_id` is the run that saved the record last, `null` for one uploaded by hand or once that run is deleted. `404` if it isn't yours. |
 | `POST /v1/records/{name}` | Save records by hand, as `records_save` would: `{"records": [{...}, ...], "description"?, "key"?, "health_data"?}`. A weekly export can go straight in this way. Returns `201` with `{set, added, updated}` when the set is new, else `200`. `409` when the set or the limit is full or `RECORDS=off`; `400` with the reason for a bad name, record or key. |
@@ -558,7 +559,12 @@ the research on agent memory says works (see [docs/design/memory.md](docs/design
   profile; `PATCH /v1/memory/{id}` edits, pins, archives and restores; `GET /v1/memory/{id}/history`
   shows a row's versions and who changed it when; `PUT /v1/memory/profile` writes the profile;
   `DELETE` forgets a row or everything for good; `GET /v1/memory/export` backs it all up and
-  `POST /v1/memory/import` brings it back. The chat shows the profile and the rows in Settings →
+  `POST /v1/memory/import` brings it back. `GET /v1/memory/graph` gives the same rows as a
+  network: a node per memory and an edge wherever two are already linked by what is stored (saved
+  by the same run, sharing a topic tag, shown together to a run because its request called for
+  both, one superseding or merged into the other). It is built per request from the rows, the
+  audit log and the `memory.recalled` events of the owner's 200 newest runs, and nothing of it is
+  kept; a tag shared by many rows is thinned to each row's four strongest links. The chat shows the profile and the rows in Settings →
   Memory on the web, the desktop app, iOS and Android ([chat/README.md](chat/README.md#memory)).
   Deleting a run or a conversation keeps its memories.
 

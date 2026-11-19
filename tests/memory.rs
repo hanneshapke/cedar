@@ -539,6 +539,60 @@ async fn the_api_lists_adds_changes_and_deletes_per_owner() {
 }
 
 #[tokio::test]
+async fn the_graph_links_memories_by_what_they_share() {
+    let app = TestApp::new(vec![]).await;
+    let home = |city: &str| json!({ "text": format!("Lives in {city}"), "subject": "user", "relation": "home" });
+    let (_, berlin) = add_with(&app, KEY_A, home("Berlin")).await;
+    let (_, trip) = add(&app, KEY_A, "Is planning a trip to Lisbon").await;
+    let (_, cat) = add(&app, KEY_A, "Has a cat").await;
+    for (m, topics) in [(&berlin, json!(["travel", "home"])), (&trip, json!(["travel"]))] {
+        let path = format!("/v1/memory/{}", m["id"].as_str().unwrap());
+        let (status, body) = app.json(Method::PATCH, &path, Some(KEY_A), Some(json!({ "topics": topics }))).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    let (status, graph) = app.get("/v1/memory/graph", KEY_A).await;
+    assert_eq!(status, StatusCode::OK, "{graph}");
+    let nodes = graph["nodes"].as_array().unwrap();
+    assert_eq!(nodes.len(), 3);
+    assert_eq!((&graph["total"], &graph["left_out"]), (&json!(3), &json!(0)));
+    // A node is the memory itself, with its rank and how many edges it has.
+    assert_eq!(nodes[0]["id"], berlin["id"]);
+    assert_eq!(nodes[0]["text"], "Lives in Berlin");
+    assert_eq!(nodes[0]["short_id"], "m1");
+    assert_eq!(nodes[0]["degree"], 1);
+    assert!(nodes[0]["rank"].as_f64().unwrap() > 0.0);
+    assert_eq!(nodes[2]["degree"], 0);
+    assert_eq!(
+        graph["edges"],
+        json!([{ "source": berlin["id"], "target": trip["id"], "kind": "topic", "weight": 1, "topics": ["travel"] }])
+    );
+
+    // A keyed fact with a new value: the old row is only in the graph with the archive.
+    let (status, hamburg) = add_with(&app, KEY_A, home("Hamburg")).await;
+    assert_eq!(status, StatusCode::CREATED, "{hamburg}");
+    let (_, graph) = app.get("/v1/memory/graph", KEY_A).await;
+    assert_eq!(graph["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(graph["edges"], json!([]));
+    let (_, graph) = app.get("/v1/memory/graph?archived=true", KEY_A).await;
+    assert_eq!(graph["nodes"].as_array().unwrap().len(), 4);
+    let edges = graph["edges"].as_array().unwrap();
+    assert!(
+        edges.contains(&json!({ "source": berlin["id"], "target": hamburg["id"], "kind": "superseded", "weight": 1 })),
+        "{edges:?}"
+    );
+
+    // The lowest-ranked rows give way to a limit, and another key sees nothing.
+    let (_, graph) = app.get("/v1/memory/graph?limit=1", KEY_A).await;
+    assert_eq!(graph["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(graph["left_out"], 2);
+    let (status, graph) = app.get("/v1/memory/graph", KEY_B).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(graph, json!({ "nodes": [], "edges": [], "total": 0, "left_out": 0 }));
+    let _ = cat;
+}
+
+#[tokio::test]
 async fn an_interactive_run_notes_the_facts_the_user_stated() {
     let app = TestApp::with_env(
         vec![
