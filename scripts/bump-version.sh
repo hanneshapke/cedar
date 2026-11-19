@@ -140,7 +140,7 @@ set_cedar() {
     /^\[/ { inpkg = ($0 == "[package]") }
     inpkg && /^version *=/ { sub(/"[^"]*"/, "\"" new "\"") }
     { print }'
-  bump_lock Cargo.lock "cedar cedar-chat cedar-pairing cedar-llama cedar-contrib-schema cedar-contrib" "$new"
+  bump_lock Cargo.lock "cedar cedar-chat cedar-pairing cedar-llama cedar-contrib-schema cedar-contrib cedar-contrib-web" "$new"
   bump_lock desktop/Cargo.lock "cedar-app cedar-pairing cedar-llama" "$new"
   # Landing site.
   rewrite docs/landing/version.js -v new="$new" -v q="'" '

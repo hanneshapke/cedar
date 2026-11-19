@@ -47,6 +47,10 @@ pub struct Config {
     /// `CONTRIB_ABLATION_HOOK`: the command the ablation job runs per training set (see
     /// `ablation`). Unset, the job writes the sets and stops.
     pub ablation_hook: Option<String>,
+    /// `CONTRIB_CORS_ORIGINS`: origins (`https://example.org`, comma-separated) whose pages may
+    /// call the contribution routes from a browser: the contribution site (`contrib-web`) when
+    /// it is served from somewhere else. Empty: none, as before.
+    pub cors_origins: Vec<String>,
 }
 
 impl Config {
@@ -95,6 +99,9 @@ impl Config {
             screen_batch: num("CONTRIB_SCREEN_BATCH", get("CONTRIB_SCREEN_BATCH"), 200)? as usize,
             aging_days: num("CONTRIB_AGING_DAYS", get("CONTRIB_AGING_DAYS"), 14)?,
             ablation_hook: get("CONTRIB_ABLATION_HOOK"),
+            cors_origins: get("CONTRIB_CORS_ORIGINS")
+                .map(|o| o.split(',').map(|s| s.trim().trim_end_matches('/').to_string()).filter(|s| !s.is_empty()).collect())
+                .unwrap_or_default(),
         })
     }
 
@@ -128,5 +135,12 @@ mod tests {
         assert!(c.model_allowed("Qwen/Qwen3-8B"));
         assert!(!c.model_allowed("openai/gpt-5"));
         assert!(cfg(&[("CONTRIB_HMAC_KEY", "0123456789abcdef0123456789abcdef")]).unwrap().model_allowed("anything"));
+    }
+
+    #[test]
+    fn cors_origins_are_a_list_without_trailing_slashes() {
+        let c = cfg(&[("CONTRIB_HMAC_KEY", "0123456789abcdef0123456789abcdef"), ("CONTRIB_CORS_ORIGINS", "https://a.example/, https://b.example")]).unwrap();
+        assert_eq!(c.cors_origins, vec!["https://a.example", "https://b.example"]);
+        assert!(cfg(&[("CONTRIB_HMAC_KEY", "0123456789abcdef0123456789abcdef")]).unwrap().cors_origins.is_empty());
     }
 }

@@ -176,6 +176,10 @@ resource "google_cloud_run_v2_service" "api" {
         value = join(",", var.models)
       }
       env {
+        name  = "CONTRIB_CORS_ORIGINS"
+        value = join(",", var.cors_origins)
+      }
+      env {
         name = "CONTRIB_HMAC_KEY"
         value_source {
           secret_key_ref {

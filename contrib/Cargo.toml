@@ -22,10 +22,14 @@ sha2 = "0.10"
 subtle = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time"] }
+# CORS for the contribution site (`contrib-web`), when it is served from another origin.
+tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+# The contribution site's engine, to check that what it builds is what this ingest takes.
+cedar-contrib-web = { path = "../contrib-web" }
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }

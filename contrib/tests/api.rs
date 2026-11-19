@@ -222,3 +222,50 @@ async fn the_review_page_lists_held_bundles_and_takes_decisions() {
     let (status, _) = h2.call(Method::GET, "/review", None, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn the_contribution_sites_bundles_are_taken_and_its_origin_may_call() {
+    let h = Harness::new(&[("CONTRIB_CORS_ORIGINS", "https://contribute.example")]);
+    // A ChatGPT conversation as the site builds it in the browser, with a secret and an address
+    // in it that the site's redaction must have replaced.
+    let conv = cedar_contrib_web::chatgpt::fixture(
+        "t",
+        &[
+            ("user", "", json!({ "content_type": "text", "parts": ["write to maya.real@gmail.com with key sk-proj-abcdefghijklmnopqrstuvwx and plot the primes"] })),
+            ("assistant", "python", json!({ "content_type": "code", "text": "print([2, 3, 5])" })),
+            ("tool", "python", json!({ "content_type": "execution_output", "text": "[2, 3, 5]" })),
+            ("assistant", "all", json!({ "content_type": "text", "parts": ["Here they are: 2, 3, 5."] })),
+        ],
+    );
+    let out: Value = serde_json::from_str(&cedar_contrib_web::handle(&json!({ "conversation": conv, "seed": "0123456789abcdef" }).to_string())).unwrap();
+    let preview = &out["ok"];
+    assert_eq!(preview["blocked"], json!([]), "{preview}");
+    let sent: Value = serde_json::from_str(preview["json"].as_str().unwrap()).unwrap();
+    let (status, receipt) = h.submit(&sent).await;
+    assert_eq!(status, StatusCode::CREATED, "{receipt}");
+
+    // Preflight from the site's origin is answered; another origin gets no CORS headers, and the
+    // review page never does.
+    let preflight = |origin: &str, uri: &str| {
+        Request::builder()
+            .method(Method::OPTIONS)
+            .uri(uri)
+            .header("origin", origin)
+            .header("access-control-request-method", "POST")
+            .header("access-control-request-headers", "content-type")
+            .body(Body::empty())
+            .unwrap()
+    };
+    let resp = h.app.clone().oneshot(preflight("https://contribute.example", "/v1/contributions")).await.unwrap();
+    assert_eq!(resp.headers().get("access-control-allow-origin").unwrap(), "https://contribute.example");
+    let resp = h.app.clone().oneshot(preflight("https://elsewhere.example", "/v1/contributions")).await.unwrap();
+    assert!(resp.headers().get("access-control-allow-origin").is_none());
+    let resp = h.app.clone().oneshot(preflight("https://contribute.example", "/review/api/x")).await.unwrap();
+    assert!(resp.headers().get("access-control-allow-origin").is_none());
+
+    // An ingest that publishes other models' outputs only refuses it, as the site's review says.
+    let strict = Harness::new(&[("CONTRIB_MODELS", "deepseek-ai/*")]);
+    let (status, err) = strict.submit(&sent).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"]["code"], "model_not_allowed");
+}

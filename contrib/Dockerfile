@@ -6,6 +6,7 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY contrib-schema ./contrib-schema
 COPY contrib ./contrib
+COPY contrib-web ./contrib-web
 COPY pairing ./pairing
 COPY llama ./llama
 COPY chat ./chat

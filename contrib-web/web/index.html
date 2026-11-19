@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contribute a conversation · Cedar</title>
+<meta name="description" content="Give one of your ChatGPT or Claude conversations to Cedar's open corpus. Your export is read in this page and never uploaded; only the conversation you review and send leaves your browser.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.js"></script>
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="./"><img src="favicon.svg" width="28" height="28" alt=""><span>Cedar</span></a>
+  <nav><a href="#receipts">Your contributions</a></nav>
+</header>
+
+<main>
+  <section class="hero">
+    <h1>Contribute a conversation</h1>
+    <p class="lead">Give one of your ChatGPT or Claude conversations to Cedar's open corpus, which trains an open-weight agent model. Your export is read in this page and is never uploaded. Only the one conversation you review and send leaves your browser.</p>
+    <ul class="promises">
+      <li><strong>One at a time.</strong> You read every conversation before it goes. There is no "send all".</li>
+      <li><strong>Redacted here.</strong> Keys, emails, phone and card numbers, IP addresses and user names are replaced with fake values of the same shape. You can add your own phrases.</li>
+      <li><strong>No account.</strong> You can stay anonymous or use a random pseudonym, and you can withdraw a contribution later.</li>
+    </ul>
+  </section>
+
+  <section class="card" id="step-load">
+    <h2><span class="num">1</span> Load your export</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".zip,.json,application/zip,application/json">
+      <span class="drop-main">Drop your export here, or <u>choose a file</u></span>
+      <span class="drop-sub">The .zip you downloaded, or the conversations.json inside it</span>
+    </label>
+    <p class="status" id="load-status" role="status" aria-live="polite"></p>
+    <div class="howto">
+      <details>
+        <summary>How to export from ChatGPT</summary>
+        <ol>
+          <li>In ChatGPT, open <em>Settings → Data controls</em>.</li>
+          <li>Choose <em>Export data</em> and confirm. OpenAI emails you a download link, usually within minutes.</li>
+          <li>Download the .zip and drop it above. You don't need to unpack it.</li>
+        </ol>
+      </details>
+      <details>
+        <summary>How to export from Claude</summary>
+        <ol>
+          <li>On claude.ai, open <em>Settings → Privacy</em>.</li>
+          <li>Choose <em>Export data</em>. Anthropic emails you a download link.</li>
+          <li>Download the .zip and drop it above. Claude's export doesn't say which model answered, so you'll be asked.</li>
+        </ol>
+      </details>
+    </div>
+  </section>
+
+  <section class="card" id="step-pick" hidden>
+    <h2><span class="num">2</span> Pick a conversation</h2>
+    <p class="hint">Titles are shown here only. They are never part of what you send.</p>
+    <input type="search" id="filter" placeholder="Search titles" aria-label="Search conversation titles">
+    <ul class="convs" id="convs"></ul>
+    <p class="hint" id="convs-more"></p>
+  </section>
+
+  <section class="card review" id="step-review" hidden>
+    <h2><span class="num">3</span> Review what will be sent</h2>
+    <div class="review-grid">
+      <div class="transcript-col">
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tab-conv" aria-selected="true">Conversation</button>
+          <button role="tab" id="tab-raw" aria-selected="false">Raw JSON</button>
+        </div>
+        <div id="transcript" class="transcript" role="tabpanel" aria-labelledby="tab-conv"></div>
+        <div id="raw" class="raw" role="tabpanel" aria-labelledby="tab-raw" hidden>
+          <p class="hint">This is the exact document Send posts, formatted for reading. <a href="#" id="download">Download it</a></p>
+          <pre id="raw-pre"></pre>
+        </div>
+        <button type="button" id="redact-pop" class="redact-pop" hidden>Redact selection</button>
+      </div>
+
+      <aside class="panel">
+        <div id="verdict" class="verdict"></div>
+
+        <fieldset>
+          <legend>Model</legend>
+          <p id="model-line" class="model-line"></p>
+          <div id="model-pick" hidden>
+            <label for="model-input">Which Claude model answered? Claude's export doesn't say.</label>
+            <input id="model-input" list="claude-models" placeholder="claude-sonnet-4-5" autocomplete="off">
+            <datalist id="claude-models">
+              <option value="claude-opus-4-5"><option value="claude-sonnet-4-5"><option value="claude-haiku-4-5">
+              <option value="claude-opus-4-1"><option value="claude-sonnet-4"><option value="claude-3-7-sonnet"><option value="claude-3-5-sonnet">
+            </datalist>
+          </div>
+          <p class="hint">OpenAI's and Anthropic's terms limit using their models' outputs to train other models. The corpus publishes a model's outputs only where its operator has decided that's allowed. If it doesn't take this model, Send stays off.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>What to include</legend>
+          <label class="row" for="upto">The first <input type="number" id="upto" min="1" max="50" value="50" inputmode="numeric"> of <span id="upto-total">0</span> exchanges</label>
+          <label class="row"><input type="checkbox" id="opt-reasoning"> The model's reasoning, where the export has it</label>
+          <label class="row"><input type="checkbox" id="opt-fetched"> Web pages the model read (copyrighted text; left out by default)</label>
+          <label class="row" for="language">Language
+            <select id="language">
+              <option value="en">English</option><option value="de">German</option><option value="fr">French</option><option value="es">Spanish</option>
+              <option value="it">Italian</option><option value="pt">Portuguese</option><option value="nl">Dutch</option><option value="pl">Polish</option>
+              <option value="ja">Japanese</option><option value="zh">Chinese</option><option value="ko">Korean</option><option value="ru">Russian</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Redactions</legend>
+          <ul id="standins" class="standins"></ul>
+          <p class="hint">Names, employers and places have no fixed shape, so the scan can't find them. Replace them yourself: select text in the conversation, or type it here.</p>
+          <form id="phrase-form" class="phrase-form">
+            <input id="phrase" placeholder="Text to replace" aria-label="Text to replace" autocomplete="off">
+            <input id="replacement" placeholder="Replace with (optional)" aria-label="Replacement" autocomplete="off">
+            <button type="submit">Add</button>
+          </form>
+          <ul id="phrases" class="phrases"></ul>
+          <p class="hint" id="dropped"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>How did it go?</legend>
+          <div class="seg" role="radiogroup" aria-label="Outcome">
+            <label><input type="radio" name="outcome" value="succeeded"> Did what I asked</label>
+            <label><input type="radio" name="outcome" value="partly"> Partly</label>
+            <label><input type="radio" name="outcome" value="failed"> Failed</label>
+          </div>
+          <textarea id="notes" rows="2" placeholder="What was wrong? (optional; redacted like the rest)" aria-label="What was wrong"></textarea>
+          <p class="hint">Rate single answers with the thumbs in the conversation.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>License and name</legend>
+          <label class="row"><input type="radio" name="license" value="cc0" checked> CC0: no conditions, the most useful for training</label>
+          <label class="row"><input type="radio" name="license" value="cc-by-4.0"> CC BY 4.0: credit to your pseudonym</label>
+          <label class="row"><input type="checkbox" id="use-pseudonym"> Link my contributions under a pseudonym</label>
+          <p class="hint" id="pseudonym-line"></p>
+        </fieldset>
+
+        <label class="row consent"><input type="checkbox" id="consent"> I've read the conversation as it will be sent. It's mine to give, and I release my part of it under the license above.</label>
+        <button type="button" id="send" class="send" disabled>Send to the corpus</button>
+        <p class="status" id="send-status" role="status" aria-live="polite"></p>
+        <p class="hint">Sends to <span id="ingest-host"></span>. The service keeps no request logs and no IP addresses.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="card" id="receipts">
+    <h2>Your contributions</h2>
+    <p class="hint">Receipts are kept in this browser only. Each one holds the token that withdraws the contribution, so download them if you might clear your browser data. Withdrawing removes a contribution from the queue and from future releases. It can't recall copies of releases that are already published.</p>
+    <ul id="receipt-list" class="receipts"></ul>
+    <div class="receipt-actions">
+      <button type="button" id="refresh-receipts">Refresh status</button>
+      <button type="button" id="export-receipts">Download receipts</button>
+      <label class="button-like">Import receipts<input type="file" id="import-receipts" accept=".json,application/json" hidden></label>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>Cedar is open source under the Apache 2.0 license. <a href="https://github.com/hanneshapke/cedar/blob/main/docs/design/contributions.md">How contributions work</a> · <a href="https://github.com/hanneshapke/cedar/tree/main/contrib-web">This page's source</a></p>
+</footer>
+<noscript><p class="noscript">This page needs JavaScript and WebAssembly to read your export in the browser.</p></noscript>
+</body>
+</html>

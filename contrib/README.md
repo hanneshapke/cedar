@@ -199,6 +199,7 @@ CEDAR_API_KEY=devkey CHAT_CONTRIBUTIONS_URL=http://127.0.0.1:8090 cargo run -p c
 | `CONTRIB_QUOTA_DAY`, `_MONTH`, `_NEW`, `_CLUSTER`, `CONTRIB_IP_PER_MINUTE` | 20, 200, 3, 5, 30 | See Quotas |
 | `CONTRIB_MAX_BUNDLE_BYTES` | 8 MiB | |
 | `CONTRIB_REVIEW_TOKEN` | unset | Serves the review page at `/review` to whoever presents it |
+| `CONTRIB_CORS_ORIGINS` | unset | Origins (comma-separated) whose pages may call `/v1/contributions` and `/v1/policy` from a browser: the [contribution site](../contrib-web/README.md) when it is served from elsewhere. The review page never answers them |
 | `CONTRIB_JUDGE_URL`, `CONTRIB_JUDGE_MODEL`, `CONTRIB_JUDGE_API_KEY` | unset, `judge`, unset | The judge model's chat-completions endpoint; without one, the screener holds injected results for review |
 | `CONTRIB_RELEASE_KEY` | unset | Signs release manifests (HMAC-SHA256) |
 | `CONTRIB_SCREEN_BATCH`, `CONTRIB_AGING_DAYS` | 200, 14 | Bundles per screener run; days an accepted bundle waits before a release |

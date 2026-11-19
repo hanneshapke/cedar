@@ -50,14 +50,37 @@ impl AppState {
 
 pub fn router(state: AppState) -> Router {
     let max = state.cfg.max_bundle_bytes + 1024;
-    Router::new()
+    let mut contributions = Router::new()
         .route("/v1/contributions", axum::routing::post(submit).layer(DefaultBodyLimit::max(max)))
         .route("/v1/contributions/{id}", get(status).delete(withdraw))
-        .route("/v1/policy", get(policy))
+        .route("/v1/policy", get(policy));
+    // The contribution site sends from a person's browser; when it is served from another
+    // origin, these routes (and only these: not the review page) answer its preflights. No
+    // credentials: the withdraw token travels in a header the page sets itself.
+    if let Some(cors) = cors(&state.cfg.cors_origins) {
+        contributions = contributions.layer(cors);
+    }
+    Router::new()
+        .merge(contributions)
         .route("/healthz", get(|| async { "ok" }))
         .merge(crate::review::router())
         .fallback(|| async { ApiError::NotFound.into_response() })
         .with_state(state)
+}
+
+fn cors(origins: &[String]) -> Option<tower_http::cors::CorsLayer> {
+    use axum::http::{header, HeaderValue, Method};
+    let origins: Vec<HeaderValue> = origins.iter().filter_map(|o| HeaderValue::from_str(o).ok()).collect();
+    if origins.is_empty() {
+        return None;
+    }
+    Some(
+        tower_http::cors::CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods([Method::GET, Method::POST, Method::DELETE])
+            .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+            .max_age(std::time::Duration::from_secs(3600)),
+    )
 }
 
 // -- errors ----------------------------------------------------------------------------------

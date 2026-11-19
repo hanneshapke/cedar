@@ -282,6 +282,13 @@ one-time choices, the receipts and what the corpus says about each (screened, he
 sending and withdrawal, and the corpus side (`contrib/`: the ingest, the screener, the review
 page and the release job; see its own design and README).
 
+A standalone **contribution site** (`contrib-web/`, published at `/contribute/` on the project's
+site) takes conversations people had with ChatGPT and Claude, from those services' data exports.
+The export is read in the browser; the same scan and checks run there, compiled to WebAssembly,
+and the bundle goes to the same ingest (`model.id` `chatgpt-export` or `claude-export`, names
+under `openai/` and `anthropic/`). Whether the corpus publishes those models' outputs is the
+ingest's `CONTRIB_MODELS` (§8): until it lists them, the site's review says so and Send stays off.
+
 What differs from the text above, on purpose, for now:
 
 - **The operator layer (§3, 1) has a default.** `CHAT_CONTRIBUTIONS_URL` unset means the project's

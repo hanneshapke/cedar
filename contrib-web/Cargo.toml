@@ -1,0 +1,17 @@
+[package]
+name = "cedar-contrib-web"
+version.workspace = true
+edition = "2021"
+description = "The contribution site's engine: turns ChatGPT and Claude data exports into contribution bundles, redacted and checked with cedar-contrib-schema, compiled to WebAssembly so it all runs in the person's browser"
+license = "Apache-2.0"
+
+[lib]
+# cdylib: the WebAssembly module the site loads; rlib: the tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cedar-contrib-schema = { path = "../contrib-schema" }
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"

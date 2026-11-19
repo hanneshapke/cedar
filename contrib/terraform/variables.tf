@@ -31,6 +31,12 @@ variable "models" {
   description = "Models whose outputs this corpus publishes: exact names or prefixes ending in *."
 }
 
+variable "cors_origins" {
+  type        = list(string)
+  default     = []
+  description = "Origins whose pages may call the contribution routes from a browser: the contribution site (contrib-web), e.g. [\"https://example.github.io\"]. Empty: none."
+}
+
 variable "min_instances" {
   type        = number
   default     = 0

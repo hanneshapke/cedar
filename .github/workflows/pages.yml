@@ -22,6 +22,8 @@ on:
       - docs/assets/**
       - docs/screenshots/**
       - docs/sidestore/**
+      - contrib-web/**
+      - contrib-schema/**
       - iOS/Cedar/Assets.xcassets/AppIcon.appiconset/**
       - .github/workflows/pages.yml
   workflow_dispatch:
@@ -88,6 +90,16 @@ jobs:
             echo "::error file=docs/landing/index.html::a ../ path is left in the page, so it would break once published"
             exit 1
           fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: The contribution site
+        # contrib-web: people contribute ChatGPT and Claude conversations from their data exports,
+        # read in the browser. It sends to the project's ingest, which must list this site's
+        # origin in CONTRIB_CORS_ORIGINS (the cors_origins variable in contrib/terraform).
+        run: contrib-web/build.sh _site/contribute
 
       - name: The version the site shows
         # The latest published release, not whatever main says: main carries a release's version

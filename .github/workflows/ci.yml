@@ -76,6 +76,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --locked
+      # The contribution site's engine must still build for the browser.
+      - run: rustup target add wasm32-unknown-unknown && contrib-web/build.sh
 
   # The servers and the desktop app on Windows (desktop/README.md). Steps run in PowerShell, so
   # the Perl that builds cedar-chat's static OpenSSL is Strawberry Perl, not Git's.
