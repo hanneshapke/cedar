@@ -1,6 +1,7 @@
 //! Talking to Cedar from Slack.
 //!
-//! A Slack app (`CHAT_SLACK_APP_TOKEN` and `CHAT_SLACK_BOT_TOKEN`) is the way in. Its events come
+//! A Slack app is the way in: its tokens set in the environment (`CHAT_SLACK_APP_TOKEN` and
+//! `CHAT_SLACK_BOT_TOKEN`), or saved by an admin in Settings -> Slack ([`SlackHub`]). Its events come
 //! over Slack's Socket Mode: this service opens a WebSocket to Slack and Slack sends each event
 //! down it, so Slack never needs to reach this server and no public address is involved.
 //!
@@ -62,6 +63,121 @@ const ACTION_ALWAYS: &str = "cedar_allow_always";
 const ACTION_DENY: &str = "cedar_deny";
 const ACTION_PLAN_GO: &str = "cedar_plan_go";
 const ACTION_PLAN_STOP: &str = "cedar_plan_stop";
+
+/// The Slack app in use. Tokens set in the environment are the app for as long as the server runs;
+/// without them, an admin saves (or removes) the app's tokens in Settings -> Slack, and the
+/// connection follows (see `start`).
+pub struct SlackHub {
+    /// The app from the environment, which Settings can't change.
+    env: bool,
+    api_url: String,
+    current: std::sync::RwLock<Option<Arc<Slack>>>,
+    /// Bumped each time the app changes, so the connection is opened again with it.
+    changed: tokio::sync::watch::Sender<u64>,
+}
+
+/// Where the Slack app's tokens come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    Env,
+    Settings,
+}
+
+impl Source {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Source::Env => "env",
+            Source::Settings => "settings",
+        }
+    }
+}
+
+impl SlackHub {
+    pub fn new(env: Option<SlackConfig>, api_url: String) -> Result<Self> {
+        let current = env.clone().map(Slack::new).transpose()?.map(Arc::new);
+        Ok(Self { env: env.is_some(), api_url, current: std::sync::RwLock::new(current), changed: tokio::sync::watch::channel(0).0 })
+    }
+
+    /// The app, if there is one.
+    pub fn get(&self) -> Option<Arc<Slack>> {
+        self.current.read().unwrap().clone()
+    }
+
+    pub fn source(&self) -> Option<Source> {
+        match (self.env, self.get().is_some()) {
+            (true, _) => Some(Source::Env),
+            (false, true) => Some(Source::Settings),
+            (false, false) => None,
+        }
+    }
+
+    fn set(&self, slack: Option<Arc<Slack>>) {
+        *self.current.write().unwrap() = slack;
+        self.changed.send_modify(|n| *n += 1);
+    }
+
+    /// Take up the tokens saved in Settings, unless the environment has some.
+    pub async fn load_saved(&self, store: &crate::store::Store) -> Result<()> {
+        if self.env {
+            return Ok(());
+        }
+        if let Some((app_token, bot_token)) = store.slack_app().await? {
+            self.set(Some(Arc::new(Slack::new(SlackConfig { app_token, bot_token, api_url: self.api_url.clone() })?)));
+        }
+        Ok(())
+    }
+
+    /// Check a pair of tokens with Slack (the bot token with `auth.test`, the app-level token by
+    /// opening a connection it then doesn't use), save them, and connect with them. Returns who
+    /// the bot is. Refused while the environment sets the app.
+    pub async fn save(&self, store: &crate::store::Store, app_token: &str, bot_token: &str) -> Result<Me, TokenError> {
+        if self.env {
+            return Err(TokenError::FromEnv);
+        }
+        let (app_token, bot_token) = (app_token.trim(), bot_token.trim());
+        if !app_token.starts_with("xapp-") {
+            return Err(TokenError::Invalid("the app-level token starts with xapp-".into()));
+        }
+        if !bot_token.starts_with("xoxb-") {
+            return Err(TokenError::Invalid("the bot token starts with xoxb-".into()));
+        }
+        let slack = Slack::new(SlackConfig { app_token: app_token.into(), bot_token: bot_token.into(), api_url: self.api_url.clone() }).map_err(TokenError::Other)?;
+        let me = slack.identify().await.map_err(|e| TokenError::Invalid(format!("Slack refused the bot token: {}", slack_reason(&e))))?;
+        slack
+            .open_connection()
+            .await
+            .map_err(|e| TokenError::Invalid(format!("Slack refused the app-level token (it needs the connections:write scope, and Socket Mode on): {}", slack_reason(&e))))?;
+        store.set_slack_app(Some((app_token, bot_token))).await.map_err(TokenError::Other)?;
+        self.set(Some(Arc::new(slack)));
+        Ok(me)
+    }
+
+    /// Forget the tokens saved in Settings and disconnect. Refused while the environment sets the app.
+    pub async fn remove(&self, store: &crate::store::Store) -> Result<(), TokenError> {
+        if self.env {
+            return Err(TokenError::FromEnv);
+        }
+        store.set_slack_app(None).await.map_err(TokenError::Other)?;
+        self.set(None);
+        Ok(())
+    }
+}
+
+/// Why tokens couldn't be saved.
+#[derive(Debug)]
+pub enum TokenError {
+    /// The environment sets the app.
+    FromEnv,
+    /// Not tokens Slack takes, and why.
+    Invalid(String),
+    Other(anyhow::Error),
+}
+
+/// Slack's own reason (`invalid_auth`, `not_allowed_token_type`, ...) or the error as it is.
+fn slack_reason(e: &anyhow::Error) -> String {
+    let text = e.to_string();
+    text.rsplit("failed: ").next().unwrap_or(&text).to_string()
+}
 
 /// The Slack app as this service sees it.
 pub struct Slack {
@@ -346,32 +462,53 @@ fn normalize_code(entered: &str) -> Option<String> {
 // -- the connection -------------------------------------------------------------------------------
 
 /// Keep a Socket Mode connection to Slack open until `stop`, opening it again when Slack ends it or
-/// it breaks. Does nothing without a Slack app.
+/// it breaks, and with the new app when Settings changes it. Waits while there is no app.
 pub fn start(state: AppState, stop: CancellationToken) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let Some(slack) = state.slack.clone() else { return };
-        let mut failures: u32 = 0;
-        let mut resumed = false;
+        if let Err(e) = state.slack.load_saved(&state.store).await {
+            tracing::warn!(error = %e, "could not read the Slack app's saved tokens");
+        }
+        let mut changes = state.slack.changed.subscribe();
         loop {
-            match connect(&state, &slack, &stop, &mut resumed).await {
-                Ok(()) => failures = 0,
-                Err(e) => {
-                    failures += 1;
-                    if failures == 1 || failures.is_multiple_of(10) {
-                        tracing::warn!(error = %e, failures, "Slack connection failed; retrying");
-                    }
-                }
-            }
-            if stop.is_cancelled() {
-                return;
-            }
-            let wait = Duration::from_secs(1 << failures.min(6));
+            changes.borrow_and_update();
+            let current = state.slack.get();
             tokio::select! {
                 _ = stop.cancelled() => return,
-                _ = tokio::time::sleep(wait) => {}
+                _ = changes.changed() => continue,
+                _ = async {
+                    match current {
+                        Some(slack) => keep_connected(&state, &slack, &stop).await,
+                        None => std::future::pending().await,
+                    }
+                } => return,
             }
         }
     })
+}
+
+/// Connect with one app until `stop`, again and again.
+async fn keep_connected(state: &AppState, slack: &Arc<Slack>, stop: &CancellationToken) {
+    let mut failures: u32 = 0;
+    let mut resumed = false;
+    loop {
+        match connect(state, slack, stop, &mut resumed).await {
+            Ok(()) => failures = 0,
+            Err(e) => {
+                failures += 1;
+                if failures == 1 || failures.is_multiple_of(10) {
+                    tracing::warn!(error = %e, failures, "Slack connection failed; retrying");
+                }
+            }
+        }
+        if stop.is_cancelled() {
+            return;
+        }
+        let wait = Duration::from_secs(1 << failures.min(6));
+        tokio::select! {
+            _ = stop.cancelled() => return,
+            _ = tokio::time::sleep(wait) => {}
+        }
+    }
 }
 
 /// One connection: open it, acknowledge and hand off each envelope, until Slack asks to reconnect,
@@ -867,7 +1004,7 @@ async fn last_plan(state: &AppState, run_id: Uuid) -> Result<Option<Value>> {
 /// Post the answer to a Slack turn whose run ended, once: whichever of `watch` and `notify`
 /// gets here first. `state` is the turn's owner's. Nothing for a turn Slack didn't start.
 pub async fn turn_finished(state: &AppState, turn: &Turn) {
-    let Some(slack) = state.slack.clone() else { return };
+    let Some(slack) = state.slack.get() else { return };
     if !cedar::is_terminal(&turn.status) {
         return;
     }

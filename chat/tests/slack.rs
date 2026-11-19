@@ -139,7 +139,12 @@ struct FakeSlack {
     ws_url: Mutex<String>,
 }
 
-async fn slack_method(State(s): State<Arc<FakeSlack>>, Path(method): Path<String>, body: axum::body::Bytes) -> Json<Value> {
+/// Tokens with `bad` in them are refused, the way Slack refuses a revoked or mistyped one.
+async fn slack_method(State(s): State<Arc<FakeSlack>>, Path(method): Path<String>, headers: axum::http::HeaderMap, body: axum::body::Bytes) -> Json<Value> {
+    let token = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    if token.contains("bad") {
+        return Json(json!({ "ok": false, "error": "invalid_auth" }));
+    }
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
     let n = {
         let mut calls = s.calls.lock().unwrap();
@@ -187,6 +192,7 @@ impl Harness {
             ("CHAT_SLACK_API_URL", slack_url),
             ("CHAT_UPDATE_CHECK", "off".into()),
             ("CHAT_CONTRIBUTIONS_URL", "off".into()),
+            ("CHAT_ADMIN_TOKEN", "admin-token".into()),
         ]);
         let cfg = Config::from_lookup(|k| env.get(k).cloned()).unwrap();
         let store = Store::connect_memory().await.unwrap();
@@ -250,7 +256,17 @@ impl Harness {
     }
 
     async fn request(&self, method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
+        call(&self.app, method, uri, body, None).await
+    }
+}
+
+/// Call the chat API, with the admin token if given.
+async fn call(app: &Router, method: &str, uri: &str, body: Option<Value>, admin: Option<&str>) -> (StatusCode, Value) {
+    {
         let mut req = Request::builder().method(method).uri(uri);
+        if let Some(token) = admin {
+            req = req.header("x-admin-token", token);
+        }
         let body = match body {
             Some(b) => {
                 req = req.header("content-type", "application/json");
@@ -258,7 +274,7 @@ impl Harness {
             }
             None => Body::empty(),
         };
-        let resp = self.app.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+        let resp = app.clone().oneshot(req.body(body).unwrap()).await.unwrap();
         let status = resp.status();
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
@@ -400,4 +416,97 @@ async fn the_same_event_twice_is_handled_once() {
     h.wait_calls("chat.postMessage", 1).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(h.calls("chat.postMessage").len(), 1);
+}
+
+#[tokio::test]
+async fn an_admin_sets_the_app_up_in_settings_and_the_bridge_follows() {
+    let cedar_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let cedar_url = format!("http://{}", cedar_listener.local_addr().unwrap());
+    tokio::spawn(axum::serve(cedar_listener, fake_cedar(Shared::default())).into_future());
+    let slack = Arc::new(FakeSlack::default());
+    let slack_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let slack_url = format!("http://{}/api", slack_listener.local_addr().unwrap());
+    let api = Router::new().route("/api/{method}", get(slack_method).post(slack_method)).with_state(slack.clone());
+    tokio::spawn(axum::serve(slack_listener, api).into_future());
+    let ws_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    *slack.ws_url.lock().unwrap() = format!("ws://{}/socket", ws_listener.local_addr().unwrap());
+
+    let env: HashMap<&str, String> = HashMap::from([
+        ("CEDAR_URL", cedar_url),
+        ("CEDAR_API_KEY", "cedar-key".into()),
+        ("CHAT_SLACK_API_URL", slack_url),
+        ("CHAT_ADMIN_TOKEN", "admin-token".into()),
+        ("CHAT_UPDATE_CHECK", "off".into()),
+        ("CHAT_CONTRIBUTIONS_URL", "off".into()),
+    ]);
+    let cfg = Config::from_lookup(|k| env.get(k).cloned()).unwrap();
+    let store = Store::connect_memory().await.unwrap();
+    let state = AppState::new(cfg.clone(), store.clone()).unwrap();
+    let stop = CancellationToken::new();
+    slack::start(state.clone(), stop.clone());
+    let app = api::router(state);
+
+    // No app yet.
+    let (_, info) = call(&app, "GET", "/api/slack", None, None).await;
+    assert_eq!((info["available"].clone(), info["source"].clone()), (json!(false), Value::Null));
+
+    // Only admins, with tokens of the right kinds, that Slack takes.
+    let good = json!({ "app_token": "xapp-1", "bot_token": "xoxb-1" });
+    let (status, _) = call(&app, "PUT", "/api/slack/app", Some(good.clone()), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, body) = call(&app, "PUT", "/api/slack/app", Some(json!({ "app_token": "xoxb-1", "bot_token": "xoxb-1" })), Some("admin-token")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, body) = call(&app, "PUT", "/api/slack/app", Some(json!({ "app_token": "xapp-1", "bot_token": "xoxb-bad" })), Some("admin-token")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"]["message"].as_str().unwrap().contains("bot token: invalid_auth"), "{body}");
+    let (status, body) = call(&app, "PUT", "/api/slack/app", Some(json!({ "app_token": "xapp-bad", "bot_token": "xoxb-1" })), Some("admin-token")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"]["message"].as_str().unwrap().contains("app-level token"), "{body}");
+
+    // Saved: the bridge connects with them, and Settings says where they come from.
+    let (status, body) = call(&app, "PUT", "/api/slack/app", Some(good), Some("admin-token")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["workspace"]["team_name"], "Northwind");
+    let (stream, _) = tokio::time::timeout(Duration::from_secs(5), ws_listener.accept()).await.expect("the bridge connects").unwrap();
+    let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+    let (_, info) = call(&app, "GET", "/api/slack", None, None).await;
+    assert_eq!((info["available"].clone(), info["source"].clone()), (json!(true), json!("settings")));
+    assert_eq!(store.slack_app().await.unwrap(), Some(("xapp-1".to_string(), "xoxb-1".to_string())));
+
+    // A restart takes the saved tokens up again.
+    let again = AppState::new(cfg, store.clone()).unwrap();
+    let stop_again = CancellationToken::new();
+    slack::start(again, stop_again.clone());
+    let (stream, _) = tokio::time::timeout(Duration::from_secs(5), ws_listener.accept()).await.expect("a restart connects too").unwrap();
+    drop(stream);
+    stop_again.cancel();
+
+    // Removed: the connection is closed and nothing is kept.
+    let (status, _) = call(&app, "DELETE", "/api/slack/app", None, Some("admin-token")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let closed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match ws.next().await {
+                None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
+                _ => {}
+            }
+        }
+    })
+    .await;
+    assert!(closed.is_ok(), "the bridge hung up");
+    let (_, info) = call(&app, "GET", "/api/slack", None, None).await;
+    assert_eq!(info["available"], false);
+    assert_eq!(store.slack_app().await.unwrap(), None);
+    stop.cancel();
+}
+
+#[tokio::test]
+async fn tokens_from_the_environment_cant_be_changed_in_settings() {
+    let h = Harness::new().await;
+    let (_, info) = h.request("GET", "/api/slack", None).await;
+    assert_eq!(info["source"], "env");
+    let (status, _) = call(&h.app, "PUT", "/api/slack/app", Some(json!({ "app_token": "xapp-2", "bot_token": "xoxb-2" })), Some("admin-token")).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = call(&h.app, "DELETE", "/api/slack/app", None, Some("admin-token")).await;
+    assert_eq!(status, StatusCode::CONFLICT);
 }

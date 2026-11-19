@@ -65,6 +65,9 @@ pub struct Config {
     /// (`CHAT_SLACK_APP_TOKEN`, `xapp-...`), which opens the Socket Mode connection events come
     /// over, and its bot token (`CHAT_SLACK_BOT_TOKEN`, `xoxb-...`), which answers. Both or neither.
     pub slack: Option<SlackConfig>,
+    /// The root of Slack's Web API (`CHAT_SLACK_API_URL`), for an app set in the environment or
+    /// in Settings -> Slack; overridable so tests can point at a mock.
+    pub slack_api_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -123,6 +126,9 @@ impl Config {
             }
         }
 
+        let slack_api_url = get("CHAT_SLACK_API_URL")
+            .map(|u| u.trim().trim_end_matches('/').to_string())
+            .unwrap_or_else(|| DEFAULT_SLACK_API_URL.into());
         let bind_addr: SocketAddr = parse("CHAT_BIND_ADDR", get("CHAT_BIND_ADDR"), "127.0.0.1:3000".parse().unwrap())?;
         let cfg = Config {
             cedar_url: get("CEDAR_URL").unwrap_or_else(|| "http://127.0.0.1:8080".into()),
@@ -172,12 +178,11 @@ impl Config {
                 (Some(app), Some(bot)) => Some(SlackConfig {
                     app_token: app.trim().to_string(),
                     bot_token: bot.trim().to_string(),
-                    api_url: get("CHAT_SLACK_API_URL")
-                        .map(|u| u.trim().trim_end_matches('/').to_string())
-                        .unwrap_or_else(|| DEFAULT_SLACK_API_URL.into()),
+                    api_url: slack_api_url.clone(),
                 }),
                 _ => bail!("set both CHAT_SLACK_APP_TOKEN and CHAT_SLACK_BOT_TOKEN for Slack, or neither"),
             },
+            slack_api_url,
         };
         if let Some(slack) = &cfg.slack {
             if !slack.app_token.starts_with("xapp-") {
@@ -186,9 +191,9 @@ impl Config {
             if !slack.bot_token.starts_with("xoxb-") {
                 bail!("CHAT_SLACK_BOT_TOKEN must be a Slack bot token (xoxb-...)");
             }
-            if !(slack.api_url.starts_with("http://") || slack.api_url.starts_with("https://")) {
-                bail!("CHAT_SLACK_API_URL must start with http:// or https://");
-            }
+        }
+        if !(cfg.slack_api_url.starts_with("http://") || cfg.slack_api_url.starts_with("https://")) {
+            bail!("CHAT_SLACK_API_URL must start with http:// or https://");
         }
         if let Some(u) = &cfg.feedback_issues_url {
             // The page opens it as a link, so nothing but a plain https address without a query.

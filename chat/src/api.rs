@@ -296,7 +296,7 @@ pub struct AppState {
     /// shows a page that says to go back to the app instead of loading the chat there.
     google_in_browser: Arc<std::sync::Mutex<Vec<String>>>,
     /// The Slack app people talk to Cedar through, when one is set up (`slack`).
-    pub slack: Option<Arc<crate::slack::Slack>>,
+    pub slack: Arc<crate::slack::SlackHub>,
 }
 
 /// How many "Connect Google" sign-ins started in the browser are remembered at once.
@@ -312,7 +312,7 @@ impl AppState {
         let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build()?;
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
         let primary = store.user();
-        let slack = cfg.slack.clone().map(crate::slack::Slack::new).transpose()?.map(Arc::new);
+        let slack = Arc::new(crate::slack::SlackHub::new(cfg.slack.clone(), cfg.slack_api_url.clone())?);
         Ok(Self { cfg: Arc::new(cfg), store, cedar, primary, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default(), slack })
     }
 }
@@ -404,6 +404,7 @@ pub fn router(state: AppState) -> Router {
         .route("/agents/{id}/hook/rotate", post(agents::rotate_hook))
         .route("/slack", get(slack::get_slack))
         .route("/slack/link", post(slack::link_slack))
+        .route("/slack/app", put(slack::put_slack_app).delete(slack::delete_slack_app))
         .route("/slack/links/{team}/{slack_user}", axum::routing::delete(slack::unlink_slack))
         .route("/me", get(get_me))
         .route("/users", get(list_users).post(create_user))

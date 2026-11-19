@@ -1,17 +1,21 @@
 'use strict';
 
-// The Slack page of Settings (framed by settings-shell.js, id `slack`), shared by every UI: whether
-// this server has a Slack app people can talk to Cedar through (CHAT_SLACK_APP_TOKEN and
-// CHAT_SLACK_BOT_TOKEN, see chat/README.md#slack), and the caller's Slack accounts. An account is
-// linked with the code the app sends it when it messages the app the first time (GET /api/slack,
-// POST /api/slack/link, DELETE /api/slack/links/{team}/{user}).
+// The Slack page of Settings (framed by settings-shell.js, id `slack`), shared by every UI: the
+// Slack app people talk to Cedar through, and the caller's Slack accounts (see chat/README.md#slack).
+// The app's two tokens come from the environment (CHAT_SLACK_APP_TOKEN, CHAT_SLACK_BOT_TOKEN) or
+// are saved here by an admin (PUT / DELETE /api/slack/app, with the admin token Settings -> Server
+// unlocks). An account is linked with the code the app sends it when it messages the app the first
+// time (GET /api/slack, POST /api/slack/link, DELETE /api/slack/links/{team}/{user}).
 //
 // The app hands over its helpers through cedarSlack.init():
 //
 //   api(method, path, body) -> Promise<json>   the app's /api client (sends the access token)
 //   toast(message)                             a short notice
+//   authHeaders() -> {Authorization?}          the access token's header, for the admin calls
 
 const cedarSlack = (() => {
+  // Where settings.js keeps the admin token Settings -> Server unlocked, for this browser session.
+  const ADMIN_KEY = 'cedar-chat-admin';
   let deps = null;
   let info = null;  // /api/slack, as last loaded
   let section = null;
@@ -31,6 +35,94 @@ const cedarSlack = (() => {
   }
 
   const note = (text, className = 'cedar-set-note') => el('p', className, text);
+
+  function adminToken() {
+    try { return sessionStorage.getItem(ADMIN_KEY) || ''; } catch { return ''; }
+  }
+
+  /** An admin call, with the admin token (settings.js's adminApi, which this module can't reach). */
+  async function adminApi(method, path, body) {
+    const headers = { ...(deps.authHeaders ? deps.authHeaders() : {}), 'X-Admin-Token': adminToken() };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const res = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    if (res.status === 204) return null;
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error?.message || tr('settings.requestFailed', { status: res.status }));
+    return data;
+  }
+
+  function secretInput(placeholder, label) {
+    const i = el('input');
+    i.type = 'password';
+    i.autocomplete = 'off';
+    i.spellcheck = false;
+    i.placeholder = placeholder;
+    i.setAttribute('aria-label', label);
+    return i;
+  }
+
+  /** The app's tokens: where they come from, and for an admin, the form that saves or removes them. */
+  function appSection() {
+    const box = el('div', 'cedar-set-slack-app');
+    box.append(el('h3', '', tr('slack.appTitle')));
+    if (info.source === 'env') {
+      box.append(note(tr('slack.fromEnv')));
+      return box;
+    }
+    if (!adminToken()) {
+      box.append(note(info.source === 'settings' ? tr('slack.savedNeedsAdmin') : tr('slack.needsAdmin')));
+      const unlock = button(tr('slack.openServer'), () => shell()?.go('server'));
+      box.append(unlock);
+      return box;
+    }
+    if (info.source === 'settings') box.append(note(tr('slack.savedHere')));
+    else box.append(note(tr('slack.setUpHere')));
+    const form = el('form', 'cedar-set-inline cedar-set-endpoint');
+    const app = secretInput('xapp-…', tr('slack.appToken'));
+    const bot = secretInput('xoxb-…', tr('slack.botToken'));
+    const saveBtn = button(tr('slack.checkSave'), () => form.requestSubmit(), 'primary');
+    form.append(field(tr('slack.appToken'), app, tr('slack.appTokenNote')), field(tr('slack.botToken'), bot, tr('slack.botTokenNote')), saveBtn);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!app.value.trim() || !bot.value.trim()) {
+        shell()?.setStatus('slack', tr('slack.bothNeeded'), 'error');
+        return;
+      }
+      saveBtn.disabled = true;
+      saveBtn.textContent = tr('slack.checking');
+      try {
+        const res = await adminApi('PUT', '/slack/app', { app_token: app.value.trim(), bot_token: bot.value.trim() });
+        deps.toast(tr('slack.appSaved', { team: res.workspace?.team_name || res.workspace?.team || '' }));
+        await renderPage(section);
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = tr('slack.checkSave');
+        shell()?.setStatus('slack', err.message, 'error');
+      }
+    });
+    box.append(form);
+    if (info.source === 'settings') {
+      box.append(button(tr('slack.removeApp'), async () => {
+        try {
+          await adminApi('DELETE', '/slack/app');
+          deps.toast(tr('slack.appRemoved'));
+          await renderPage(section);
+        } catch (err) {
+          shell()?.setStatus('slack', err.message, 'error');
+        }
+      }));
+    }
+    return box;
+  }
+
+  function field(label, input, hint) {
+    const f = el('label', 'cedar-set-field');
+    const head = el('span', 'cedar-set-field-head');
+    head.append(el('span', '', label));
+    f.append(head, input);
+    if (hint) f.append(el('small', 'cedar-set-field-note', hint));
+    return f;
+  }
   const shell = () => (typeof cedarSettingsShell === 'undefined' ? null : cedarSettingsShell);
 
   function linkForm() {
@@ -84,6 +176,7 @@ const cedarSlack = (() => {
     target.textContent = '';
     if (!info.available) {
       target.append(note(tr('slack.notSetUp')));
+      target.append(appSection());
       return;
     }
     const bot = info.workspace?.bot ? `@${info.workspace.bot}` : tr('slack.theApp');
@@ -99,6 +192,7 @@ const cedarSlack = (() => {
       for (const link of info.links) target.append(linkRow(link));
     }
     target.append(note(tr('slack.howItWorks')));
+    target.append(appSection());
   }
 
   async function renderPage(target) {
