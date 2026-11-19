@@ -572,9 +572,12 @@ struct ConversationDetail: Decodable, Sendable {
     /// What was decided about the follow-ups its runs suggested; a suggestion that isn't here is
     /// still open. Empty on a server from before follow-ups.
     let followups: [FollowUpDecision]
+    /// What was decided about what its runs reported they could not do; a report that isn't
+    /// here is still open. Empty on a server from before feedback.
+    let limitations: [FeedbackDecision]
 
     enum CodingKeys: String, CodingKey {
-        case conversation, turns, agent, followups
+        case conversation, turns, agent, followups, limitations
     }
 
     init(from decoder: Decoder) throws {
@@ -583,6 +586,7 @@ struct ConversationDetail: Decodable, Sendable {
         turns = try c.decode([Turn].self, forKey: .turns)
         agent = try c.decodeIfPresent(AgentRef.self, forKey: .agent)
         followups = try c.decodeIfPresent([FollowUpDecision].self, forKey: .followups) ?? []
+        limitations = try c.decodeIfPresent([FeedbackDecision].self, forKey: .limitations) ?? []
     }
 }
 

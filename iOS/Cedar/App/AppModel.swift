@@ -35,6 +35,15 @@ final class AppModel {
     private(set) var agentLimits = AgentList.Limits()
     /// An agent's runs, newest first, once its detail loaded them.
     private(set) var agentRuns: [String: [AgentRun]] = [:]
+    /// The outbox: what runs would have sent or changed in the person's accounts and held for
+    /// them instead (`/api/outbox`), newest first. The Agents list shows it; nothing in it
+    /// happens until they approve it.
+    private(set) var outbox: [OutboxItem] = []
+    /// Held calls by id, as last heard of: the list's, and those a conversation's cards asked about.
+    private(set) var heldCalls: [String: OutboxItem] = [:]
+    /// The ids of held calls the server no longer has (their run was deleted).
+    private(set) var goneHeldCalls: Set<String> = []
+    @ObservationIgnored private var loadingHeldCalls: Set<String> = []
     /// The agents with a finished run nobody has looked at, and how many runs that is.
     private(set) var unreadAgents: Set<String> = []
     private(set) var agentsUnread = 0
@@ -145,6 +154,9 @@ final class AppModel {
             starred = []
             starredLoaded = false
             agents = []
+            outbox = []
+            heldCalls = [:]
+            goneHeldCalls = []
             agentLimits = AgentList.Limits()
             agentRuns = [:]
             unreadAgents = []
@@ -621,6 +633,55 @@ final class AppModel {
         let ids = Set(agents.map(\.id))
         agentRuns = agentRuns.filter { ids.contains($0.key) }
         agentSecrets = agentSecrets.filter { ids.contains($0.key) }
+        await refreshOutbox()
+    }
+
+    // MARK: The outbox
+
+    /// Reads what waits for approval. A server from before the outbox has none to show.
+    func refreshOutbox() async {
+        guard let client else { return }
+        guard let items = try? await client.outbox() else { return }
+        outbox = items
+        for item in items { heldCalls[item.id] = item }
+    }
+
+    /// Asks the server what became of a held call a conversation shows, once.
+    func loadHeldCall(id: String) async {
+        guard let client, heldCalls[id] == nil, !goneHeldCalls.contains(id), !loadingHeldCalls.contains(id) else { return }
+        loadingHeldCalls.insert(id)
+        defer { loadingHeldCalls.remove(id) }
+        do {
+            heldCalls[id] = try await client.outboxItem(id: id)
+        } catch let error as ChatError where error.status == 404 {
+            goneHeldCalls.insert(id)
+        } catch {
+            // Asked again the next time the card appears.
+        }
+    }
+
+    /// Approves a held call, which makes it now exactly as it was written, or discards it.
+    /// Throws the server's reason when it refuses, for the card to show; a call that was decided
+    /// elsewhere in the meantime is then shown as it is now.
+    func decideHeldCall(id: String, approve: Bool) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        do {
+            let item = try await client.decideOutbox(id: id, approve: approve)
+            settle(item)
+        } catch let error as ChatError where error.status == 409 {
+            if let now = try? await client.outboxItem(id: id) { settle(now) }
+            throw error
+        }
+    }
+
+    /// The server's latest word on a held call; one that is settled leaves the outbox.
+    private func settle(_ item: OutboxItem) {
+        heldCalls[item.id] = item
+        if item.isOpen {
+            if let index = outbox.firstIndex(where: { $0.id == item.id }) { outbox[index] = item }
+        } else {
+            outbox.removeAll { $0.id == item.id }
+        }
     }
 
     /// Reads one agent and its runs, for its detail.

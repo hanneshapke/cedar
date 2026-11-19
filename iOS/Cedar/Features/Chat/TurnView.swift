@@ -61,6 +61,22 @@ struct TurnView: View {
                                  openAgent: { agentId in openAgent(agentId, followUp.title) })
                 }
             }
+            // What the model said it could not do (`report_limitation`): nothing is recorded
+            // until it is sent from here.
+            ForEach(turn.limitations) { call in
+                if let report = call.limitation {
+                    LimitationCard(report: report,
+                                   decision: chat.feedbackDecision(for: call, in: turn),
+                                   decide: { send, comment in try await chat.decideLimitation(call, in: turn, send: send, comment: comment) })
+                }
+            }
+            // What the run would have sent or changed and held instead: nothing goes out until
+            // it is approved.
+            ForEach(turn.heldCalls) { call in
+                if let held = call.held {
+                    HeldCallCard(id: held.id, note: held)
+                }
+            }
             StatusFooter(turn: turn)
         }
     }
@@ -437,6 +453,7 @@ struct ToolCallView: View {
         case "search_flights": return "airplane"
         case "ask_user": return "questionmark.bubble"
         case FollowUp.tool: return "calendar.badge.plus"
+        case LimitationReport.tool: return "hand.raised"
         case "remember", "forget", "recall": return "bookmark"
         case "browser": return "safari"
         default: return "wrench.and.screwdriver"

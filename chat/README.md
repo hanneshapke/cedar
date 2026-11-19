@@ -661,6 +661,10 @@ it, and the run goes on and tells you in its result what is waiting. Reading is 
 - A run that left something in the outbox is announced as *waiting for your approval*, whatever
   **Send it for** says.
 
+The iOS and Android apps show the outbox above their list of agents and the card in a run's
+conversation, with **Approve** and **Discard**; changing a call before it goes out is done on
+the page.
+
 Holding is a setting of each agent (*Hold what it sends or changes until I approve it*), on for
 every agent made from now on and for the follow-ups you set up. Agents that existed before keep
 acting at once, as they did when you made them; turn it on in their form. Turn it off for an agent

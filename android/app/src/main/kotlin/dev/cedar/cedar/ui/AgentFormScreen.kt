@@ -258,8 +258,9 @@ fun AgentFormScreen(app: AppModel, request: AgentFormRequest) {
             timezone = deviceZone,
             minIntervalSecs = interval,
             maxRunsPerDay = runs,
-            // Sent when it is new or was changed, so a server from before the outbox isn't told of it.
-            holdWrites = holdWrites.takeIf { editing == null || it != editing.holdWrites },
+            // The server holds a new agent's writes unless told otherwise, so creating says only
+            // "don't", and editing only a change: one from before the outbox refuses the field.
+            holdWrites = holdWrites.takeIf { if (editing == null) !it else it != editing.holdWrites },
         )
         saving = true
         scope.launch {

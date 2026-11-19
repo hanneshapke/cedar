@@ -1049,4 +1049,112 @@ final class APITests: XCTestCase {
         XCTAssertNil(open.fileRequest(conversationId: "c", path: "a").value(forHTTPHeaderField: "Authorization"))
         XCTAssertThrowsError(try ChatClient(settings: ServerSettings(serverURL: "ftp://x", accessToken: "", model: "", reasoning: "")))
     }
+
+    func testAReportIsShownDecidedAndListedAndAHeldCallIsFoundInTheOutbox() throws {
+        // What the model could not do is a JSON result; nothing of it is recorded by the tool.
+        let output = #"{"limitation":{"summary":" Could not book a table: no booking tool ","category":"missing_tool","needed":"a booking tool"},"note":"Say so."}"#
+        let report = try XCTUnwrap(LimitationReport.parse(output))
+        XCTAssertEqual(report.summary, "Could not book a table: no booking tool")
+        XCTAssertEqual(report.category, "missing_tool")
+        XCTAssertEqual(report.needed, "a booking tool")
+        XCTAssertEqual(LimitationReport.parse(#"{"limitation":{"summary":"x","category":"made_up","needed":" "}}"#), LimitationReport(summary: "x", category: "other", needed: nil))
+        XCTAssertNil(LimitationReport.parse(#"{"limitation":{"summary":" "}}"#))
+        XCTAssertNil(LimitationReport.parse(#"{"follow_up":{}}"#))
+        XCTAssertNil(LimitationReport.parse("give summary"))
+
+        // A call that was held instead of made says so in its result, whatever the tool.
+        let heldOutput = #"{"held":{"id":"h-1","tool":"gmail_send_message","reason":"Send message in your Gmail to ana@example.com.","why":"timeout"},"note":"Not done yet."}"#
+        let note = try XCTUnwrap(HeldNote.parse(heldOutput))
+        XCTAssertEqual(note.id, "h-1")
+        XCTAssertTrue(note.timedOut)
+        XCTAssertNil(HeldNote.parse(#"{"held":{"tool":"gmail_send_message"}}"#), "no id, nothing to decide about")
+        XCTAssertNil(HeldNote.parse(#"A page that says {"held":{"id":"h-1"}} somewhere"#))
+        XCTAssertNil(HeldNote.parse("ok"))
+
+        // In a turn, each is kept with its tool call.
+        var transcript = TurnTranscript(turn: Turn(id: "t1", conversationId: "c1", runId: "r1", prompt: "hi", status: .running))
+        transcript.apply(RunEvent(seq: 1, type: "tool.call", data: .object(["id": .string("call_1"), "name": .string("report_limitation"),
+                                                                             "input": .object(["summary": .string("Could not book a table")])])))
+        XCTAssertTrue(transcript.limitations.isEmpty)
+        XCTAssertEqual(transcript.items.count, 1)
+        transcript.apply(RunEvent(seq: 2, type: "tool.result", data: .object(["id": .string("call_1"), "output": .string(output), "is_error": .bool(false)])))
+        transcript.apply(RunEvent(seq: 3, type: "tool.call", data: .object(["id": .string("call_2"), "name": .string("gmail_send_message"), "input": .object([:])])))
+        transcript.apply(RunEvent(seq: 4, type: "tool.result", data: .object(["id": .string("call_2"), "output": .string(heldOutput), "is_error": .bool(false)])))
+        transcript.apply(RunEvent(seq: 5, type: "tool.call", data: .object(["id": .string("call_3"), "name": .string("report_limitation"), "input": .object([:])])))
+        transcript.apply(RunEvent(seq: 6, type: "tool.result", data: .object(["id": .string("call_3"), "output": .string("give summary"), "is_error": .bool(true)])))
+        XCTAssertEqual(transcript.limitations.map(\.id), ["call_1"])
+        XCTAssertEqual(transcript.limitations.first?.limitation, report)
+        XCTAssertEqual(transcript.limitations.first?.summary, "Could not book a table: no booking tool")
+        XCTAssertEqual(transcript.heldCalls.map(\.id), ["call_2"])
+        XCTAssertEqual(transcript.heldCalls.first?.held, note)
+
+        // Sending keeps the report as it was shown, with the note; dismissing sends nothing else.
+        XCTAssertEqual(try sent(FeedbackBody.send(report, comment: " weekly ")),
+                       try object(#"{"decision":"send","summary":"Could not book a table: no booking tool","category":"missing_tool","needed":"a booking tool","comment":"weekly"}"#))
+        XCTAssertEqual(try sent(FeedbackBody.send(LimitationReport(summary: "x", category: "other", needed: nil))),
+                       try object(#"{"decision":"send","summary":"x","category":"other"}"#))
+        XCTAssertEqual(try sent(FeedbackBody.dismiss), try object(#"{"decision":"dismiss"}"#))
+        let answer = try JSONDecoder.cedar.decode(FeedbackAnswer.self, from: Data("""
+        {"feedback":{"id":"f1","turn_id":"t1","call_id":"call_1","status":"sent","summary":"x","category":"missing_tool","created_at":"2026-11-19T10:00:00Z"}}
+        """.utf8))
+        XCTAssertTrue(answer.feedback.isSent && !answer.feedback.isDismissed)
+        XCTAssertEqual(answer.feedback.key, FeedbackDecision.key(turnId: "t1", callId: "call_1"))
+        let detail = try JSONDecoder.cedar.decode(ConversationDetail.self, from: Data("""
+        {"conversation":{"id":"c1","title":"Dinner","schedule_id":null,"unread":false,"needs_answer":false,
+                         "created_at":"2026-11-12T09:00:00Z","updated_at":"2026-11-12T10:00:00Z"},
+         "turns":[],
+         "limitations":[{"id":"f1","turn_id":"t1","call_id":"call_1","status":"sent","summary":"x","category":"missing_tool"},
+                        {"id":"f2","turn_id":"t1","call_id":"call_9","status":"dismissed","summary":null,"category":null}]}
+        """.utf8))
+        XCTAssertEqual(detail.limitations.map(\.callId), ["call_1", "call_9"])
+        XCTAssertTrue(detail.limitations[1].isDismissed)
+
+        // The outbox: what waits, with where it came from; a refused call can be approved again.
+        let outbox = try JSONDecoder.cedar.decode(Outbox.self, from: Data("""
+        {"items":[{"id":"h-1","run_id":"r1","call_id":"t1","tool":"gmail_send_message",
+                   "input":{"to":"ana@example.com","subject":"Digest","cc":["bo@example.com"]},
+                   "reason":"Send message in your Gmail to ana@example.com.","why":"unattended","status":"pending","edited":false,"output":null,
+                   "created_at":"2026-11-19T09:30:00Z","decided_at":null,"turn_id":"t9","conversation_id":"c1","title":"Digest · Thu",
+                   "agent":{"id":"a1","title":"Morning digest"}},
+                  {"id":"h-2","tool":"slack_send_message","status":"failed","output":"channel_not_found","why":"timeout"}]}
+        """.utf8))
+        let first = outbox.items[0]
+        XCTAssertTrue(first.isOpen && !first.isFailed && !first.timedOut)
+        XCTAssertEqual(first.origin, "Morning digest")
+        XCTAssertEqual(first.conversationId, "c1")
+        XCTAssertEqual(first.fields.map(\.name), ["cc", "subject", "to"])
+        XCTAssertEqual(first.fields.map(\.value), [#"["bo@example.com"]"#, "Digest", "ana@example.com"])
+        XCTAssertNotNil(first.createdAt)
+        let second = outbox.items[1]
+        XCTAssertTrue(second.isOpen && second.isFailed && second.timedOut)
+        XCTAssertNil(second.origin)
+        XCTAssertTrue(second.fields.isEmpty)
+        let done = try JSONDecoder.cedar.decode(OutboxItem.self, from: Data(#"{"id":"h-1","status":"sent","edited":true,"decided_at":"2026-11-19T10:00:00Z"}"#.utf8))
+        XCTAssertTrue(done.isSent && !done.isOpen && done.edited)
+        XCTAssertTrue(try JSONDecoder.cedar.decode(Outbox.self, from: Data("{}".utf8)).items.isEmpty)
+        XCTAssertEqual(try sent(OutboxDecisionBody.approve), try object(#"{"decision":"approve"}"#))
+        XCTAssertEqual(try sent(OutboxDecisionBody.discard), try object(#"{"decision":"discard"}"#))
+
+        // An agent says whether it holds what it would send. A new one is held unless the form
+        // says not to, and an edit sends the switch only when it was flipped, so a server from
+        // before the outbox is never sent a field it doesn't know.
+        let holding = try agent(#"{"id":"a1","title":"Digest","prompt":"p","hold_writes":true,"trigger":{"kind":"interval","every_minutes":60}}"#)
+        XCTAssertTrue(holding.holdWrites)
+        let older = try agent(#"{"id":"a2","title":"Digest","prompt":"p","trigger":{"kind":"interval","every_minutes":60}}"#)
+        XCTAssertFalse(older.holdWrites)
+        XCTAssertEqual(try sent(AgentBody(holdWrites: false)), try object(#"{"hold_writes":false}"#))
+        var draft = AgentDraft(agent: holding)
+        XCTAssertTrue(draft.holdWrites)
+        XCTAssertNil(try draft.updateBody(for: holding).holdWrites)
+        draft.holdWrites = false
+        XCTAssertEqual(try draft.updateBody(for: holding).holdWrites, false)
+        XCTAssertNil(try AgentDraft(agent: older).updateBody(for: older).holdWrites)
+        var fresh = AgentDraft()
+        fresh.title = "New"
+        fresh.prompt = "p"
+        XCTAssertTrue(fresh.holdWrites)
+        XCTAssertNil(try fresh.createBody().holdWrites)
+        fresh.holdWrites = false
+        XCTAssertEqual(try fresh.createBody().holdWrites, false)
+    }
 }

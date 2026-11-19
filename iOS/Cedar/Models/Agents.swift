@@ -579,6 +579,9 @@ struct Agent: Decodable, Identifiable, Hashable, Sendable {
     /// How far apart events may start runs, and how many in 24 hours; `nil` for the defaults.
     var minIntervalSecs: Int?
     var maxRunsPerDay: Int?
+    /// Whether what its runs would send or change in the person's accounts waits in the outbox
+    /// for their approval. False on a server from before the outbox.
+    var holdWrites: Bool
     var hook: Hook?
     var lastRun: AgentRun?
 
@@ -592,6 +595,7 @@ struct Agent: Decodable, Identifiable, Hashable, Sendable {
         case lastError = "last_error"
         case minIntervalSecs = "min_interval_secs"
         case maxRunsPerDay = "max_runs_per_day"
+        case holdWrites = "hold_writes"
         case lastRun = "last_run"
     }
 
@@ -616,6 +620,7 @@ struct Agent: Decodable, Identifiable, Hashable, Sendable {
         waiting = try c.decodeIfPresent(Bool.self, forKey: .waiting) ?? false
         minIntervalSecs = try c.decodeIfPresent(Int.self, forKey: .minIntervalSecs)
         maxRunsPerDay = try c.decodeIfPresent(Int.self, forKey: .maxRunsPerDay)
+        holdWrites = try c.decodeIfPresent(Bool.self, forKey: .holdWrites) ?? false
         hook = try c.decodeIfPresent(Hook.self, forKey: .hook)
         lastRun = try c.decodeIfPresent(AgentRun.self, forKey: .lastRun)
     }
@@ -1058,12 +1063,16 @@ struct AgentBody: Encodable, Sendable {
     var timezone: String?
     var minIntervalSecs: Nullable<Int> = .absent
     var maxRunsPerDay: Nullable<Int> = .absent
+    /// Hold what its runs would send or change until the person approves it. Left out when
+    /// creating, the server holds.
+    var holdWrites: Bool?
 
     enum CodingKeys: String, CodingKey {
         case title, prompt, model, reasoning, enabled, tools, notify, trigger, timezone
         case conversationId = "conversation_id"
         case minIntervalSecs = "min_interval_secs"
         case maxRunsPerDay = "max_runs_per_day"
+        case holdWrites = "hold_writes"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1080,6 +1089,7 @@ struct AgentBody: Encodable, Sendable {
         try c.encodeIfPresent(timezone, forKey: .timezone)
         try Self.put(minIntervalSecs, .minIntervalSecs, in: &c)
         try Self.put(maxRunsPerDay, .maxRunsPerDay, in: &c)
+        try c.encodeIfPresent(holdWrites, forKey: .holdWrites)
     }
 
     private static func put<T: Encodable & Sendable>(_ field: Nullable<T>, _ key: CodingKeys,
