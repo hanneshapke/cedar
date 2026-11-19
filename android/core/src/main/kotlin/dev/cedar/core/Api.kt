@@ -356,7 +356,8 @@ data class ConversationList(val conversations: List<Conversation> = emptyList())
 
 /**
  * `GET /api/conversations/{id}`; `agent` is there when the conversation is an agent's run, and
- * `followups` holds what was decided about the follow-ups its turns suggested.
+ * `followups` holds what was decided about the follow-ups its turns suggested, and `limitations`
+ * about what they reported they could not do.
  */
 @Serializable
 data class ConversationDetail(
@@ -364,6 +365,7 @@ data class ConversationDetail(
     val turns: List<Turn> = emptyList(),
     val agent: AgentRef? = null,
     val followups: List<Followup> = emptyList(),
+    val limitations: List<Feedback> = emptyList(),
 )
 
 @Serializable

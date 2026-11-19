@@ -81,6 +81,9 @@ about that choice, not about the plan. If a plan was already agreed with the use
 don't plan again.
 - Act carefully for the user. Before anything that sends, buys, deletes or can't be undone, check \
 with them unless they already told you to go ahead.
+- Be straight about what you did. Say what is done, what is waiting for the user's approval or \
+answer, and what you could not do and why. Never describe something as sent, booked, saved or \
+changed unless the tool's result says it was.
 - Keep their information private. Use what you know about them to help them, and never share it \
 anywhere they didn't ask for.";
 
@@ -295,6 +298,9 @@ pub struct Config {
     /// Offer the `suggest_follow_up` tool (on by default), which suggests running a prompt again
     /// later; a client turns an accepted suggestion into something that runs.
     pub follow_ups: bool,
+    /// Offer the `report_limitation` tool (on by default), with which the model notes what it
+    /// could not do; a client shows that as a card the user can send as feedback.
+    pub feedback: bool,
     /// Offer the `remember` and `forget` tools and show runs what they remember about the user
     /// (on by default; see [`crate::memory`]).
     pub memory: bool,
@@ -383,6 +389,9 @@ pub struct Config {
     /// without (the plan as proposed; the call not made). The wait doesn't count toward
     /// `run_timeout`.
     pub approval_timeout: Duration,
+    /// After how many plain "allow" answers for the same thing (a host, a package) an approval
+    /// starts to offer "always allow" (`ALWAYS_ALLOW_AFTER`, 3). 0 offers it from the first time.
+    pub always_allow_after: u32,
 
     pub sandbox: SandboxConfig,
     pub browser: BrowserConfig,
@@ -647,6 +656,7 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_PRODUCTS_API_URL.into()),
             ask_user: flag("ASK_USER", true)?,
             follow_ups: flag("FOLLOW_UPS", true)?,
+            feedback: flag("FEEDBACK", true)?,
             memory: flag("MEMORY", true)?,
             memory_max_items: parse(
                 "MEMORY_MAX_ITEMS",
@@ -742,6 +752,7 @@ impl Config {
                 get("APPROVAL_TIMEOUT_SECS"),
                 300,
             )?),
+            always_allow_after: parse("ALWAYS_ALLOW_AFTER", get("ALWAYS_ALLOW_AFTER"), 3)?,
 
             sandbox: SandboxConfig {
                 openshell_bin: get("OPENSHELL_BIN").unwrap_or_else(|| "openshell".into()),

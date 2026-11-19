@@ -438,6 +438,7 @@ async function openConversation(id) {
   state.current.agent = detail.agent;
   // What was already decided about the follow-ups suggested in it: their cards say so.
   cedarFollowUp.known(detail.followups);
+  cedarHandover.known(detail.limitations);
   cedarSettings.conversationChanged();
   cedarAttach.clear();
   setHeader();
@@ -886,6 +887,15 @@ function toolResult(view, d) {
       details.after(cedarFollowUp.element(spec, { turnId: view.turn.id, callId: d.id }));
       scrollToBottom(false);
     }
+  }
+  // Something Cedar could not do is a card that offers to send it as feedback; a call that was
+  // held for approval instead of made is a card with what would go out and the buttons for it.
+  if (!d.is_error) {
+    const limitation = details.dataset.tool === 'report_limitation' && cedarHandover.limitation.parse(text);
+    const held = !limitation && cedarHandover.held.parse(text);
+    if (limitation) details.after(cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: d.id }));
+    if (held) details.after(cedarHandover.held.element(held));
+    if (limitation || held) scrollToBottom(false);
   }
   // The images a call produced (a picture it saved, or one a command or script wrote) are shown
   // with the reply, once each: see finishTurn. A chart drawn as a card isn't shown again.

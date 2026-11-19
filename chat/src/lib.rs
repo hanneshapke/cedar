@@ -5,6 +5,7 @@
 //! context), and relays the run's event stream to the page.
 
 pub mod api;
+pub mod attention;
 pub mod cedar;
 pub mod channels;
 pub mod config;

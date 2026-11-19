@@ -271,4 +271,35 @@ class TranscriptTest {
         assertNull(call.card)
         assertEquals(1, call.charts.size)
     }
+
+    @Test
+    fun aReportAndAHeldCallAreKeptWithTheirToolCalls() {
+        var t = TurnTranscript(turn())
+        val report = """{"limitation":{"summary":"Could not book a table: no booking tool","category":"missing_tool","needed":"a booking tool"},"note":"Say so."}"""
+        t = t.apply(event(1, "tool.call", """{"id":"call_1","name":"report_limitation","input":{"summary":"Could not book a table: no booking tool","category":"missing_tool"}}"""))
+        assertEquals("Could not book a table: no booking tool", assertIs<TranscriptItem.Tool>(t.items.last()).call.summary)
+        assertEquals(emptyList(), t.limitations, "nothing to decide before the result")
+        t = t.apply(event(2, "tool.result", result("call_1", report)))
+        val (callId, limitation) = t.limitations.single()
+        assertEquals("call_1", callId)
+        assertEquals("missing_tool", limitation.category)
+        assertEquals("a booking tool", limitation.needed)
+
+        // A mail the run wanted to send was held: its result is the note, whatever the tool.
+        val held = """{"held":{"id":"h-1","tool":"gmail_send_message","reason":"Send message in your Gmail to ana@example.com.","why":"unattended"},"note":"Not done yet."}"""
+        t = t.apply(event(3, "tool.call", """{"id":"call_2","name":"gmail_send_message","input":{"to":"ana@example.com"}}"""))
+        t = t.apply(event(4, "tool.result", result("call_2", held)))
+        val note = t.heldCalls.single()
+        assertEquals("h-1", note.id)
+        assertEquals("gmail_send_message", note.tool)
+        assertEquals(false, note.timedOut)
+
+        // A failed report reported nothing, and the same words from another tool are just output.
+        t = t.apply(event(5, "tool.call", """{"id":"call_3","name":"report_limitation","input":{}}"""))
+        t = t.apply(event(6, "tool.result", result("call_3", "give summary", isError = true)))
+        t = t.apply(event(7, "tool.call", """{"id":"call_4","name":"bash","input":{"command":"cat out.json"}}"""))
+        t = t.apply(event(8, "tool.result", result("call_4", report)))
+        assertEquals(listOf("call_1"), t.limitations.map { it.first })
+        assertEquals(1, t.heldCalls.size)
+    }
 }

@@ -28,8 +28,45 @@ struct AgentRows: View {
         }
     }
 
+    /// The outbox, above the agents: what their runs would have sent or changed, each with who
+    /// wanted it and Approve or Discard. Nothing here happens until it is approved.
+    @ViewBuilder
+    private var outbox: some View {
+        if !app.outbox.isEmpty {
+            Section {
+                ForEach(app.outbox) { item in
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let origin = item.origin {
+                            if let conversationId = item.conversationId {
+                                Button {
+                                    app.open(conversationId: conversationId)
+                                } label: {
+                                    Text(verbatim: origin)
+                                        .font(.footnote.weight(.medium))
+                                }
+                                .buttonStyle(.borderless)
+                            } else {
+                                Text(verbatim: origin)
+                                    .font(.footnote.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        HeldCallCard(id: item.id)
+                    }
+                    .listRowSeparator(.hidden)
+                    .sidebarRow()
+                }
+            } header: {
+                Text("Waiting for Your Approval")
+            } footer: {
+                Text("What your agents would have sent or changed. Nothing here happens until you approve it.")
+            }
+        }
+    }
+
     @ViewBuilder
     private var agents: some View {
+        outbox
         if let error = app.agentError {
             Section {
                 Label(error, systemImage: "exclamationmark.triangle")

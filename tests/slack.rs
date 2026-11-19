@@ -544,6 +544,202 @@ async fn posting_waits_for_the_users_ok_in_an_interactive_run() {
     );
 }
 
+async fn held(app: &TestApp, key: &str, query: &str) -> Vec<Value> {
+    let (status, body) = app.get(&format!("/v1/held{query}"), key).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body["held"].as_array().unwrap().clone()
+}
+
+async fn decide(app: &TestApp, key: &str, id: &str, body: Value) -> (StatusCode, Value) {
+    app.json(Method::POST, &format!("/v1/held/{id}"), Some(key), Some(body)).await
+}
+
+/// A run nobody answers that holds its writes posts nothing: the call waits in the owner's
+/// outbox, and approving it there makes that call, as written or as edited, without a model.
+#[tokio::test]
+async fn an_unattended_run_holds_what_it_would_post_until_the_owner_approves() {
+    let (base, mock) = start().await;
+    let post = |id: &str| {
+        tool_use(id, "slack_send_message", json!({ "channel": GENERAL, "text": "We ship on Friday." }))
+    };
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(post("t1")),
+            // The same call again is kept once.
+            Step::Reply(post("t2")),
+            Step::Reply(text("The announcement is waiting for your approval.")),
+        ],
+        &[("SLACK_BOT_TOKEN", GOOD_TOKEN), ("SLACK_API_URL", base)],
+    )
+    .await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "announce it", "hold_writes": true }))
+        .await;
+    assert_eq!(run["hold_writes"], true);
+    let id = run["id"].as_str().unwrap().to_string();
+    app.wait_status(KEY_A, &id, "completed").await;
+    assert!(mock.calls_of("chat.postMessage").is_empty(), "nothing is posted before the owner says so");
+
+    // The model was told how this run hands over, and that the call is held, not made.
+    let requests = app.llm.requests();
+    let system = requests[0]["system"].as_str().unwrap();
+    assert!(system.contains("held in their outbox"), "{system}");
+    assert!(system.contains("never say that it was sent"), "{system}");
+    assert!(system.contains("end your answer with what is left for the user"), "{system}");
+    assert!(system.contains("note the gap with report_limitation"), "{system}");
+    let result = &requests[1]["messages"].as_array().unwrap().last().unwrap()["content"][0];
+    assert!(result.get("is_error").is_none(), "{result}");
+    let told: Value = serde_json::from_str(result["content"].as_str().unwrap()).unwrap();
+    assert_eq!(told["held"]["tool"], "slack_send_message");
+    assert_eq!(told["held"]["why"], "unattended");
+    assert!(told["note"].as_str().unwrap().contains("Not done yet"), "{told}");
+
+    let events = app.events(KEY_A, &id, None).await;
+    let announced: Vec<&Value> = events
+        .iter()
+        .filter(|e| e.data["type"] == "call.held")
+        .map(|e| &e.data["data"])
+        .collect();
+    assert_eq!(announced.len(), 1, "the repeated call is not kept twice");
+    assert_eq!(announced[0]["call_id"], "t1");
+    assert_eq!(
+        announced[0]["reason"],
+        format!("Send message in Slack to {GENERAL}: \"We ship on Friday.\".")
+    );
+
+    let waiting = held(&app, KEY_A, "?status=pending").await;
+    assert_eq!(waiting.len(), 1);
+    let call = &waiting[0];
+    assert_eq!(call["id"], told["held"]["id"]);
+    assert_eq!(call["run_id"], id.as_str());
+    assert_eq!(call["input"], json!({ "channel": GENERAL, "text": "We ship on Friday." }));
+    let held_id = call["id"].as_str().unwrap().to_string();
+    assert_eq!(held(&app, KEY_A, &format!("?run_id={id}")).await.len(), 1);
+
+    // It is the owner's alone.
+    assert!(held(&app, KEY_B, "").await.is_empty());
+    let (status, _) = decide(&app, KEY_B, &held_id, json!({ "decision": "approve" })).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = decide(&app, KEY_A, &held_id, json!({ "decision": "maybe" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = decide(&app, KEY_A, &held_id, json!({ "decision": "approve", "input": "post it" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(mock.calls_of("chat.postMessage").is_empty());
+
+    // Approved with an edit: what the owner wrote is what goes out, once.
+    let edited = json!({ "channel": GENERAL, "text": "We ship on Monday." });
+    let (status, sent) = decide(&app, KEY_A, &held_id, json!({ "decision": "approve", "input": edited })).await;
+    assert_eq!(status, StatusCode::OK, "{sent}");
+    assert_eq!(sent["status"], "sent");
+    assert_eq!(sent["edited"], true);
+    assert_eq!(sent["input"], edited);
+    assert!(sent["decided_at"].is_string());
+    let posted = mock.calls_of("chat.postMessage");
+    assert_eq!(posted.len(), 1);
+    assert_eq!(posted[0]["text"], "We ship on Monday.");
+    assert_eq!(app.llm.call_count(), 3, "approving makes the call without asking a model");
+
+    let (status, err) = decide(&app, KEY_A, &held_id, json!({ "decision": "approve" })).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{err}");
+    let (status, _) = decide(&app, KEY_A, &held_id, json!({ "decision": "discard" })).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(mock.calls_of("chat.postMessage").len(), 1);
+    assert!(held(&app, KEY_A, "?status=pending").await.is_empty());
+    assert_eq!(held(&app, KEY_A, "?status=sent").await.len(), 1);
+}
+
+#[tokio::test]
+async fn a_held_call_can_be_discarded_and_reading_is_never_held() {
+    let (base, mock) = start().await;
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(tool_use("t1", "slack_list_channels", json!({}))),
+            Step::Reply(tool_use("t2", "slack_send_message", json!({ "channel": GENERAL, "text": "hi" }))),
+            Step::Reply(text("Waiting for you.")),
+        ],
+        &[("SLACK_BOT_TOKEN", GOOD_TOKEN), ("SLACK_API_URL", base)],
+    )
+    .await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "say hi", "hold_writes": true }))
+        .await;
+    let id = run["id"].as_str().unwrap().to_string();
+    app.wait_status(KEY_A, &id, "completed").await;
+    assert!(!mock.calls_of("conversations.list").is_empty(), "reading went ahead");
+    let waiting = held(&app, KEY_A, "").await;
+    assert_eq!(waiting.len(), 1);
+    let held_id = waiting[0]["id"].as_str().unwrap().to_string();
+    let (status, _) = decide(&app, KEY_A, &held_id, json!({ "decision": "discard", "input": {} })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, gone) = decide(&app, KEY_A, &held_id, json!({ "decision": "discard" })).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(gone["status"], "discarded");
+    let (status, _) = decide(&app, KEY_A, &held_id, json!({ "decision": "approve" })).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(mock.calls_of("chat.postMessage").is_empty());
+    let (status, one) = app.get(&format!("/v1/held/{held_id}"), KEY_A).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(one["status"], "discarded");
+
+    // Deleting the run takes what it had held with it.
+    let (status, _) = app.json(Method::DELETE, &format!("/v1/runs/{id}"), Some(KEY_A), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(held(&app, KEY_A, "").await.is_empty());
+}
+
+/// Without `hold_writes` an unattended run acts at once, as it always did.
+#[tokio::test]
+async fn an_unattended_run_that_does_not_hold_posts_at_once() {
+    let (base, mock) = start().await;
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(tool_use("t1", "slack_send_message", json!({ "channel": GENERAL, "text": "hi" }))),
+            Step::Reply(text("Posted.")),
+        ],
+        &[("SLACK_BOT_TOKEN", GOOD_TOKEN), ("SLACK_API_URL", base)],
+    )
+    .await;
+    let run = app.create_run(KEY_A, "say hi").await;
+    assert_eq!(run["hold_writes"], false);
+    let id = run["id"].as_str().unwrap().to_string();
+    app.wait_status(KEY_A, &id, "completed").await;
+    assert_eq!(mock.calls_of("chat.postMessage").len(), 1);
+    assert!(held(&app, KEY_A, "").await.is_empty());
+    let system = app.llm.requests()[0]["system"].as_str().unwrap().to_string();
+    assert!(system.contains("only where the prompt says to"), "{system}");
+    assert!(!system.contains("outbox"), "{system}");
+}
+
+/// An approval nobody answers in time doesn't drop a message: it is kept in the outbox.
+#[tokio::test]
+async fn a_post_nobody_approved_in_time_is_kept_in_the_outbox() {
+    let (base, mock) = start().await;
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(tool_use("t1", "slack_send_message", json!({ "channel": GENERAL, "text": "hi" }))),
+            Step::Reply(text("It is waiting in your outbox.")),
+        ],
+        &[("SLACK_BOT_TOKEN", GOOD_TOKEN), ("SLACK_API_URL", base), ("APPROVAL_TIMEOUT_SECS", "1")],
+    )
+    .await;
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "say hi", "interactive": true }))
+        .await;
+    let id = run["id"].as_str().unwrap().to_string();
+    app.wait_status(KEY_A, &id, "completed").await;
+    assert!(mock.calls_of("chat.postMessage").is_empty());
+    let system = app.llm.requests()[0]["system"].as_str().unwrap().to_string();
+    assert!(system.contains("kept in their outbox to approve later"), "{system}");
+    let waiting = held(&app, KEY_A, "?status=pending").await;
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(waiting[0]["why"], "timeout");
+    let (status, sent) = decide(&app, KEY_A, waiting[0]["id"].as_str().unwrap(), json!({ "decision": "approve" })).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sent["status"], "sent");
+    assert_eq!(sent["edited"], false);
+    assert_eq!(mock.calls_of("chat.postMessage").len(), 1);
+}
+
 fn admin_env(extra: &[(&'static str, &'static str)]) -> Vec<(&'static str, &'static str)> {
     let mut env = vec![
         ("CEDAR_ADMIN_KEYS", KEY_B),

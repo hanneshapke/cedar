@@ -348,6 +348,31 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
         decode(request("api/turns/$turnId/followups/$callId", "PUT", choice.toJson()), FollowupDecision.serializer())
 
     /**
+     * Decides about something a turn reported it could not do (`callId` is its `report_limitation`
+     * tool call): sending keeps the report on the server as feedback, dismissing only records
+     * that it was seen. The first decision stands, so the answer may be an earlier one.
+     */
+    suspend fun decideLimitation(turnId: String, callId: String, choice: FeedbackChoice): FeedbackDecision =
+        decode(request("api/turns/$turnId/limitations/$callId", "PUT", choice.toJson()), FeedbackDecision.serializer())
+
+    // The outbox
+
+    /** What waits for the person's approval, newest first. */
+    suspend fun outbox(): List<OutboxItem> = decode(request("api/outbox"), Outbox.serializer()).items
+
+    /** One held call, whatever became of it. 404 once its run is deleted. */
+    suspend fun outboxItem(id: String): OutboxItem = decode(request("api/outbox/$id"), OutboxItem.serializer())
+
+    /**
+     * Approves a held call, which makes it now, exactly as it was written and with no model
+     * involved, or discards it. The answer is the call as it is afterwards: `sent`, `failed`
+     * (the service refused; it can be approved again) or `discarded`. 409 once it was decided.
+     * The server waits for the call itself, so this can take as long as a tool does.
+     */
+    suspend fun decideOutbox(id: String, approve: Boolean): OutboxItem =
+        decode(request("api/outbox/$id", "POST", buildJsonObject { put("decision", if (approve) "approve" else "discard") }), OutboxItem.serializer())
+
+    /**
      * Streams a turn's events after `after`: a replay of the stored log, then live events. The flow
      * completes after the terminal event, or when the server closes the connection.
      */

@@ -470,7 +470,7 @@ async fn always_allowing_remembers_the_scope_for_the_key() {
             Step::Reply(install("t2")),
             Step::Reply(text("Installed.")),
         ],
-        &[("SANDBOX_POLICY", "packages")],
+        &[("SANDBOX_POLICY", "packages"), ("ALWAYS_ALLOW_AFTER", "0")],
     )
     .await;
     let run = app
@@ -510,6 +510,63 @@ async fn always_allowing_remembers_the_scope_for_the_key() {
         .granted(&owner, "installs", &["rich".into()])
         .await
         .unwrap());
+}
+
+/// "Always allow" is earned: it is offered once the same thing was plainly allowed
+/// `ALWAYS_ALLOW_AFTER` times, and declining it starts the count again.
+#[tokio::test]
+async fn always_is_offered_only_after_the_same_thing_was_allowed_a_few_times() {
+    let install = |id: &str| tool_use(id, "bash", json!({ "command": "pip install rich" }));
+    let mut script: Vec<Step> = (1..=6).map(|i| Step::Reply(install(&format!("t{i}")))).collect();
+    script.push(Step::Reply(text("Installed.")));
+    let app = TestApp::with_env(script, &[("SANDBOX_POLICY", "packages"), ("ALWAYS_ALLOW_AFTER", "2")]).await;
+    let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
+    assert_eq!(defaults["always_allow_after"], 2);
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "set up", "interactive": true }))
+        .await;
+    let id = id_of(&run);
+
+    // Answer the run's approvals one by one, in the order it asks.
+    let mut stream = LiveStream::open(&app, KEY_A, &id, None).await;
+    let mut asked = Vec::new();
+    // Allowed twice, then declined (which starts over), allowed twice again, then always.
+    let answers = ["allow_always", "allow", "deny", "allow", "allow", "allow_always"];
+    while asked.len() < answers.len() {
+        let e = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next_event())
+            .await
+            .expect("an approval in time")
+            .expect("the stream is open");
+        if e.data["type"] != "approval.required" {
+            continue;
+        }
+        let approval = e.data["data"].clone();
+        let uri = format!("/v1/runs/{id}/approvals/{}", approval["id"].as_str().unwrap());
+        let (status, _) = post(&app, &uri, json!({ "decision": answers[asked.len()] })).await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+        asked.push(approval);
+    }
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let offered: Vec<bool> = asked.iter().map(|a| a["always"]["offered"] == true).collect();
+    assert_eq!(offered, [false, false, true, false, false, true], "{asked:?}");
+    // Until it is offered the event has no scope, so no client shows the button.
+    assert_eq!(asked[0]["scope"], Value::Null);
+    assert_eq!(asked[0]["always"], json!({ "scope": "rich", "allowed": 0, "after": 2, "offered": false }));
+    assert_eq!(asked[2]["scope"], "rich");
+    assert_eq!(asked[2]["always"]["allowed"], 2);
+    assert_eq!(asked[3]["always"]["allowed"], 0, "declining starts the count again");
+
+    let events = app.events(KEY_A, &id, None).await;
+    let decisions: Vec<&str> = of_kind(&events, "approval.resolved")
+        .iter()
+        .map(|d| d["decision"].as_str().unwrap())
+        .collect();
+    // An "always" that wasn't offered counts as this once.
+    assert_eq!(decisions, ["allow", "allow", "deny", "allow", "allow", "allow_always"]);
+    let owner = cedar::auth::AuthKeys::new(&[KEY_A.into()]).authenticate(KEY_A).unwrap().0;
+    assert!(app.state.store.granted(&owner, "installs", &["rich".into()]).await.unwrap());
+    assert_eq!(app.state.store.allow_count(&owner, "installs", &["rich".into()]).await.unwrap(), 0);
 }
 
 #[tokio::test]
@@ -631,12 +688,15 @@ async fn a_blocked_connection_can_be_allowed_and_always_is_remembered_for_the_ke
             json!({ "command": "curl https://api.example.com/v1" }),
         )
     };
-    let app = TestApp::new(vec![
-        Step::Reply(curl("t1")),
-        Step::Reply(text("Blocked; allowed now.")),
-        Step::Reply(curl("t2")),
-        Step::Reply(text("Fetched.")),
-    ])
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(curl("t1")),
+            Step::Reply(text("Blocked; allowed now.")),
+            Step::Reply(curl("t2")),
+            Step::Reply(text("Fetched.")),
+        ],
+        &[("ALWAYS_ALLOW_AFTER", "0")],
+    )
     .await;
     app.use_openshell().await;
     let run = app

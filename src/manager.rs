@@ -213,6 +213,13 @@ impl RunManager {
     /// Call once at startup, before accepting requests.
     pub async fn recover(&self) -> Result<()> {
         let failed = self.0.store.fail_orphans().await?;
+        let interrupted = self.0.store.fail_interrupted_held().await?;
+        if interrupted > 0 {
+            tracing::warn!(
+                count = interrupted,
+                "held calls were being sent when the previous process stopped; marked failed for their owners to check"
+            );
+        }
         if !failed.is_empty() {
             tracing::warn!(
                 count = failed.len(),
@@ -436,6 +443,7 @@ impl Inner {
                     "sandbox": sandbox::describe(runtime, &self.env.sandbox),
                     "plan": run.plan,
                     "interactive": run.interactive,
+                    "hold_writes": run.hold_writes,
                 }),
             )
             .await?;

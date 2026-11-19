@@ -31,6 +31,10 @@ struct ToolCall: Identifiable, Hashable, Sendable {
     var charts: [ChartCard] = []
     /// What a finished `suggest_follow_up` proposed, drawn as a card under the turn.
     var followUp: FollowUp?
+    /// What a finished `report_limitation` said the run could not do, drawn as a card under the turn.
+    var limitation: LimitationReport?
+    /// The call was not made but kept in the outbox: what its result says about that.
+    var held: HeldNote?
 
     var isFinished: Bool { output != nil }
 
@@ -63,6 +67,8 @@ struct ToolCall: Identifiable, Hashable, Sendable {
             return input["query"]?.stringValue ?? ""
         case FollowUp.tool:
             return followUp?.title ?? input["title"]?.stringValue ?? ""
+        case LimitationReport.tool:
+            return limitation?.summary ?? input["summary"]?.stringValue ?? ""
         case "show_map", "show_recipe", "plan_trip", "compare_stocks", "search_products", "search_flights", "weather_forecast":
             return cardTitle ?? ""
         default:
@@ -332,8 +338,15 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
                 call.card = Card.parse(name: call.name, output: output, input: call.input)
             } else if call.name == FollowUp.tool, !call.isError, let output = call.output {
                 call.followUp = FollowUp.parse(output)
+            } else if call.name == LimitationReport.tool, !call.isError, let output = call.output {
+                call.limitation = LimitationReport.parse(output)
             } else if !call.isError, let output = call.output {
-                call.charts = ChartCard.inOutput(output).charts
+                // Any tool that writes to an account may have been held instead of called.
+                if let held = HeldNote.parse(output) {
+                    call.held = held
+                } else {
+                    call.charts = ChartCard.inOutput(output).charts
+                }
             }
             if case .array(let sources)? = data["sources"] {
                 call.sources = sources.compactMap { s in
@@ -389,6 +402,23 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
             if case .plan(_, let plan) = item, plan.awaiting { return plan }
         }
         return nil
+    }
+
+    /// The calls that reported something the run could not do, in order; each call's id is the
+    /// report's `call_id`.
+    var limitations: [ToolCall] {
+        items.compactMap { item -> ToolCall? in
+            if case .tool(let call) = item, call.limitation != nil { return call }
+            return nil
+        }
+    }
+
+    /// The calls that were kept in the outbox instead of made, in order.
+    var heldCalls: [ToolCall] {
+        items.compactMap { item -> ToolCall? in
+            if case .tool(let call) = item, call.held != nil { return call }
+            return nil
+        }
     }
 
     /// The calls that suggested a follow-up, in order; each call's id is the suggestion's

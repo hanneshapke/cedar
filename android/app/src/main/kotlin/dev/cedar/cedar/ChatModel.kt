@@ -17,6 +17,10 @@ import dev.cedar.core.ClarifyAnswer
 import dev.cedar.core.FollowUpSuggestion
 import dev.cedar.core.Followup
 import dev.cedar.core.FollowupChoice
+import dev.cedar.core.Feedback
+import dev.cedar.core.FeedbackChoice
+import dev.cedar.core.LimitationReport
+import dev.cedar.core.OutboxItem
 import dev.cedar.core.Notice
 import dev.cedar.core.OutgoingAttachment
 import dev.cedar.core.Plan
@@ -58,6 +62,14 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
     /** The suggestions a decision is on its way for, and why the last one for each failed. */
     private var decidingFollowups by mutableStateOf<Set<String>>(emptySet())
     private var followupErrors by mutableStateOf<Map<String, String>>(emptyMap())
+
+    /**
+     * What was decided about what the turns reported they could not do, by turn and tool call
+     * ([limitation]); a report without an entry is still open.
+     */
+    private var limitations by mutableStateOf<Map<String, Feedback>>(emptyMap())
+    private var decidingLimitations by mutableStateOf<Set<String>>(emptySet())
+    private var limitationErrors by mutableStateOf<Map<String, String>>(emptyMap())
 
     /** The message being sent, shown until the server accepts it, and the files that went with it. */
     var pendingPrompt by mutableStateOf<String?>(null)
@@ -123,6 +135,7 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
             app.remember(detail.conversation)
             agent = detail.agent
             followups = detail.followups.associateBy { followupKey(it.turnId, it.callId) }
+            limitations = detail.limitations.filter { it.turnId != null }.associateBy { followupKey(it.turnId.orEmpty(), it.callId) }
             sync(detail.turns)
             errorMessage = null
         } catch (e: CancellationException) {
@@ -354,6 +367,53 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
             }
         }
     }
+
+    // What Cedar could not do, and what waits for approval
+
+    /** What was decided about a report a turn's tool call made; `null` while it is open. */
+    fun limitation(turnId: String, callId: String): Feedback? = limitations[followupKey(turnId, callId)]
+
+    fun isDecidingLimitation(turnId: String, callId: String): Boolean = followupKey(turnId, callId) in decidingLimitations
+
+    fun limitationError(turnId: String, callId: String): String? = limitationErrors[followupKey(turnId, callId)]
+
+    /**
+     * Sends a report as feedback, which keeps it on the person's server, or dismisses it. The
+     * first decision stands, so the answer may be one made on another device.
+     */
+    fun decideLimitation(turnId: String, callId: String, report: LimitationReport, send: Boolean, comment: String) {
+        val client = client ?: return
+        val key = followupKey(turnId, callId)
+        if (key in decidingLimitations || key in limitations) return
+        decidingLimitations = decidingLimitations + key
+        limitationErrors = limitationErrors - key
+        val choice = if (send) FeedbackChoice.Send(report, comment) else FeedbackChoice.Dismiss
+        app.scope.launch {
+            try {
+                limitations = limitations + (key to client.decideLimitation(turnId, callId, choice).feedback)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                limitationErrors = limitationErrors + (key to app.describe(e))
+            } finally {
+                decidingLimitations = decidingLimitations - key
+            }
+        }
+    }
+
+    /** A call one of the turns had held, as the outbox has it now; asked for the first time it is drawn. */
+    fun heldCall(id: String): OutboxItem? {
+        app.loadHeldCall(id)
+        return app.heldCall(id)
+    }
+
+    fun isHeldCallGone(id: String): Boolean = app.isHeldCallGone(id)
+
+    fun isDecidingHeldCall(id: String): Boolean = app.isDecidingHeldCall(id)
+
+    fun heldCallError(id: String): String? = app.heldCallError(id)
+
+    fun decideHeldCall(id: String, approve: Boolean) = app.decideHeldCall(id, approve)
 
     // Follow-ups
 

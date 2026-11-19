@@ -43,6 +43,8 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(300);
 /// Starting a run with attachments sends up to tens of MB that cedar decodes before answering.
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+/// Approving a held call makes it while the request waits: as long as a tool may take.
+const HELD_TIMEOUT: Duration = Duration::from_secs(300);
 /// Installing a community tool includes `pip install` of its packages.
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(900);
 
@@ -126,6 +128,9 @@ impl CedarClient {
         if opts.interactive {
             body["interactive"] = json!(true);
         }
+        if opts.hold_writes {
+            body["hold_writes"] = json!(true);
+        }
         if let Some(l) = opts.locale {
             body["locale"] = json!(l);
         }
@@ -173,6 +178,16 @@ impl CedarClient {
     /// a cedar from before memory, which doesn't know the route.
     pub async fn memory(&self, query: &[(&str, &str)]) -> Result<Option<Value>, AppError> {
         match self.json(self.http.get(self.url("/memory")).query(query)).await {
+            Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => Ok(None),
+            other => other.map(Some),
+        }
+    }
+
+    /// Memory as a network (`GET /v1/memory/graph`): `{nodes, edges, total, left_out}`. `None`
+    /// from a cedar from before the graph. An older one with memory takes `graph` for a memory's
+    /// id and answers 404 as well.
+    pub async fn memory_graph(&self, query: &[(&str, &str)]) -> Result<Option<Value>, AppError> {
+        match self.json(self.http.get(self.url("/memory/graph")).query(query)).await {
             Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => Ok(None),
             other => other.map(Some),
         }
@@ -496,6 +511,35 @@ impl CedarClient {
         self.json(self.http.post(self.url(&path)).json(body)).await
     }
 
+    /// The calls waiting in the user's outbox, or by `status` what became of earlier ones, or
+    /// those of one run: `{held: [...]}` (cedar's `GET /v1/held`).
+    pub async fn held(&self, status: Option<&str>, run_id: Option<Uuid>) -> Result<Vec<Value>, AppError> {
+        let mut query: Vec<(&str, String)> = Vec::new();
+        if let Some(status) = status {
+            query.push(("status", status.to_string()));
+        }
+        if let Some(run_id) = run_id {
+            query.push(("run_id", run_id.to_string()));
+        }
+        let listing: Value = self.json(self.http.get(self.url("/held")).query(&query)).await?;
+        Ok(listing["held"].as_array().cloned().unwrap_or_default())
+    }
+
+    /// One held call; `None` if it isn't the user's.
+    pub async fn held_call(&self, id: Uuid) -> Result<Option<Value>, AppError> {
+        match self.json(self.http.get(self.url(&format!("/held/{id}")))).await {
+            Ok(held) => Ok(Some(held)),
+            Err(AppError::Upstream { status: reqwest::StatusCode::NOT_FOUND, .. }) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Approve (and make) or discard a held call: `{"decision": "approve" | "discard", "input"?}`.
+    /// Approving waits for the call itself, so it gets the time a tool may take.
+    pub async fn decide_held(&self, id: Uuid, body: &Value) -> Result<Value, AppError> {
+        self.json_within(self.http.post(self.url(&format!("/held/{id}"))).json(body), HELD_TIMEOUT).await
+    }
+
     pub async fn delete_run(&self, id: Uuid) -> Result<(), AppError> {
         self.send(self.http.delete(self.url(&format!("/runs/{id}"))).timeout(REQUEST_TIMEOUT)).await?;
         Ok(())
@@ -585,6 +629,9 @@ pub struct RunOptions<'a> {
     /// Someone is there to answer: the run waits for its plan to be agreed and for risky calls
     /// to be approved. Off for scheduled runs.
     pub interactive: bool,
+    /// What the run would send or change in the user's accounts waits in their outbox instead
+    /// (cedar's `hold_writes`). For runs nobody answers: an agent's.
+    pub hold_writes: bool,
     /// The user's language and region; `None` leaves cedar's default (or the parent's).
     pub locale: Option<&'a str>,
 }
