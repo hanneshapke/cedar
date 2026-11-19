@@ -1,7 +1,7 @@
 //! End-to-end tests of the chat API against a fake cedar server on a local port.
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, Method, Request, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -586,6 +586,16 @@ async fn list_memory(State(s): State<Shared>) -> axum::response::Response {
     }
 }
 
+/// cedar's graph of the memories: every one a node, and an edge between the first two.
+async fn memory_graph(State(s): State<Shared>, Query(q): Query<HashMap<String, String>>) -> axum::response::Response {
+    let Some(items) = s.memory.lock().unwrap().clone() else { return no_route() };
+    let edges: Vec<Value> = match items.as_slice() {
+        [a, b, ..] => vec![json!({ "source": a["id"], "target": b["id"], "kind": "topic", "weight": 1, "topics": ["travel"] })],
+        _ => vec![],
+    };
+    Json(json!({ "nodes": items, "edges": edges, "total": items.len(), "left_out": 0, "asked": q })).into_response()
+}
+
 async fn add_memory(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
     let mut memory = s.memory.lock().unwrap();
     let Some(items) = memory.as_mut() else { return no_route() };
@@ -796,6 +806,7 @@ impl Harness {
             .route("/v1/tools/{name}/call", post(call_tool))
             .route("/v1/models", get(models))
             .route("/v1/memory", get(list_memory).post(add_memory).delete(forget_all_memory))
+            .route("/v1/memory/graph", get(memory_graph))
             .route("/v1/memory/{id}", axum::routing::delete(forget_memory))
             .route("/v1/records", get(list_records).delete(drop_all_records))
             .route("/v1/records/{name}", get(get_record_set).delete(drop_record_set))
@@ -1516,6 +1527,10 @@ async fn both_uis_are_served() {
                 page.find("src=\"/settings-shell.js\"") < page.find("src=\"/memory.js\""),
                 "{uri} loads the Memory page after the Settings frame it registers with"
             );
+            assert!(
+                page.find("src=\"/memory-graph.js\"") < page.find("src=\"/memory.js\"") && page.contains("href=\"/memory-graph.css\""),
+                "{uri} loads the memory graph before the Memory page that draws it"
+            );
             assert!(page.contains("id=\"reasoning\""), "{uri} has a reasoning picker");
             assert!(page.contains("href=\"/models.css\""), "{uri} loads the send menu styles");
             assert!(page.contains("<script src=\"/agents.js\">"), "{uri} loads the agents script");
@@ -1597,6 +1612,8 @@ async fn both_uis_are_served() {
         ("/star.css", "text/css; charset=utf-8", ".cedar-star"),
         ("/settings-shell.js", "text/javascript; charset=utf-8", "cedarSettingsShell"),
         ("/memory.js", "text/javascript; charset=utf-8", "id: 'memory'"),
+        ("/memory-graph.js", "text/javascript; charset=utf-8", "cedarMemoryGraph"),
+        ("/memory-graph.css", "text/css; charset=utf-8", ".cedar-mgraph"),
         ("/settings.js", "text/javascript; charset=utf-8", "cedarSettings"),
         ("/settings.css", "text/css; charset=utf-8", ".settings-dialog"),
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),
@@ -3610,6 +3627,9 @@ async fn memory_is_relayed_with_the_conversation_it_came_from() {
     let (status, body) = h.json(Method::GET, "/api/memory", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({ "supported": false, "items": [], "profile": null, "limits": null }));
+    let (status, body) = h.json(Method::GET, "/api/memory/graph", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "supported": false, "nodes": [], "edges": [], "total": 0, "left_out": 0 }));
 
     let (cid, run_id) = h.finished_conversation("I prefer metric units", "Noted.").await;
     let other_run = Uuid::new_v4().to_string();
@@ -3629,6 +3649,18 @@ async fn memory_is_relayed_with_the_conversation_it_came_from() {
     assert_eq!(items.len(), 3);
     assert_eq!(items[0]["conversation_id"], json!(cid));
     assert_eq!(items[0]["title"], "I prefer metric units");
+    // The graph's nodes get the same, its edges come as cedar sent them, and only the
+    // archive and the limit are passed on.
+    let (status, graph) = h.json(Method::GET, "/api/memory/graph?archived=true&limit=50&kind=fact", None).await;
+    assert_eq!(status, StatusCode::OK, "{graph}");
+    assert_eq!(graph["supported"], true);
+    assert_eq!(graph["asked"], json!({ "archived": "true", "limit": "50" }));
+    assert_eq!(graph["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(graph["nodes"][0]["conversation_id"], json!(cid));
+    assert_eq!(graph["nodes"][0]["title"], "I prefer metric units");
+    assert_eq!(graph["nodes"][1]["conversation_id"], Value::Null);
+    assert_eq!(graph["edges"], json!([{ "source": a, "target": b, "kind": "topic", "weight": 1, "topics": ["travel"] }]));
+    assert_eq!(graph["total"], 3);
     // A run this chat doesn't know, and a memory without a run, have no conversation.
     assert_eq!((&items[1]["conversation_id"], &items[1]["title"]), (&Value::Null, &Value::Null));
     assert_eq!(items[2]["conversation_id"], Value::Null);

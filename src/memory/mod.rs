@@ -19,6 +19,7 @@
 
 pub mod consolidate;
 pub mod extract;
+pub mod graph;
 pub mod recall;
 
 use crate::store::{now_ms, to_dt, Store};
