@@ -92,6 +92,10 @@ import dev.cedar.core.ChartCard
 import dev.cedar.core.ClarifyAnswer
 import dev.cedar.core.FollowUpSuggestion
 import dev.cedar.core.Followup
+import dev.cedar.core.Feedback
+import dev.cedar.core.HeldNote
+import dev.cedar.core.LimitationReport
+import dev.cedar.core.OutboxItem
 import dev.cedar.core.Plan
 import dev.cedar.core.Questions
 import dev.cedar.core.ToolCall
@@ -138,6 +142,27 @@ fun TurnView(turn: TurnTranscript, chat: ChatModel, webURL: String?, isLast: Boo
                 error = chat.followupError(turn.id, callId),
                 onDecide = { accept -> chat.decideFollowup(turn.id, callId, suggestion, accept) },
                 onOpenAgent = chat::openAgent,
+            )
+        }
+        // What the agent said it could not do: nothing is recorded until the person sends it.
+        for ((callId, report) in turn.limitations) {
+            LimitationView(
+                report,
+                decision = chat.limitation(turn.id, callId),
+                deciding = chat.isDecidingLimitation(turn.id, callId),
+                error = chat.limitationError(turn.id, callId),
+                onDecide = { send, comment -> chat.decideLimitation(turn.id, callId, report, send, comment) },
+            )
+        }
+        // What it would have sent or changed and held instead: nothing goes out until approved.
+        for (note in turn.heldCalls) {
+            HeldCallView(
+                note,
+                item = chat.heldCall(note.id),
+                gone = chat.isHeldCallGone(note.id),
+                deciding = chat.isDecidingHeldCall(note.id),
+                error = chat.heldCallError(note.id),
+                onDecide = { approve -> chat.decideHeldCall(note.id, approve) },
             )
         }
         val conversationId = chat.conversationId
@@ -354,6 +379,171 @@ private fun ApprovalView(approval: Approval, canDecide: Boolean, decide: (String
                 else -> approval.decision.orEmpty()
             }
             Text(text, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
+        }
+    }
+}
+
+/** The words for a report's category; one this app doesn't know reads as "other". */
+@Composable
+private fun limitationCategory(category: String): String = stringResource(
+    when (category) {
+        "missing_tool" -> R.string.limitation_missing_tool
+        "not_connected" -> R.string.limitation_not_connected
+        "blocked" -> R.string.limitation_blocked
+        "limit" -> R.string.limitation_limit
+        else -> R.string.limitation_other
+    },
+)
+
+/**
+ * Something the agent could not do (`report_limitation`): the sentence, what would help, and
+ * Send Feedback or Dismiss, with room for a note. Sending keeps the report on the person's own
+ * server; nothing is recorded before that. Once decided, here or on another device, it says which.
+ */
+@Composable
+private fun LimitationView(
+    report: LimitationReport,
+    decision: Feedback?,
+    deciding: Boolean,
+    error: String?,
+    onDecide: (send: Boolean, comment: String) -> Unit,
+) {
+    var comment by rememberSaveable(report.summary) { mutableStateOf("") }
+    val small = MaterialTheme.typography.bodySmall
+    val secondary = CedarColors.secondaryText
+    Panel {
+        PanelTitle(Icons.Outlined.BackHand, stringResource(R.string.limitation_title))
+        SelectionContainer { Text(report.summary, style = MaterialTheme.typography.bodyLarge) }
+        Text(limitationCategory(report.category), style = small, color = secondary)
+        report.needed?.let { Text(stringResource(R.string.limitation_needed, it), style = MaterialTheme.typography.bodyMedium) }
+        when {
+            decision?.isSent == true -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.CheckCircle, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.limitation_sent), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            decision != null -> Text(
+                // A status from a newer server, in its own word.
+                if (decision.isDismissed) stringResource(R.string.limitation_dismissed) else decision.status,
+                style = small, color = secondary,
+            )
+            else -> {
+                OutlinedTextField(
+                    value = comment,
+                    onValueChange = { comment = it.take(1000) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.limitation_comment)) },
+                    enabled = !deciding,
+                    maxLines = 4,
+                )
+                Text(stringResource(R.string.limitation_footnote), style = small, color = secondary)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = { onDecide(true, comment) }, enabled = !deciding) { Text(stringResource(R.string.limitation_send)) }
+                    OutlinedButton(onClick = { onDecide(false, "") }, enabled = !deciding) { Text(stringResource(R.string.followup_dismiss)) }
+                    if (deciding) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                }
+                error?.let {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Icon(Icons.Outlined.WarningAmber, null, Modifier.size(16.dp), tint = CedarColors.red)
+                        Spacer(Modifier.width(6.dp))
+                        SelectionContainer { Text(it, style = small, color = CedarColors.red) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A call that was held for approval instead of made: what it would do, what exactly would go out,
+ * and Approve or Discard. Approving makes that call as it was written, with no model involved.
+ * `note` is what the tool result said, in a conversation; `item` is the call as the outbox has
+ * it now, which is all the Agents list has. One the server refused says why and can be tried
+ * again; one that is settled says what became of it.
+ */
+@Composable
+internal fun HeldCallView(
+    note: HeldNote?,
+    item: OutboxItem?,
+    gone: Boolean,
+    deciding: Boolean,
+    error: String?,
+    onDecide: (approve: Boolean) -> Unit,
+) {
+    val small = MaterialTheme.typography.bodySmall
+    val secondary = CedarColors.secondaryText
+    val open = item?.isOpen == true
+    var expanded by rememberSaveable(item?.id ?: note?.id) { mutableStateOf(true) }
+    Panel(tint = if (open) CedarColors.orange else null) {
+        PanelTitle(
+            Icons.Outlined.BackHand,
+            stringResource(if (open || item == null) R.string.held_title else R.string.held_title_settled),
+            color = if (open) CedarColors.orange else MaterialTheme.colorScheme.primary,
+        )
+        val reason = item?.reason?.takeIf { it.isNotEmpty() } ?: note?.reason.orEmpty()
+        if (reason.isNotEmpty()) SelectionContainer { Text(reason, style = MaterialTheme.typography.bodyLarge) }
+        Text(item?.tool?.takeIf { it.isNotEmpty() } ?: note?.tool.orEmpty(), style = small, color = secondary, fontFamily = FontFamily.Monospace)
+        if (item == null) {
+            Text(stringResource(if (gone) R.string.held_gone else R.string.held_loading), style = small, color = secondary)
+            return@Panel
+        }
+        val fields = item.fields
+        if (fields.isNotEmpty()) {
+            Column(Modifier.animateContentSize()) {
+                Row(Modifier.clickable { expanded = !expanded }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(if (open) R.string.held_will_send else R.string.held_was), style = small, color = secondary)
+                    Icon(Icons.Outlined.ExpandMore, stringResource(if (expanded) R.string.show_less else R.string.show_more), Modifier.size(16.dp).rotate(if (expanded) 180f else 0f), tint = secondary)
+                }
+                if (expanded) {
+                    SelectionContainer {
+                        Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for ((name, value) in fields) {
+                                Column {
+                                    Text(name, style = small, color = secondary, fontFamily = FontFamily.Monospace)
+                                    Text(value, style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (item.isFailed && !item.output.isNullOrEmpty()) {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(Icons.Outlined.WarningAmber, null, Modifier.size(16.dp), tint = CedarColors.red)
+                Spacer(Modifier.width(6.dp))
+                SelectionContainer { Text(stringResource(R.string.held_failed, item.output.orEmpty()), style = small, color = CedarColors.red) }
+            }
+        }
+        if (!open) {
+            val time = item.decidedAt?.let { shortDateTime(it) }.orEmpty()
+            when (item.status) {
+                OutboxItem.SENT -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.CheckCircle, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(if (item.edited) R.string.held_sent_edited else R.string.held_sent, time),
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                OutboxItem.DISCARDED -> Text(stringResource(R.string.held_discarded, time), style = small, color = secondary)
+                // Being sent right now, or a status from a newer server, in its own word.
+                else -> Text(item.status, style = small, color = secondary)
+            }
+            return@Panel
+        }
+        Text(stringResource(if (item.timedOut) R.string.held_footnote_timeout else R.string.held_footnote), style = small, color = secondary)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = { onDecide(true) }, enabled = !deciding) { Text(stringResource(if (item.isFailed) R.string.try_again else R.string.held_approve)) }
+            OutlinedButton(onClick = { onDecide(false) }, enabled = !deciding) { Text(stringResource(R.string.held_discard)) }
+            if (deciding) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        }
+        error?.let {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(Icons.Outlined.WarningAmber, null, Modifier.size(16.dp), tint = CedarColors.red)
+                Spacer(Modifier.width(6.dp))
+                SelectionContainer { Text(it, style = small, color = CedarColors.red) }
+            }
         }
     }
 }

@@ -30,6 +30,7 @@ import dev.cedar.core.RecordsLimits
 import kotlinx.serialization.json.JsonObject
 import dev.cedar.core.ModelInfo
 import dev.cedar.core.Notice
+import dev.cedar.core.OutboxItem
 import dev.cedar.core.ServerSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -113,6 +114,25 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
 
     /** The runs of each agent whose page was opened, newest first, once loaded. */
     val agentRuns = mutableStateMapOf<String, List<AgentRun>>()
+
+    /**
+     * The outbox: what runs would have sent or changed in the person's accounts and held for
+     * them instead (`/api/outbox`), newest first. The Agents list shows it; nothing in it happens
+     * until they approve it.
+     */
+    var outbox by mutableStateOf<List<OutboxItem>>(emptyList())
+        private set
+
+    /** Held calls by id, as last heard of: the list's, and those a conversation's cards asked about. */
+    private val heldCalls = mutableStateMapOf<String, OutboxItem>()
+
+    /** The ids of held calls the server no longer has (their run was deleted). */
+    private var goneHeldCalls by mutableStateOf<Set<String>>(emptySet())
+
+    /** The held calls a decision is on its way for, and why the last one for each failed. */
+    private var decidingHeldCalls by mutableStateOf<Set<String>>(emptySet())
+    private var heldCallErrors by mutableStateOf<Map<String, String>>(emptyMap())
+    private val loadingHeldCalls = mutableSetOf<String>()
 
     /** The agents with a finished run nobody has looked at, and how many runs that is. */
     var unreadAgents by mutableStateOf<Set<String>>(emptySet())
@@ -750,6 +770,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             agentError = describe(e)
             return
         }
+        refreshOutbox()
         val ids = agents.map { it.id }.toSet()
         agentRuns.keys.filter { it !in ids }.forEach { agentRuns.remove(it) }
         showingAgent?.let { id -> if (id in ids) loadAgent(id) else closeAgent() }
@@ -757,6 +778,90 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     }
 
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
+
+    // The outbox
+
+    /** Reads what waits for approval. A server from before the outbox has none to show. */
+    suspend fun refreshOutbox() {
+        val client = client ?: return
+        try {
+            val items = client.outbox()
+            outbox = items
+            items.forEach { heldCalls[it.id] = it }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Nothing to show; the agents list says what is wrong when the server can't be reached.
+        }
+    }
+
+    /** A held call as last heard of; `null` until [loadHeldCall] has an answer. */
+    fun heldCall(id: String): OutboxItem? = heldCalls[id]
+
+    /** The server no longer has it: its run was deleted. */
+    fun isHeldCallGone(id: String): Boolean = id in goneHeldCalls
+
+    fun isDecidingHeldCall(id: String): Boolean = id in decidingHeldCalls
+
+    /** Why the last decision about it didn't go through, in the server's words. */
+    fun heldCallError(id: String): String? = heldCallErrors[id]
+
+    /** Asks the server what became of a held call a conversation shows, once. */
+    fun loadHeldCall(id: String) {
+        val client = client ?: return
+        if (id in heldCalls || id in goneHeldCalls || !loadingHeldCalls.add(id)) return
+        scope.launch {
+            try {
+                heldCalls[id] = client.outboxItem(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ChatException.Api) {
+                if (e.status == 404) goneHeldCalls = goneHeldCalls + id
+            } catch (_: Exception) {
+                // Asked again the next time the card is drawn.
+            } finally {
+                loadingHeldCalls.remove(id)
+            }
+        }
+    }
+
+    /**
+     * Approves a held call, which makes it now exactly as it was written, or discards it. The
+     * server waits for the call itself, so this can take a while. A call decided elsewhere in
+     * the meantime is shown as it is now.
+     */
+    fun decideHeldCall(id: String, approve: Boolean) {
+        val client = client ?: return
+        if (id in decidingHeldCalls) return
+        decidingHeldCalls = decidingHeldCalls + id
+        heldCallErrors = heldCallErrors - id
+        scope.launch {
+            try {
+                settle(client.decideOutbox(id, approve))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                heldCallErrors = heldCallErrors + (id to describe(e))
+                if (e is ChatException.Api && e.status == 409) {
+                    try {
+                        settle(client.outboxItem(id))
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The error above says what happened.
+                    }
+                }
+            } finally {
+                decidingHeldCalls = decidingHeldCalls - id
+            }
+        }
+    }
+
+    /** Takes the server's latest word on a held call; one that is settled leaves the outbox. */
+    private fun settle(item: OutboxItem) {
+        heldCalls[item.id] = item
+        outbox = if (item.isOpen) outbox.map { if (it.id == item.id) item else it } else outbox.filter { it.id != item.id }
+    }
 
     /** Reads one agent and its runs, for its page. */
     suspend fun loadAgent(id: String) {
