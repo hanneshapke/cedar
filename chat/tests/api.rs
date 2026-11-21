@@ -1348,7 +1348,7 @@ async fn validation_and_upstream_errors() {
 
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
     assert_eq!(cfg["feedback_issues_url"], "https://github.com/hanneshapke/cedar/issues/new", "where a report can be filed as an issue");
-    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models_access": "users", "memory": true, "records": true, "contributions": false, "feedback_issues_url": "https://github.com/hanneshapke/cedar/issues/new" }));
+    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models_access": "users", "memory": true, "records": true, "contributions": false, "private_chats": true, "feedback_issues_url": "https://github.com/hanneshapke/cedar/issues/new" }));
     // The pickers take cedar's registry, relayed.
     let (status, listed) = h.json(Method::GET, "/api/models", None).await;
     assert_eq!(status, StatusCode::OK);
