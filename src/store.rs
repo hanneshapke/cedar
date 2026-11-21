@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
     turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
-    workspace_reused, tools, plan, interactive, hold_writes, locale, callback_url, rating, import_attachments, model_auto, created_at, started_at, finished_at";
+    workspace_reused, tools, plan, interactive, hold_writes, locale, callback_url, rating, import_attachments, model_auto, private, created_at, started_at, finished_at";
 
 /// What `GET /v1/events` and the webhook worker read for a notification: the row joined with
 /// its run's final state.
@@ -83,6 +83,7 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
         locale: r.try_get("locale")?,
         rating: r.try_get::<Option<i64>, _>("rating")?.and_then(|v| match v { 1 => Some(Rating::Up), -1 => Some(Rating::Down), _ => None }),
         import_attachments: r.try_get::<i64, _>("import_attachments")? != 0,
+        private: r.try_get::<i64, _>("private")? != 0,
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
@@ -355,7 +356,8 @@ impl Store {
                     child.try_get("id")?,
                 )?)));
             }
-            if callback.0.is_none() {
+            // A private run calls no webhook, not even the one its parent had.
+            if callback.0.is_none() && !new.private {
                 callback = (
                     parent.try_get("callback_url")?,
                     parent.try_get("callback_secret")?,
@@ -392,8 +394,8 @@ impl Store {
 
         sqlx::query(
             "INSERT INTO runs (id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
-             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, hold_writes, locale, import_attachments, model_auto, created_at) \
-             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, hold_writes, locale, import_attachments, model_auto, private, created_at) \
+             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -415,6 +417,7 @@ impl Store {
         .bind(&new.locale)
         .bind(new.import_attachments as i64)
         .bind(new.model_auto as i64)
+        .bind(new.private as i64)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -1464,6 +1467,7 @@ mod tests {
             locale: "en".into(),
             import_attachments: false,
             model_auto: false,
+            private: false,
         }
     }
 
@@ -1837,6 +1841,7 @@ mod tests {
             locale: "en".into(),
             import_attachments: false,
             model_auto: false,
+            private: false,
             ..new_run("a")
         };
         let run = store.insert_run_limited(&new, 5).await.unwrap().unwrap();

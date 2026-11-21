@@ -1,6 +1,7 @@
 'use strict';
 
-// Text every page shares: the language picker and the words used all over (buttons, states).
+// Text every page shares: the language picker, private chats (private.js) and the words used
+// all over (buttons, states).
 // Keys are grouped by where they appear; see i18n.js for the format.
 
 cedarI18n.add({
@@ -11,6 +12,16 @@ cedarI18n.add({
     'language.autoNote': "Your browser's language, if Cedar speaks it",
     'language.onboardingNote': 'You can change this later in Settings.',
     'language.continue': 'Continue',
+    'private.button': "Private",
+    'private.offTitle': "Start a private chat: not kept, not remembered, and deleted when you leave it",
+    'private.onTitle': "The next chat is private. Click for an ordinary chat",
+    'private.openTitle': "This chat is private",
+    'private.note': "Private chat. It stays out of your conversation list and search, Cedar remembers nothing from it and keeps no records or trace of it, and no notifications are sent. It is deleted when you leave it.",
+    'private.openNote': "Private chat: nothing of it is kept or remembered, and it is deleted when you leave it.",
+    'private.end': "End chat",
+    'private.endTitle': "Leave this chat and delete it",
+    'private.ended': "Private chat deleted",
+    'private.title': "Private chat",
   },
   de: {
     'language.title': 'Sprache',
@@ -19,6 +30,16 @@ cedarI18n.add({
     'language.autoNote': 'Die Sprache deines Browsers, falls Cedar sie spricht',
     'language.onboardingNote': 'Du kannst das später in den Einstellungen ändern.',
     'language.continue': 'Weiter',
+    'private.button': "Privat",
+    'private.offTitle': "Privaten Chat starten: wird nicht aufbewahrt, nicht gemerkt und gelöscht, sobald du ihn verlässt",
+    'private.onTitle': "Der nächste Chat ist privat. Klicke für einen gewöhnlichen Chat",
+    'private.openTitle': "Dieser Chat ist privat",
+    'private.note': "Privater Chat. Er erscheint weder in deiner Unterhaltungsliste noch in der Suche, Cedar merkt sich nichts daraus und legt weder Datensätze noch einen Trace dazu an, und es werden keine Benachrichtigungen gesendet. Er wird gelöscht, sobald du ihn verlässt.",
+    'private.openNote': "Privater Chat: Nichts davon wird aufbewahrt oder gemerkt, und er wird gelöscht, sobald du ihn verlässt.",
+    'private.end': "Chat beenden",
+    'private.endTitle': "Diesen Chat verlassen und löschen",
+    'private.ended': "Privater Chat gelöscht",
+    'private.title': "Privater Chat",
   },
   es: {
     'language.title': 'Idioma',
@@ -27,6 +48,16 @@ cedarI18n.add({
     'language.autoNote': 'El idioma de tu navegador, si Cedar lo habla',
     'language.onboardingNote': 'Puedes cambiarlo más tarde en Configuración.',
     'language.continue': 'Continuar',
+    'private.button': "Privado",
+    'private.offTitle': "Iniciar un chat privado: no se guarda, no se recuerda y se elimina cuando lo dejas",
+    'private.onTitle': "El próximo chat es privado. Haz clic para un chat normal",
+    'private.openTitle': "Este chat es privado",
+    'private.note': "Chat privado. No aparece en tu lista de conversaciones ni en la búsqueda, Cedar no recuerda nada de él ni guarda registros o una traza, y no se envían notificaciones. Se elimina cuando lo dejas.",
+    'private.openNote': "Chat privado: no se guarda ni se recuerda nada de él, y se elimina cuando lo dejas.",
+    'private.end': "Terminar chat",
+    'private.endTitle': "Dejar este chat y eliminarlo",
+    'private.ended': "Chat privado eliminado",
+    'private.title': "Chat privado",
   },
   fr: {
     'language.title': 'Langue',
@@ -35,5 +66,15 @@ cedarI18n.add({
     'language.autoNote': 'La langue de votre navigateur, si Cedar la parle',
     'language.onboardingNote': 'Vous pourrez la modifier plus tard dans les Réglages.',
     'language.continue': 'Continuer',
+    'private.button': "Privé",
+    'private.offTitle': "Démarrer une conversation privée : ni conservée, ni mémorisée, et supprimée dès que vous la quittez",
+    'private.onTitle': "La prochaine conversation est privée. Cliquez pour une conversation ordinaire",
+    'private.openTitle': "Cette conversation est privée",
+    'private.note': "Conversation privée. Elle n'apparaît ni dans votre liste de conversations ni dans la recherche, Cedar n'en mémorise rien et n'en garde ni données ni trace, et aucune notification n'est envoyée. Elle est supprimée dès que vous la quittez.",
+    'private.openNote': "Conversation privée : rien n'en est conservé ni mémorisé, et elle est supprimée dès que vous la quittez.",
+    'private.end': "Terminer",
+    'private.endTitle': "Quitter cette conversation et la supprimer",
+    'private.ended': "Conversation privée supprimée",
+    'private.title': "Conversation privée",
   },
 });

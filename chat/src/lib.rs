@@ -15,6 +15,7 @@ pub mod i18n;
 pub mod notify;
 pub mod pairing;
 pub mod poll;
+pub mod private;
 pub mod prompt;
 pub mod schedule;
 pub mod slack;

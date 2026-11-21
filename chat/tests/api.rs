@@ -4940,3 +4940,142 @@ async fn a_user_connects_their_own_google_account() {
     assert_eq!(as_user(&h, Method::DELETE, &format!("/api/users/{ada_id}"), "access", true, None).await.0, StatusCode::NO_CONTENT);
     assert!(h.cedar.google_accounts.lock().unwrap().is_empty());
 }
+
+// -- private conversations ------------------------------------------------------------------
+
+/// A private conversation with one message sent; returns its id, the turn's id and the run's.
+async fn private_conversation(h: &Harness, prompt: &str) -> (String, String, String) {
+    let (status, conv) = h.json(Method::POST, "/api/conversations", Some(json!({ "private": true }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{conv}");
+    assert_eq!(conv["private"], true);
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let (status, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": prompt }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    (cid, turn["id"].as_str().unwrap().to_string(), turn["run_id"].as_str().unwrap().to_string())
+}
+
+#[tokio::test]
+async fn a_private_conversation_is_in_no_list_search_or_inbox() {
+    let h = Harness::new(&[]).await;
+    let (open, _) = h.finished_conversation("open zebra question", "an open answer").await;
+    let (cid, _, run) = private_conversation(&h, "private zebra question").await;
+    // Its runs are cedar's private runs; an open conversation's say nothing of it.
+    let bodies = h.cedar.bodies.lock().unwrap().clone();
+    assert_eq!(bodies[0].get("private"), None);
+    assert_eq!(bodies[1]["private"], true);
+    h.finish_with(&run, "completed", Some("a private zebra answer"), Some("end_turn"));
+    h.sync().await;
+
+    // It can be opened by whoever has its id, and says what it is.
+    let (status, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(detail["conversation"]["private"], true);
+    assert_eq!(detail["conversation"]["unread"], false);
+    assert_eq!(detail["turns"][0]["final_text"], "a private zebra answer");
+    assert_eq!(detail["turns"][0]["seen"], true);
+
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    let ids: Vec<&str> = list["conversations"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, [open.as_str()]);
+    assert_eq!(list["conversations"][0]["private"], false);
+    let (_, found) = h.json(Method::GET, "/api/conversations/search?q=zebra", None).await;
+    let ids: Vec<&str> = found["conversations"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, [open.as_str()]);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert!(inbox["items"].as_array().unwrap().iter().all(|i| i["conversation_id"] != cid.as_str()), "{inbox}");
+
+    // It can't be starred or contributed, and has no trace to show.
+    let (status, err) = h.json(Method::PUT, &format!("/api/conversations/{cid}/star"), None).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{err}");
+    let (_, starred) = h.json(Method::GET, "/api/starred", None).await;
+    assert!(starred["conversations"].as_array().unwrap().is_empty());
+    let (status, _) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let turn = detail["turns"][0]["id"].as_str().unwrap();
+    let (status, err) = h.json(Method::GET, &format!("/api/turns/{turn}/trace"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(err["error"]["message"].as_str().unwrap().contains("private"), "{err}");
+
+    // A follow-up continues the run, and is private too.
+    let (status, _) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "and then?" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let bodies = h.cedar.bodies.lock().unwrap().clone();
+    assert_eq!((bodies[2]["private"].as_bool(), bodies[2]["parent_id"].as_str()), (Some(true), Some(run.as_str())));
+}
+
+#[tokio::test]
+async fn nothing_about_a_private_conversation_is_announced() {
+    let h = Harness::new(&[]).await;
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover", "scope": "all", "pushover": { "token": "t", "user": "u" } }))).await;
+    let mut notices = h.notice_stream().await;
+
+    // A private response that fails, which would otherwise be worth a push under any scope.
+    let (_, turn, run) = private_conversation(&h, "between us").await;
+    h.finish_with(&run, "failed", None, None);
+    assert_eq!(h.sync().await, 1);
+    let turn = Uuid::parse_str(&turn).unwrap();
+    // The turn was brought up to date, and that is all.
+    assert_eq!(h.state.store.get_turn(turn).await.unwrap().unwrap().status, "failed");
+    assert_eq!(cedar_chat::channels::dispatch(&h.state, turn).await.unwrap(), None);
+    assert!(h.cedar.pushover.lock().unwrap().is_empty());
+
+    // An open one after it is announced as ever, and is the first notice the tabs hear of.
+    let open = ended_turn(&h, "Open", "failed", None).await;
+    let notice = next_notice(&mut notices).await;
+    assert_eq!(notice["turn_id"], open.to_string());
+    assert!(cedar_chat::channels::dispatch(&h.state, open).await.unwrap().is_some());
+    assert_eq!(h.cedar.pushover.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn leaving_a_private_conversation_ends_it_even_mid_response() {
+    let h = Harness::new(&[]).await;
+    let (cid, _, run) = private_conversation(&h, "between us").await;
+    let run_id = Uuid::parse_str(&run).unwrap();
+    // An open conversation refuses to go while its response is being written.
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let open = conv["id"].as_str().unwrap();
+    h.json(Method::POST, &format!("/api/conversations/{open}/messages"), Some(json!({ "content": "hi" }))).await;
+    assert_eq!(h.json(Method::DELETE, &format!("/api/conversations/{open}"), None).await.0, StatusCode::CONFLICT);
+
+    // The private one stops its run and goes at once.
+    assert_eq!(h.json(Method::DELETE, &format!("/api/conversations/{cid}"), None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(h.cedar.runs.lock().unwrap()[&run_id]["status"], "cancelled");
+    // Its run is deleted on cedar in the background.
+    for _ in 0..200 {
+        if h.cedar.deleted.lock().unwrap().contains(&run_id) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(*h.cedar.deleted.lock().unwrap(), [run_id]);
+}
+
+#[tokio::test]
+async fn a_private_conversation_nobody_ended_is_deleted_once_idle() {
+    // With the default of a day, one in use is left alone.
+    let h = Harness::new(&[]).await;
+    let (cid, _, _) = private_conversation(&h, "between us").await;
+    assert_eq!(cedar_chat::private::sweep(&h.state).await.unwrap(), 0);
+    assert_eq!(h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await.0, StatusCode::OK);
+
+    // With no time allowed at all, it is idle at once; an open conversation as old stays.
+    let h = Harness::new(&[("CHAT_PRIVATE_TTL_SECS", "0")]).await;
+    let (open, _) = h.finished_conversation("open", "answer").await;
+    let (cid, _, run) = private_conversation(&h, "between us").await;
+    h.finish(&run, "completed", Some("ok"));
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    assert_eq!(cedar_chat::private::sweep(&h.state).await.unwrap(), 1);
+    assert_eq!(h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(h.json(Method::GET, &format!("/api/conversations/{open}"), None).await.0, StatusCode::OK);
+    let run_id = Uuid::parse_str(&run).unwrap();
+    for _ in 0..200 {
+        if h.cedar.deleted.lock().unwrap().contains(&run_id) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(*h.cedar.deleted.lock().unwrap(), [run_id]);
+    assert_eq!(cedar_chat::private::sweep(&h.state).await.unwrap(), 0);
+}

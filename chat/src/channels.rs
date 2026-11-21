@@ -1154,6 +1154,10 @@ pub async fn dispatch(state: &AppState, turn_id: Uuid) -> Result<Option<Result<S
     }
     let settings = state.store.notification_settings().await?;
     let conversation = state.store.get_conversation(turn.conversation_id).await?;
+    // Nothing about a private conversation is sent anywhere.
+    if conversation.as_ref().is_some_and(|c| c.private) {
+        return Ok(None);
+    }
     let schedule = match conversation.as_ref().and_then(|c| c.schedule_id) {
         Some(id) => state.store.get_schedule(id).await?,
         None => None,

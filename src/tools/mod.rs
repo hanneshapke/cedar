@@ -518,7 +518,7 @@ impl ToolSet {
     /// The tools a run may use. `None` (or an entry `*`) means every tool; otherwise each entry
     /// names a group (see [`GROUPS`]) or a single tool, and the sandbox tools are always included.
     pub fn select<'a>(&'a self, allow: Option<&'a [String]>) -> ToolView<'a> {
-        ToolView { set: self, allow }
+        ToolView { set: self, allow, without: &[] }
     }
 
     /// Check a run's tool selection. Groups are accepted whether or not this server offers them
@@ -776,14 +776,28 @@ pub fn writes(name: &str) -> bool {
 pub struct ToolView<'a> {
     set: &'a ToolSet,
     allow: Option<&'a [String]>,
+    /// Groups the run may not use whatever it selected (see [`ToolView::without`]).
+    without: &'static [&'static str],
 }
 
+/// The groups that keep things about the user beyond a conversation: a private run has none
+/// of their tools.
+pub const KEEPING_GROUPS: &[&str] = &["memory", "records"];
+
 impl<'a> ToolView<'a> {
+    /// The same tools without those of `groups`, even where the selection names them.
+    pub fn without(self, groups: &'static [&'static str]) -> Self {
+        Self { without: groups, ..self }
+    }
+
     fn allows(&self, name: &str) -> bool {
+        let group = self.set.group(name);
+        if self.without.contains(&group) {
+            return false;
+        }
         let Some(allow) = self.allow else {
             return true;
         };
-        let group = self.set.group(name);
         group == "core" || allow.iter().any(|a| a == "*" || a == name || a == group)
     }
 

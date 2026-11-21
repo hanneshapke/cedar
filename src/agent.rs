@@ -137,13 +137,13 @@ pub async fn run_agent(
             ))
         }),
         locale: run.locale.clone(),
-        memory: env.memories.as_ref().map(|memories| MemoryContext {
+        memory: env.memories.as_ref().filter(|_| !run.private).map(|memories| MemoryContext {
             memories: memories.clone(),
             owner: run.owner.clone(),
             run_id: run.id,
             interactive: run.interactive,
         }),
-        records: env.records.as_ref().map(|records| RecordsContext {
+        records: env.records.as_ref().filter(|_| !run.private).map(|records| RecordsContext {
             records: records.clone(),
             owner: run.owner.clone(),
             run_id: run.id,
@@ -189,7 +189,11 @@ pub async fn run_agent(
     if let Some(allow) = &narrowed {
         tracing::info!(run_id = %run.id, window = ?budget.window(), tools = ?allow, "small context window: offering only the tools the request seems to need");
     }
-    let tools = tool_set.select(narrowed.as_deref().or(created.tools.as_deref()));
+    // A private run keeps nothing about the user: it gets no memory or records tools, and with
+    // them goes everything below that reads or writes either.
+    let tools = tool_set
+        .select(narrowed.as_deref().or(created.tools.as_deref()))
+        .without(if run.private { crate::tools::KEEPING_GROUPS } else { &[] });
     let mut tool_defs = tools.definitions();
     let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
     // How this run hands over to its user: what waits for their OK, what is held for them.
@@ -329,9 +333,12 @@ pub async fn run_agent(
         }
     }
     push_message(env, run, &mut messages, "user", opening).await?;
-    env.store
-        .record_sent_prompt(run.id, &system, &tool_defs)
-        .await?;
+    // A private run keeps no trace (see [`call_model`]).
+    if !run.private {
+        env.store
+            .record_sent_prompt(run.id, &system, &tool_defs)
+            .await?;
+    }
     let mut sources = Sources::default();
 
     // The system prompt and tools are the same in every request; only the messages grow.
@@ -847,8 +854,8 @@ pub fn with_attachments(opening: Value, blocks: Vec<Value>) -> Value {
     Value::Array(parts)
 }
 
-/// Call the model and record the call for the run's trace. The outer error is a cancellation or a
-/// failure to record it; the inner one is the call's own.
+/// Call the model and record the call for the run's trace, unless the run is private. The outer
+/// error is a cancellation or a failure to record it; the inner one is the call's own.
 async fn call_model(
     env: &AgentEnv,
     run: &Run,
@@ -865,6 +872,9 @@ async fn call_model(
         _ = cancel.cancelled() => return Err(AgentError::Cancelled),
         r = llm.create_message(req) => r,
     };
+    if run.private {
+        return Ok(resp);
+    }
     let call = trace::NewCall {
         turn,
         purpose,

@@ -444,6 +444,7 @@ impl Inner {
                     "plan": run.plan,
                     "interactive": run.interactive,
                     "hold_writes": run.hold_writes,
+                    "private": run.private,
                 }),
             )
             .await?;
@@ -555,6 +556,10 @@ impl Inner {
     /// consolidation pass when enough runs have finished.
     async fn memory_bookkeeping(self: &Arc<Self>, run: &Run) {
         let Some(memories) = &self.env.memories else { return };
+        // A private run leaves nothing in memory, not even that it happened.
+        if run.private {
+            return;
+        }
         if run.tools.as_ref().is_some_and(|t| !t.iter().any(|g| g == "memory" || g == crate::tools::REMEMBER)) {
             return;
         }
