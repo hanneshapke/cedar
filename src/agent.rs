@@ -9,6 +9,7 @@ use crate::context::{self, Budget};
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
+use crate::actions::{Actions, ActionsContext};
 use crate::memory::{self, Memories, MemoryContext};
 use crate::records::{self, Records, RecordsContext};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
@@ -20,7 +21,7 @@ use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
 use crate::tools::{
     question_text, Handover, ToolContext, ToolModel, ToolView, ACCOUNT_GROUPS, ASK_USER,
-    RECORDS_SAVE, REMEMBER,
+    RECORDS_SAVE, REMEMBER, SAVED_ACTIONS,
 };
 use crate::trace;
 use crate::waits::{Answer, Waits};
@@ -66,6 +67,8 @@ pub struct AgentEnv {
     pub memory_consolidate_after: u32,
     /// What owners keep as records across conversations; `None` when records are turned off.
     pub records: Option<Records>,
+    /// What owners showed the agent how to do; `None` when actions are turned off.
+    pub actions: Option<Actions>,
     /// `RUN_TIMEOUT_SECS`: how long a run may take (time spent waiting for the user not counted)
     /// while no admin has saved `run_timeout_secs`; the model is told when little of the limit is
     /// left (see [`time_note`]).
@@ -148,6 +151,10 @@ pub async fn run_agent(
             owner: run.owner.clone(),
             run_id: run.id,
             interactive: run.interactive,
+        }),
+        actions: env.actions.as_ref().map(|actions| ActionsContext {
+            actions: actions.clone(),
+            owner: run.owner.clone(),
         }),
     };
     // Connections the key's owner always allows, which the sandbox's base policy doesn't. Only an
@@ -238,6 +245,14 @@ pub async fn run_agent(
         let columns = records.columns_by_set(&run.owner, &sets).await?;
         note.push_str("\n\n");
         note.push_str(&records::note(&sets, &columns, run.interactive, memory_on));
+    }
+    // What the owner showed the agent how to do, by name; the steps are read with the tool.
+    if let (Some(actions), true) = (&env.actions, tools.get(SAVED_ACTIONS).is_some()) {
+        let saved = actions.list(&run.owner).await?;
+        if !saved.is_empty() {
+            note.push_str("\n\n");
+            note.push_str(&crate::actions::note(&saved, tools.get("browser").is_some()));
+        }
     }
     // Read per request, so a memory deleted in Settings is gone from the very next run. The
     // `memory` group switches reading and writing together. The profile and pinned

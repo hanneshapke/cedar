@@ -370,8 +370,20 @@ pub(crate) async fn docker_output(
     args: &[String],
     timeout: Duration,
 ) -> Result<std::process::Output> {
+    docker_output_env(bin, args, &[], timeout).await
+}
+
+/// [`docker_output`] with variables added to docker's own environment, for values that must not
+/// be in its command line (`docker exec -e NAME` passes one on by name).
+pub(crate) async fn docker_output_env(
+    bin: &str,
+    args: &[String],
+    env: &[(&str, &str)],
+    timeout: Duration,
+) -> Result<std::process::Output> {
     let child = Command::new(bin)
         .args(args)
+        .envs(env.iter().copied())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

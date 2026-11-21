@@ -205,6 +205,7 @@ mod tests {
             reasoning_levels: vec![],
             default_reasoning: None,
             multimodal: false,
+            video: false,
             max_tokens: 1024,
             context_window: None,
             is_default: false,

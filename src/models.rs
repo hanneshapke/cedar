@@ -193,6 +193,9 @@ pub struct ModelEntry {
     /// Accepts images with a prompt, and is shown attached PDFs' first pages as images (see
     /// [`crate::attachments`]). Without it, a run with images is refused; PDFs are fine.
     pub multimodal: bool,
+    /// Accepts a video with a prompt, as a `video_url` content part. A screen recording is sent
+    /// whole to such a model when it is turned into an action (see [`crate::actions`]).
+    pub video: bool,
     /// The most tokens one reply may take, a reasoning model's thinking included. A reply that
     /// reaches it ends with `stop_reason` `max_tokens`.
     pub max_tokens: u32,
@@ -222,6 +225,7 @@ impl ModelEntry {
             "reasoning_levels": self.reasoning_levels,
             "default_reasoning": self.default_reasoning,
             "multimodal": self.multimodal,
+            "video": self.video,
             "max_tokens": self.max_tokens,
             "context_window": self.context_window,
             "is_default": self.is_default,

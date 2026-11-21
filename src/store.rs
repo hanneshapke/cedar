@@ -28,7 +28,7 @@ const NOTIFICATION_COLS: &str = "n.id, n.run_id, n.seq, r.status, r.stop_reason,
     r.parent_id, r.finished_at";
 
 const MODEL_COLS: &str =
-    "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, max_tokens, \
+    "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, video, max_tokens, \
     context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, position, listed_models, created_at, \
     updated_at";
 
@@ -98,6 +98,7 @@ fn model_from_row(r: &SqliteRow) -> Result<ModelEntry> {
         reasoning_levels: serde_json::from_str(r.try_get("reasoning_levels")?)?,
         default_reasoning: r.try_get("default_reasoning")?,
         multimodal: r.try_get("multimodal")?,
+        video: r.try_get("video")?,
         max_tokens: u32::try_from(r.try_get::<i64, _>("max_tokens")?)
             .unwrap_or(crate::models::DEFAULT_MAX_TOKENS),
         context_window: r
@@ -1299,12 +1300,12 @@ impl Store {
         }
         sqlx::query(
             "INSERT INTO models (id, label, model, base_url, reasoning_levels, default_reasoning, \
-             multimodal, max_tokens, context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, \
+             multimodal, video, max_tokens, context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, \
              position, listed_models, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT (id) DO UPDATE SET label = excluded.label, model = excluded.model, \
              base_url = excluded.base_url, reasoning_levels = excluded.reasoning_levels, \
-             default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, \
+             default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, video = excluded.video, \
              max_tokens = excluded.max_tokens, context_window = excluded.context_window, is_default = excluded.is_default, price_input_usd_per_m = excluded.price_input_usd_per_m, \
              price_output_usd_per_m = excluded.price_output_usd_per_m, listed_models = excluded.listed_models, \
              updated_at = excluded.updated_at",
@@ -1316,6 +1317,7 @@ impl Store {
         .bind(serde_json::to_string(&entry.reasoning_levels)?)
         .bind(&entry.default_reasoning)
         .bind(entry.multimodal)
+        .bind(entry.video)
         .bind(i64::from(entry.max_tokens))
         .bind(entry.context_window.map(i64::from))
         .bind(is_default)

@@ -8,6 +8,7 @@
 //! in the cedar process too, and so do the Slack tools, through Slack's Web API. Personal tools written in Python (`custom`) run in the sandbox like
 //! `run_python`.
 
+mod actions;
 mod ask_user;
 mod follow_up;
 mod limitation;
@@ -43,6 +44,7 @@ mod transit;
 mod weather;
 mod web_search;
 
+pub use actions::{SavedActions, NAME as SAVED_ACTIONS};
 pub use ask_user::{as_text as question_text, AskUser, NAME as ASK_USER};
 pub use follow_up::{SuggestFollowUp, NAME as SUGGEST_FOLLOW_UP};
 pub use limitation::{ReportLimitation, CATEGORIES as LIMITATION_CATEGORIES, NAME as REPORT_LIMITATION};
@@ -72,6 +74,7 @@ pub use transit::PlanTrip;
 pub use weather::WeatherForecast;
 pub use web_search::BraveSearch;
 
+use crate::actions::ActionsContext;
 use crate::browser::BrowserSession;
 use crate::config::Config;
 use crate::config::GoogleOAuthConfig as GoogleCredentials;
@@ -109,6 +112,9 @@ pub struct ToolContext {
     /// The run owner's records, for the `records_*` tools. `None` when records are turned off,
     /// or outside a run.
     pub records: Option<RecordsContext>,
+    /// The run owner's saved actions, for `saved_actions` and the secrets the browser types for
+    /// them. `None` when actions are turned off, or outside a run.
+    pub actions: Option<ActionsContext>,
 }
 
 /// The run's model as a tool may use it: one tool-free request at a time, with the tokens it
@@ -289,6 +295,7 @@ impl ToolSet {
     /// isn't off), `compare_stocks` unless `STOCKS` is off, `search_products` if a Brave or
     /// Best Buy key is configured or saved (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
     /// `remember` and `forget` unless `MEMORY` is off, the `records_*` tools unless `RECORDS` is off,
+    /// `saved_actions` unless `ACTIONS` is off,
     /// `browser` if `BROWSER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
     /// is on (through the REST APIs, or MCP servers whose tools are discovered later), the Slack
     /// tools if a Slack bot token is configured or saved (and `SLACK` isn't off), and the
@@ -404,6 +411,9 @@ impl ToolSet {
             set.tools.push(Arc::new(RecordsSave));
             set.tools.push(Arc::new(RecordsLookup));
             set.tools.push(Arc::new(RecordsDrop));
+        }
+        if cfg.actions {
+            set.tools.push(Arc::new(SavedActions));
         }
         if cfg.browser.enabled {
             set.tools
@@ -638,7 +648,7 @@ impl ToolSet {
 
 /// Tool groups a run with a small context window always keeps when its selection is narrowed
 /// (see [`ToolSet::narrow_selection`]): looking things up and the run's own bookkeeping.
-const ALWAYS_OFFERED: &[&str] = &["web_search", "web_fetch", "ask_user", "follow_up", "feedback", "memory", "records"];
+const ALWAYS_OFFERED: &[&str] = &["web_search", "web_fetch", "ask_user", "follow_up", "feedback", "memory", "records", "actions"];
 
 /// Words that show a request may need a tool group, matched as whole words (or with a plural
 /// `s`) in the request.
@@ -713,6 +723,7 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("feedback", "Feedback on what it can't do"),
     ("memory", "Memory"),
     ("records", "Records"),
+    ("actions", "Saved actions"),
     ("browser", "Browser"),
     ("gmail", "Gmail"),
     ("calendar", "Calendar"),
@@ -748,6 +759,7 @@ pub fn group_of(name: &str) -> &'static str {
         "report_limitation" => "feedback",
         REMEMBER | FORGET | RECALL => "memory",
         RECORDS_LIST | RECORDS_DESCRIBE | RECORDS_SAVE | RECORDS_LOOKUP | RECORDS_DROP => "records",
+        SAVED_ACTIONS => "actions",
         "browser" => "browser",
         n if n.starts_with("gmail_") => "gmail",
         n if n.starts_with("calendar_") => "calendar",
@@ -1420,7 +1432,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1445,7 +1458,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1469,7 +1483,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1496,7 +1511,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ]),
             "a key alone doesn't offer the tool when PRODUCTS is off"
         );
@@ -1518,7 +1534,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1540,7 +1557,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1562,7 +1580,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1584,7 +1603,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1606,7 +1626,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1628,7 +1649,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1644,7 +1666,8 @@ mod tests {
                 ("FOLLOW_UPS", "off"),
                 ("FEEDBACK", "off"),
                 ("MEMORY", "off"),
-                ("RECORDS", "off")
+                ("RECORDS", "off"),
+                ("ACTIONS", "off")
             ])),
             with(&[])
         );
@@ -1669,6 +1692,7 @@ mod tests {
                 "records_save",
                 "records_lookup",
                 "records_drop",
+                "saved_actions",
                 "browser"
             ])
         );

@@ -260,7 +260,7 @@ fn translate_message(msg: &Value, out: &mut Vec<Value>) {
     }
 }
 
-/// The content part for an `image` or `document` block with a base64 source, if it is one.
+/// The content part for an `image`, `video` or `document` block with a base64 source, if it is one.
 fn media_part(block: &Value) -> Option<Value> {
     let source = &block["source"];
     let media_type = source["media_type"].as_str()?;
@@ -268,6 +268,8 @@ fn media_part(block: &Value) -> Option<Value> {
     let url = format!("data:{media_type};base64,{data}");
     match block["type"].as_str()? {
         "image" => Some(json!({ "type": "image_url", "image_url": { "url": url } })),
+        // What vLLM and OpenRouter take a video as; only sent to a model registered with `video`.
+        "video" => Some(json!({ "type": "video_url", "video_url": { "url": url } })),
         "document" => Some(json!({
             "type": "file",
             "file": {

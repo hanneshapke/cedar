@@ -105,6 +105,10 @@ pub struct ModelSpec {
     /// The model accepts images with a prompt. Absent keeps the saved value (`false`
     /// for a new entry).
     pub multimodal: Option<bool>,
+    /// The model accepts a video with a prompt (a `video_url` content part). Absent keeps the
+    /// saved value (`false` for a new entry).
+    #[serde(default)]
+    pub video: Option<bool>,
     /// With `multimodal` absent: find out by asking the model with a small image, once. A saved
     /// entry with the same model and address keeps its value and is not asked again.
     #[serde(default)]
@@ -570,6 +574,7 @@ impl Integrations {
                 base_url,
                 default_reasoning: None,
                 multimodal: false,
+                video: false,
                 max_tokens: crate::models::DEFAULT_MAX_TOKENS,
                 context_window: None,
                 is_default: true,
@@ -724,6 +729,7 @@ impl Integrations {
             reasoning_levels,
             default_reasoning,
             multimodal,
+            video: spec.video.unwrap_or_else(|| existing.as_ref().is_some_and(|e| e.video)),
             max_tokens,
             context_window,
             is_default,
@@ -888,6 +894,7 @@ impl Integrations {
             ("ask_user", off("ASK_USER")),
             ("memory", off("MEMORY")),
             ("records", off("RECORDS")),
+            ("actions", off("ACTIONS")),
             ("browser", off("BROWSER")),
             ("gmail", google("gmail", "GMAIL")),
             ("calendar", google("calendar", "CALENDAR")),

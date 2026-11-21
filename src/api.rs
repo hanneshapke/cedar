@@ -1,5 +1,6 @@
 //! The HTTP API.
 
+use crate::actions::{self, ActionInput, Actions, Recording};
 use crate::agent::AgentEnv;
 use crate::auth::{self, Admin, AuthKeys, Owner};
 use crate::browser::{BrowserFactory, DockerBrowserFactory};
@@ -56,6 +57,10 @@ pub const MAX_ATTACHMENT_BYTES: usize = 20 << 20;
 pub const MAX_ATTACHMENTS_TOTAL_BYTES: usize = 32 << 20;
 const MAX_RUN_BODY_BYTES: usize = 48 << 20;
 const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
+/// A screen recording for `POST /v1/actions/draft`: its frames and video as base64, with room
+/// for the rest of the request (see [`actions::MAX_FRAMES_TOTAL_BYTES`] and
+/// [`actions::MAX_VIDEO_BYTES`]).
+const MAX_RECORDING_BODY_BYTES: usize = 40 << 20;
 const DEFAULT_PAGE: u32 = 20;
 const MAX_PAGE: u32 = 100;
 /// Largest workspace file that can be downloaded. It is read into memory before being sent.
@@ -85,6 +90,9 @@ pub struct AppState {
     /// What owners keep as records across conversations. There even with `RECORDS=off`, so
     /// people can still see and delete what was saved before.
     pub records: Records,
+    /// What owners showed the agent how to do. There even with `ACTIONS=off`, so people can
+    /// still see and delete what was saved before.
+    pub actions: Actions,
     /// Tool calls outside a run (`POST /v1/tools/{name}/call`).
     pub polls: Arc<Polls>,
 }
@@ -125,6 +133,7 @@ impl AppState {
             },
         );
         let records = Records::new(store.clone(), cfg.records_max_sets, cfg.records_max_items);
+        let actions = Actions::new(store.clone(), cfg.secret_key.as_ref());
         let env = AgentEnv {
             llm: llm.clone(),
             sandbox: cfg.sandbox.clone(),
@@ -143,6 +152,7 @@ impl AppState {
             memory_experience: cfg.memory_experience,
             memory_consolidate_after: if cfg.memory_consolidate { cfg.memory_consolidate_after } else { 0 },
             records: cfg.records.then(|| records.clone()),
+            actions: cfg.actions.then(|| actions.clone()),
         };
         let manager = RunManager::new(
             store.clone(),
@@ -179,6 +189,7 @@ impl AppState {
             marketplace,
             memories,
             records,
+            actions,
             polls,
         })
     }
@@ -241,6 +252,13 @@ pub fn router_with(
             "/records/{name}",
             get(get_records).post(save_records).delete(drop_records),
         )
+        .route("/actions", get(list_actions).post(save_action))
+        // A recording is the one other body with room for media.
+        .route(
+            "/actions/draft",
+            post(draft_action).layer(DefaultBodyLimit::max(MAX_RECORDING_BODY_BYTES)),
+        )
+        .route("/actions/{id}", get(get_action).put(update_action).delete(delete_action))
         .route("/admin/integrations", get(get_integrations))
         .route("/admin/models", get(get_models))
         .route("/admin/server-models", post(list_server_models))
@@ -1124,6 +1142,163 @@ async fn drop_all_records(
     Extension(owner): Extension<Owner>,
 ) -> Result<StatusCode, AppError> {
     state.records.drop_all(&owner.0).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// -- actions --------------------------------------------------------------------------------
+
+fn action_refused(r: actions::Refused) -> AppError {
+    match r {
+        actions::Refused::Full | actions::Refused::NoStorage => AppError::Conflict(r.to_string()),
+        _ => AppError::BadRequest(r.to_string()),
+    }
+}
+
+fn action_id(raw: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(raw).map_err(|_| AppError::NotFound("action not found"))
+}
+
+/// The registered model a recording goes to: the one named, else one that takes video when
+/// there is a video, else one that takes images when there are frames; the default model first
+/// among those that can. The flag says whether it gets the video.
+fn recording_model(models: &[ModelEntry], recording: &Recording) -> Result<(ModelEntry, bool), AppError> {
+    let has_video = recording.video.is_some();
+    let has_frames = !recording.frames.is_empty();
+    let suits = |m: &ModelEntry| (has_video && m.video) || (has_frames && m.multimodal);
+    if let Some(wanted) = recording.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+        let entry = models
+            .iter()
+            .find(|m| m.id == wanted)
+            .ok_or_else(|| AppError::BadRequest(format!("model {wanted:?} is not registered")))?;
+        if !suits(entry) {
+            return Err(AppError::Conflict(format!(
+                "model {wanted:?} takes neither the video nor the frames of a recording; an admin marks what a model takes under Settings, or with \"video\" and \"multimodal\" on PUT /v1/admin/models/{{id}}"
+            )));
+        }
+        return Ok((entry.clone(), has_video && entry.video));
+    }
+    let pick = |can: &dyn Fn(&ModelEntry) -> bool| {
+        models.iter().find(|m| m.is_default && can(m)).or_else(|| models.iter().find(|m| can(m))).cloned()
+    };
+    if has_video {
+        if let Some(entry) = pick(&|m| m.video) {
+            return Ok((entry, true));
+        }
+    }
+    if has_frames {
+        if let Some(entry) = pick(&|m| m.multimodal) {
+            return Ok((entry, false));
+        }
+    }
+    Err(AppError::Conflict(if has_frames {
+        "no registered model takes video or images, so nothing here can watch a recording; an admin marks a model that does under Settings, or with \"video\" or \"multimodal\" on PUT /v1/admin/models/{id}".into()
+    } else {
+        "no registered model takes video; send the recording's frames too, for a model that takes images".into()
+    }))
+}
+
+/// The caller's saved actions, oldest first, with what a recording may carry and whether this
+/// server can watch one and keep a password.
+async fn list_actions(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let models = state.integrations.models();
+    Ok(Json(json!({
+        "actions": state.actions.list(&owner.0).await?,
+        "limits": state.actions.limits(),
+        "enabled": state.cfg.actions,
+        "recording": {
+            "video": models.iter().any(|m| m.video),
+            "frames": models.iter().any(|m| m.multimodal),
+            "video_types": actions::VIDEO_TYPES,
+        },
+        "secrets": state.actions.stores_secrets(),
+        "browser": state.cfg.browser.enabled,
+    })))
+}
+
+async fn get_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<actions::Action>, AppError> {
+    state
+        .actions
+        .get(&owner.0, action_id(&id)?)
+        .await?
+        .map(Json)
+        .ok_or(AppError::NotFound("action not found"))
+}
+
+/// Turn a screen recording into steps for the agent: one call to a model that can watch it.
+/// Nothing is saved; the caller shows the draft to the user and saves what they make of it.
+async fn draft_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(recording): ApiJson<Recording>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    recording.check().map_err(action_refused)?;
+    let (model, as_video) = recording_model(&state.integrations.models(), &recording)?;
+    let llm = state.llm.client_for(&model.id).ok_or_else(|| {
+        AppError::Conflict(format!("model {:?} is no longer registered", model.id))
+    })?;
+    // The steps are written for the tools this owner's runs have.
+    let tools: Vec<(String, String)> = state
+        .integrations
+        .tools_for(&owner.0)
+        .await
+        .definitions()
+        .iter()
+        .filter_map(|d| Some((d["name"].as_str()?.to_string(), d["description"].as_str()?.to_string())))
+        .collect();
+    let (draft, usage) = actions::draft(llm.as_ref(), &model.model, model.max_tokens, &recording, as_video, &tools)
+        .await
+        .map_err(|e| AppError::BadGateway(format!("could not turn the recording into steps: {e:#}")))?;
+    Ok(Json(json!({
+        "draft": draft,
+        "model": model.model,
+        "model_id": model.id,
+        "watched": if as_video { "video" } else { "frames" },
+        "usage": usage,
+    })))
+}
+
+/// Save an action: the steps as the user approved them, and the passwords they chose to keep.
+async fn save_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(input): ApiJson<ActionInput>,
+) -> Result<(StatusCode, Json<actions::Action>), AppError> {
+    let saved = state.actions.save(&owner.0, &input).await?.map_err(action_refused)?;
+    Ok((StatusCode::CREATED, Json(saved)))
+}
+
+/// Change an action. A secret sent without a value keeps its saved one; one left out is forgotten.
+async fn update_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+    ApiJson(input): ApiJson<ActionInput>,
+) -> Result<Json<actions::Action>, AppError> {
+    state
+        .actions
+        .update(&owner.0, action_id(&id)?, &input)
+        .await?
+        .ok_or(AppError::NotFound("action not found"))?
+        .map(Json)
+        .map_err(action_refused)
+}
+
+/// Delete an action and the secrets kept with it. Another owner's looks like a missing one.
+async fn delete_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, AppError> {
+    if !state.actions.delete(&owner.0, action_id(&id)?).await? {
+        return Err(AppError::NotFound("action not found"));
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
