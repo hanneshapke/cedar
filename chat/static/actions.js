@@ -549,10 +549,10 @@ const cedarActions = (() => {
       actions.append(link(tr('actions.cancel'), '#/actions', 'copy-btn'), upload, start);
       const form = el('div', 'cedar-ag-form');
       form.append(field(tr('actions.new.goal'), what, tr('actions.new.goalHelp')));
-      if (blocked) form.append(el('div', 'cedar-ag-box warn', blocked));
-      if (typeof notice === 'string') form.append(el('div', 'cedar-ag-box warn', notice));
+      if (blocked) form.append(el('div', 'cedar-ag-box warn cedar-act-notice', blocked));
+      if (typeof notice === 'string') form.append(el('div', 'cedar-ag-box warn cedar-act-notice', notice));
       if (canRecord()) form.append(el('div', 'cedar-ag-legend', tr('actions.new.share')), picks);
-      else { start.hidden = true; upload.className = 'primary'; form.append(el('div', 'cedar-ag-box', tr('actions.new.cannotRecord'))); }
+      else { start.hidden = true; upload.className = 'primary'; form.append(el('div', 'cedar-ag-box cedar-act-notice', tr('actions.new.cannotRecord'))); }
       const notes = el('ul', 'cedar-act-notes');
       for (const key of ['small', 'once', 'passwords']) notes.append(el('li', '', tr(`actions.new.note.${key}`)));
       form.append(notes, file, actions);

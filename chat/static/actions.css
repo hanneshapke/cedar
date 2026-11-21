@@ -43,4 +43,8 @@
 
 /* The sidebar link sits under the Agents one, and is hidden until the server says it has actions. */
 .cedar-ag-nav[hidden] { display: none; }
-.cedar-ag-field textarea.cedar-act-goal { min-height: 0; }
+/* The recorder's first step: the field to write in is the bright sheet, and what the page has to
+   say (it can't record here, no model can watch) sits back in the page's grey. */
+.cedar-ag-field textarea.cedar-act-goal { min-height: 0; border-color: var(--line); background: var(--sheet); }
+.cedar-ag-field textarea.cedar-act-goal:focus { border-color: var(--accent); }
+.cedar-ag-box.cedar-act-notice { border-color: rgba(128, 128, 128, .4); background: rgba(128, 128, 128, .07); color: var(--ink-2); }
