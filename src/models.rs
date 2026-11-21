@@ -107,6 +107,10 @@ pub struct Run {
     pub rating: Option<Rating>,
     /// Whether its CSV and JSON attachments were imported into record sets when it started.
     pub import_attachments: bool,
+    /// The run is kept out of everything that outlives its conversation: it is shown nothing
+    /// from memory and saves nothing to it, has no records tools, keeps no trace of its model
+    /// calls and calls no webhook. A run that continues a private one is private.
+    pub private: bool,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -138,6 +142,8 @@ pub struct NewRun {
     pub locale: String,
     /// Import CSV and JSON attachments into record sets when the run starts.
     pub import_attachments: bool,
+    /// Keep the run out of memory, records and traces, and call no webhook for it.
+    pub private: bool,
 }
 
 /// Whether a run makes a plan before it starts: always, never, or for prompts long enough to
@@ -463,4 +469,9 @@ pub struct CreateRunRequest {
     /// Import the run's CSV and JSON attachments into record sets named after the files when it
     /// starts (see "Records" in the README). Absent: `RECORDS_IMPORT_ATTACHMENTS`.
     pub import_attachments: Option<bool>,
+    /// Keep the run out of everything that outlives its conversation: no memory is shown to it
+    /// or saved from it, it has no records tools and imports no attachments, no trace of its
+    /// model calls is kept, and it takes no `callback_url` (see "Private runs" in the README).
+    /// Absent: false, except that a continuation of a private run is always private.
+    pub private: Option<bool>,
 }

@@ -59,7 +59,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "hold_writes"?, "locale"?, "import_attachments"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and `import_attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [The outbox](#the-outbox) for `hold_writes`, [Languages](#languages) for `locale`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "hold_writes"?, "locale"?, "import_attachments"?, "private"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and `import_attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [The outbox](#the-outbox) for `hold_writes`, [Languages](#languages) for `locale`, [Private runs](#private-runs) for `private`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
@@ -457,6 +457,25 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
      localhost:8080/v1/runs
 curl -N -H "Authorization: Bearer $KEY" "localhost:8080/v1/events?after=41"
 ```
+
+## Private runs
+
+`"private": true` on `POST /v1/runs` keeps a run out of everything that outlives its conversation:
+
+- **Memory**: nothing remembered about the user is put in its prompt, it has no `remember`,
+  `forget` or `recall` tool, and nothing is noted from it when it ends: no facts, no episode (not
+  even for a run that fails), no procedure. It doesn't count towards consolidation either.
+- **Records**: it has no records tools, and its CSV and JSON attachments are not imported.
+- **Trace**: its model calls and the prompt it sent are not stored, and `GET /v1/runs/{id}/trace`
+  answers `404`.
+- **Webhooks**: it takes no `callback_url` (`400` if one is given) and does not inherit its
+  parent's. It is still on the key's own `GET /v1/events` stream, which is how a client that
+  started it learns that it ended.
+
+A run that continues a private run is private, whatever it asks for; a continuation of an ordinary
+run may be private from then on. The run's conversation and events are stored like any run's, since
+a continuation and the client's view need them: delete the run (`DELETE /v1/runs/{id}`) to remove
+them. The run reports `"private": true`.
 
 ## Continuing a run
 

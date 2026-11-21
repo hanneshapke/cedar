@@ -67,10 +67,16 @@ struct ChatView: View {
             Composer(chat: chat, focused: $composerFocused)
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            // An agent's run says whose it is; the badge opens the agent.
-            if let agent = runAgent {
-                AgentBadge(agent: agent) {
-                    showingAgent = AgentSelection(id: agent.id, title: agent.title)
+            VStack(spacing: 0) {
+                // A private chat says so for as long as it is open, and can be ended from here.
+                if chat.isPrivate {
+                    PrivateNote(started: chat.conversationId != nil) { app.endPrivateChat() }
+                }
+                // An agent's run says whose it is; the badge opens the agent.
+                if let agent = runAgent {
+                    AgentBadge(agent: agent) {
+                        showingAgent = AgentSelection(id: agent.id, title: agent.title)
+                    }
                 }
             }
         }
@@ -78,7 +84,20 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.canvas, for: .navigationBar)
         .toolbar {
-            if let id = chat.conversationId {
+            // Before the first message, on a server that has them: make this chat a private one.
+            if chat.conversationId == nil, chat.pendingPrompt == nil, app.serverHasPrivateChats {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        chat.isPrivate.toggle()
+                    } label: {
+                        Label("Private Chat", systemImage: chat.isPrivate ? "eye.slash.fill" : "eye.slash")
+                    }
+                    .tint(chat.isPrivate ? Theme.green : nil)
+                    .accessibilityAddTraits(chat.isPrivate ? .isSelected : [])
+                }
+            }
+            // A private chat can't be starred, contributed or made into an agent: it isn't kept.
+            if let id = chat.conversationId, !chat.isPrivate {
                 let starred = app.isStarred(conversationId: id)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -95,7 +114,7 @@ struct ChatView: View {
                     .tint(starred ? Color.yellow : nil)
                 }
             }
-            if chat.conversationId != nil, app.serverHasContributions {
+            if chat.conversationId != nil, app.serverHasContributions, !chat.isPrivate {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingContribute = true
@@ -169,6 +188,8 @@ struct ChatView: View {
     }
 
     private var title: String {
+        // Not what was written in it: the title also shows in the app switcher.
+        if chat.isPrivate { return L10n.string("Private Chat") }
         if let id = chat.conversationId, let conversation = app.conversation(id: id) {
             return app.title(for: conversation)
         }
@@ -182,7 +203,7 @@ struct ChatView: View {
 
     /// A chat with a finished response can become an agent; an agent's own run can't.
     private var canMakeAgent: Bool {
-        chat.conversationId != nil && runAgent == nil && !chat.isActive
+        chat.conversationId != nil && runAgent == nil && !chat.isActive && !chat.isPrivate
             && chat.turns.contains { $0.turn.status == .completed }
     }
 
@@ -210,6 +231,39 @@ struct ChatView: View {
     /// Changes whenever new content arrives, to keep the newest content in view.
     private var scrollSignature: [Int] {
         [chat.turns.count, chat.turns.last?.lastSeq ?? 0, chat.pendingPrompt == nil ? 0 : 1, chat.openQuestions == nil ? 0 : 1]
+    }
+}
+
+/// What a private chat is, above the conversation, with the way out of it once it has started.
+private struct PrivateNote: View {
+    let started: Bool
+    let end: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "eye.slash")
+                .foregroundStyle(Theme.green)
+                .accessibilityHidden(true)
+            Group {
+                if started {
+                    Text("Private chat: nothing of it is kept or remembered, and it is deleted when you leave it.")
+                } else {
+                    Text("Private chat. It stays out of your conversations and search, nothing from it is remembered, no records or trace of it are kept, and no notifications are sent. It is deleted when you leave it.")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if started {
+                Button("End Chat", action: end)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(Theme.raised)
     }
 }
 

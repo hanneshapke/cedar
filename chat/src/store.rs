@@ -61,6 +61,9 @@ pub struct Conversation {
     pub needs_answer: bool,
     /// When the user starred it; `None` when it is not starred.
     pub starred_at: Option<DateTime<Utc>>,
+    /// A private conversation: in no list, search or inbox, kept out of memory, records and
+    /// traces, announced nowhere, and deleted when the person leaves it.
+    pub private: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -516,6 +519,7 @@ fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
         unread: r.try_get::<i64, _>("unread")? != 0,
         needs_answer: r.try_get::<i64, _>("needs_answer")? != 0,
         starred_at: r.try_get::<Option<i64>, _>("starred_at")?.map(to_dt),
+        private: r.try_get::<i64, _>("private")? != 0,
         created_at: to_dt(r.try_get("created_at")?),
         updated_at: to_dt(r.try_get("updated_at")?),
     })
@@ -852,12 +856,22 @@ impl Store {
     // -- conversations ----------------------------------------------------------------------
 
     pub async fn create_conversation(&self, title: Option<&str>) -> Result<Conversation> {
+        self.insert_conversation(title, false).await
+    }
+
+    /// A conversation that is in no list and is deleted when it is left (see `Conversation`).
+    pub async fn create_private_conversation(&self, title: Option<&str>) -> Result<Conversation> {
+        self.insert_conversation(title, true).await
+    }
+
+    async fn insert_conversation(&self, title: Option<&str>, private: bool) -> Result<Conversation> {
         let id = Uuid::now_v7();
         let now = now_ms();
-        sqlx::query("INSERT INTO conversations (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO conversations (id, user_id, title, private, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
             .bind(id.to_string())
             .bind(self.user.to_string())
             .bind(title)
+            .bind(private as i64)
             .bind(now)
             .bind(now)
             .execute(&self.pool)
@@ -875,10 +889,10 @@ impl Store {
     }
 
     /// Most recently active first. Conversations a schedule created are left out; they are
-    /// listed under their schedule.
+    /// listed under their schedule. Private ones are in no list.
     pub async fn list_conversations(&self, limit: u32) -> Result<Vec<Conversation>> {
         let rows = sqlx::query(&format!(
-            "{CONVERSATION_SELECT} WHERE c.user_id = ? AND c.schedule_id IS NULL ORDER BY c.updated_at DESC, c.id DESC LIMIT ?"
+            "{CONVERSATION_SELECT} WHERE c.user_id = ? AND c.schedule_id IS NULL AND c.private = 0 ORDER BY c.updated_at DESC, c.id DESC LIMIT ?"
         ))
         .bind(self.user.to_string())
         .bind(limit as i64)
@@ -894,7 +908,7 @@ impl Store {
             ", (SELECT s.title FROM schedules s WHERE s.id = c.schedule_id) AS schedule_title FROM conversations c",
         );
         let rows = sqlx::query(&format!(
-            "{select} WHERE c.user_id = ? AND c.starred_at IS NOT NULL ORDER BY c.starred_at DESC, c.id DESC LIMIT ?"
+            "{select} WHERE c.user_id = ? AND c.starred_at IS NOT NULL AND c.private = 0 ORDER BY c.starred_at DESC, c.id DESC LIMIT ?"
         ))
         .bind(self.user.to_string())
         .bind(limit as i64)
@@ -944,7 +958,8 @@ impl Store {
         let message_tests: Vec<String> = terms.iter().map(|term| in_message(&mut like, term)).collect();
         // The user is bound like the patterns, after them.
         binds.push(self.user.to_string());
-        let mine = format!("c.user_id = ?{}", binds.len());
+        // A private conversation is not found, whatever it says.
+        let mine = format!("c.user_id = ?{} AND c.private = 0", binds.len());
 
         let select = CONVERSATION_SELECT.replace(
             "FROM conversations c",
@@ -990,10 +1005,11 @@ impl Store {
     }
 
     /// Star or unstar a conversation. Starring one that is already starred keeps the time it was
-    /// first starred, so it doesn't jump to the top of the list. Returns whether it exists.
+    /// first starred, so it doesn't jump to the top of the list. Returns whether it exists (a
+    /// private one can't be starred, and counts as missing).
     pub async fn set_starred(&self, id: Uuid, starred: bool) -> Result<bool> {
         let res = if starred {
-            sqlx::query("UPDATE conversations SET starred_at = COALESCE(starred_at, ?) WHERE id = ? AND user_id = ?").bind(now_ms())
+            sqlx::query("UPDATE conversations SET starred_at = COALESCE(starred_at, ?) WHERE id = ? AND user_id = ? AND private = 0").bind(now_ms())
         } else {
             sqlx::query("UPDATE conversations SET starred_at = NULL WHERE id = ? AND user_id = ?")
         }
@@ -1024,7 +1040,7 @@ impl Store {
         let rows = sqlx::query(&format!(
             "SELECT t.id AS turn_id, t.conversation_id, t.status, t.stop_reason, t.finished_at, \
              c.title, c.schedule_id FROM turns t JOIN conversations c ON c.id = t.conversation_id \
-             WHERE c.user_id = ? AND t.seen = 0 AND t.status IN {NOTEWORTHY} \
+             WHERE c.user_id = ? AND c.private = 0 AND t.seen = 0 AND t.status IN {NOTEWORTHY} \
              ORDER BY t.finished_at DESC, t.id DESC LIMIT ?"
         ))
         .bind(self.user.to_string())
@@ -1038,7 +1054,7 @@ impl Store {
     pub async fn count_unseen(&self) -> Result<i64> {
         let n: i64 = sqlx::query_scalar(&format!(
             "SELECT COUNT(*) FROM turns t JOIN conversations c ON c.id = t.conversation_id \
-             WHERE c.user_id = ? AND t.seen = 0 AND t.status IN {NOTEWORTHY}"
+             WHERE c.user_id = ? AND c.private = 0 AND t.seen = 0 AND t.status IN {NOTEWORTHY}"
         ))
         .bind(self.user.to_string())
         .fetch_one(&self.pool)
@@ -1072,10 +1088,23 @@ impl Store {
         Ok(res.rows_affected() == 1)
     }
 
+    /// Across users: the private conversations nobody has written in since `cutoff`, with whose
+    /// they are, oldest first. Whoever left them didn't end them (a closed tab, a lost phone).
+    pub async fn idle_private_conversations(&self, cutoff: DateTime<Utc>, limit: u32) -> Result<Vec<(Uuid, Uuid)>> {
+        let rows = sqlx::query("SELECT id, user_id FROM conversations WHERE private = 1 AND updated_at < ? ORDER BY updated_at LIMIT ?")
+            .bind(cutoff.timestamp_millis())
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter().map(|r| Ok((Uuid::parse_str(r.try_get("id")?)?, Uuid::parse_str(r.try_get("user_id")?)?))).collect()
+    }
+
     // -- turns ------------------------------------------------------------------------------
 
     /// Append a turn, bump the conversation's activity time, remember the model and reasoning
-    /// level, and name the conversation after its first message if it has no title yet.
+    /// level, and name the conversation after its first message if it has no title yet. A
+    /// private conversation's turn is seen from the start: it is never unread, never in the
+    /// inbox, and nothing is sent out of the app about it.
     #[allow(clippy::too_many_arguments)]
     pub async fn insert_turn(
         &self,
@@ -1091,8 +1120,9 @@ impl Store {
         let now = now_ms();
         let mut tx = self.pool.begin().await?;
         sqlx::query(
-            "INSERT INTO turns (id, conversation_id, seq, run_id, prompt, status, attachments, created_at) \
-             SELECT ?1, ?2, COALESCE(MAX(seq), 0) + 1, ?3, ?4, ?5, ?6, ?7 FROM turns WHERE conversation_id = ?2",
+            "INSERT INTO turns (id, conversation_id, seq, run_id, prompt, status, attachments, created_at, seen) \
+             SELECT ?1, ?2, COALESCE(MAX(seq), 0) + 1, ?3, ?4, ?5, ?6, ?7, \
+             COALESCE((SELECT private FROM conversations WHERE id = ?2), 0) FROM turns WHERE conversation_id = ?2",
         )
         .bind(id.to_string())
         .bind(conversation_id.to_string())

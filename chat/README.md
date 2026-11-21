@@ -31,6 +31,8 @@ Both interfaces have all of these, except where noted:
 
 - A conversation list (a sidebar in Claude style, a drawer behind the menu button in Cedar style)
   with new chat, rename (click the title), and delete
+- [Private chats](#private-chats), which are in no list, are not remembered and are deleted when
+  you leave them
 - Replies stream in as the agent works. Text, tool calls (`bash`, `run_python`, the file,
   document, chart, web, and weather tools, and `web_search` when cedar has a Brave key) with their input and
   output, errors, and token usage are shown as they happen
@@ -298,6 +300,7 @@ remove the tool.
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, except for a browser that opened the chat at a loopback address (`127.0.0.1`, `localhost`), which is sent back to that address |
 | `CHAT_ATTENTION_DELAY_SECS` | `20` | How long a response may wait for you (an approval, a plan to agree to) before you are told by your notification method (see [When a response waits for you](#when-a-response-waits-for-you)) |
 | `CHAT_FEEDBACK_ISSUES_URL` | `https://github.com/hanneshapke/cedar/issues/new` | Where *Report it to the project* opens an issue for [a report](#feedback) the person files themselves: an `https` "new issue" address that takes `title` and `body`. `off` removes the link. The server sends nothing there |
+| `CHAT_PRIVATE_TTL_SECS` | `86400` | How long a [private chat](#private-chats) that nobody ended may sit idle before the server deletes it |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for an agent in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
@@ -397,6 +400,36 @@ with it; only the new message's files go along.
 Only one response per conversation runs at a time. The UI replays each turn from cedar's event log,
 so reloading the page or opening a conversation shows the full tool trace. Deleting a conversation
 also deletes its runs on cedar (best effort), which frees the workspace.
+
+## Private chats
+
+The **Private** button in the composer, on the new-chat screen, makes the chat you are about to
+start a private one. It is for something you want neither remembered nor kept:
+
+- It is in no conversation list, Starred list, search or inbox. The tab is titled *Private chat*,
+  not after what you wrote.
+- Its runs are cedar's [private runs](../README.md#private-runs): Cedar is shown nothing from
+  [memory](#memory) and saves nothing to it or to [records](#records), and no trace of its model
+  calls is kept, so there is no Trace button.
+- Nothing about it is sent anywhere: no push, mail, Pushover or desktop notification when a
+  response finishes or waits for you, and no notice to your other tabs.
+- It can't be starred, [contributed](#contributing-a-conversation) or made into an agent.
+
+It is deleted when you leave it: **End chat** in the note above the message box, opening another
+conversation, or starting a new one. A response still being written is stopped. Deleting removes
+the conversation here and its runs on cedar, and with them its messages and workspace files, so
+download what you want to keep first. Reloading the page keeps the chat (its address still opens
+it); a chat that was never left, such as a closed tab, is deleted by the server once nobody has
+written in it for `CHAT_PRIVATE_TTL_SECS` (a day).
+
+A conversation is private from its first message or not at all. While it lasts, the conversation
+and its runs are stored like any other, on your own servers; what it asks the model and the tools
+it uses (a web search, say) go where they always go.
+
+The iOS and Android apps have private chats too: a new chat has a **Private Chat** button (the
+crossed-out eye) in its top bar, shown when the server says it has them (`private_chats` in
+`GET /api/config`). There the chat is deleted when you go back to the list, open another
+conversation or tap **End Chat**; putting the app in the background keeps it.
 
 ## Notifications
 
@@ -1126,15 +1159,15 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/google` | The caller's own Google account, as cedar's `GET /v1/google` gives it: `{available, reason, services, connected, account?, missing_scopes?, server}`; `server: true` for the primary user, whose account is the server's |
 | `POST /api/google/connect` | Start connecting the caller's own account: `{url}` to go to (`?browser=1` from the desktop app, as for the server's). `409` for the primary user |
 | `DELETE /api/google` | Disconnect the caller's own account |
-| `GET /api/config` | `{auth_required, admin_enabled, models_access, memory, contributions}`; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), `contributions` is whether `CHAT_CONTRIBUTIONS_URL` is set, and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
+| `GET /api/config` | `{auth_required, admin_enabled, models_access, memory, contributions, private_chats}`; `private_chats` is `true` on a chat server with [private chats](#private-chats), so the apps offer them only there; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), `contributions` is whether `CHAT_CONTRIBUTIONS_URL` is set, and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |
 | `GET /api/conversations` | Conversations, most recently active first, each with `unread` and `needs_answer` (see [Notifications](#notifications)). Conversations that are an agent's runs are left out |
-| `POST /api/conversations` | Create one. Body `{}` or `{"title": "..."}` |
+| `POST /api/conversations` | Create one. Body `{}` or `{"title": "...", "private": true}`; `private` makes it a [private chat](#private-chats), which no list, search or inbox shows |
 | `GET /api/conversations/{id}` | `{conversation, turns, agent?, followups, limitations}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen`. `agent` is `{id, title, trigger_kind}` when the conversation is an [agent](#agents)'s run; `followups` lists what was decided about the [follow-ups suggested](#follow-ups-the-agent-suggests) in its turns (one not listed is still open) |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
-| `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
+| `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running, except for a private chat, whose response is stopped |
 | `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "plan"?: "off"\|"on"\|"auto"\|"tool", "locale"?: "de-CH", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) (`plan`, the phone apps' Plans setting, overrides the Settings one for this message; `locale`, the language the page or app is shown in, overrides the saved one) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Images to a model registered without "accepts images" are a 400 from cedar, relayed. Returns 409 if a response is still running |
 | `PUT /api/conversations/{id}/tools` | `{"tools": [...]}` gives the conversation its own tools; `{"tools": null}` returns it to the defaults |
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |

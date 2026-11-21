@@ -20,6 +20,9 @@ The same as the iOS app:
 - The conversation list as cedar-chat keeps it, with a dot and a bold title on an unread
   response and a **Needs answer** chip when the agent asked a question; pull to refresh, and
   star, rename, open on the web or delete from a long press
+- Private chats: the crossed-out eye in a new chat's top bar makes it a
+  [private chat](../chat/README.md#private-chats), which is in no list, is not remembered, sends
+  no notifications and is deleted when you leave it
 - A search field at the top that finds chats and agents' runs by their title and by what was
   said in them, each shown with the passage that matched.
 - A **Chats | Starred | Agents** switch under it. Starred lists chats and agents' runs,

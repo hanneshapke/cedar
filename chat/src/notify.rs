@@ -117,35 +117,39 @@ pub async fn handle(state: &AppState, notification: &Value) -> Result<(), AppErr
         // What cedar's stream says is enough to announce, but the page wants the text too.
         let turn = refresh(state, turn).await?;
         let conversation = state.store.get_conversation(turn.conversation_id).await?;
-        let notice = json!({
-            "type": "turn.finished",
-            "turn_id": turn.id,
-            "conversation_id": turn.conversation_id,
-            "run_id": turn.run_id,
-            "status": turn.status,
-            "stop_reason": turn.stop_reason,
-            "error": turn.error,
-            "needs_answer": turn.status == "completed" && turn.stop_reason.as_deref() == Some("ask_user"),
-            "finished_at": turn.finished_at,
-            "title": conversation.as_ref().and_then(|c| c.title.clone()),
-            "schedule_id": conversation.as_ref().and_then(|c| c.schedule_id),
-        });
-        // No tab open is fine.
-        let _ = state.notices.send((user, notice));
-        // A turn a Slack message started is answered in its thread.
-        if state.slack.get().is_some() {
-            let (state, turn) = (state.clone(), turn.clone());
-            tokio::spawn(async move { crate::slack::turn_finished(&state, &turn).await });
-        }
-        // Out of the app too, unless a page marks it seen in the meantime (see `channels`).
-        let state = state.clone();
-        let turn_id = turn.id;
-        tokio::spawn(async move {
-            tokio::time::sleep(crate::channels::DISPATCH_DELAY).await;
-            if let Err(e) = crate::channels::dispatch(&state, turn_id).await {
-                tracing::warn!(%turn_id, error = %e, "could not send the notification");
+        // A private conversation's turn is brought up to date and that is all: no notice to
+        // other tabs, nothing out of the app. Whoever is in it follows the run itself.
+        if !conversation.as_ref().is_some_and(|c| c.private) {
+            let notice = json!({
+                "type": "turn.finished",
+                "turn_id": turn.id,
+                "conversation_id": turn.conversation_id,
+                "run_id": turn.run_id,
+                "status": turn.status,
+                "stop_reason": turn.stop_reason,
+                "error": turn.error,
+                "needs_answer": turn.status == "completed" && turn.stop_reason.as_deref() == Some("ask_user"),
+                "finished_at": turn.finished_at,
+                "title": conversation.as_ref().and_then(|c| c.title.clone()),
+                "schedule_id": conversation.as_ref().and_then(|c| c.schedule_id),
+            });
+            // No tab open is fine.
+            let _ = state.notices.send((user, notice));
+            // A turn a Slack message started is answered in its thread.
+            if state.slack.get().is_some() {
+                let (state, turn) = (state.clone(), turn.clone());
+                tokio::spawn(async move { crate::slack::turn_finished(&state, &turn).await });
             }
-        });
+            // Out of the app too, unless a page marks it seen in the meantime (see `channels`).
+            let state = state.clone();
+            let turn_id = turn.id;
+            tokio::spawn(async move {
+                tokio::time::sleep(crate::channels::DISPATCH_DELAY).await;
+                if let Err(e) = crate::channels::dispatch(&state, turn_id).await {
+                    tracing::warn!(%turn_id, error = %e, "could not send the notification");
+                }
+            });
+        }
     }
     state.store.set_notifications_cursor(id).await?;
     Ok(())

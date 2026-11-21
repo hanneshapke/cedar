@@ -11,6 +11,10 @@
     <string name="language_automatic">Automático</string>
     <string name="language_footnote">Se aplica al instante. El idioma de la app. Las respuestas de Cedar, tus agentes y las notificaciones también lo siguen.</string>
     <string name="new_chat">Nueva conversación</string>
+    <string name="private_chat">Chat privado</string>
+    <string name="private_chat_note">Chat privado. No aparece en tus conversaciones ni en la búsqueda, no se recuerda nada de él, no se guardan registros ni una traza, y no se envían notificaciones. Se elimina cuando lo dejas.</string>
+    <string name="private_chat_open_note">Chat privado: no se guarda ni se recuerda nada de él, y se elimina cuando lo dejas.</string>
+    <string name="private_chat_end">Terminar chat</string>
     <string name="settings">Configuración</string>
     <string name="cancel">Cancelar</string>
     <string name="save">Guardar</string>

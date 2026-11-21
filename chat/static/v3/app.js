@@ -1235,6 +1235,7 @@ function updateChrome() {
   els.filesBtn.hidden = !c;
   cedarAgents.badge(els.agentBadge, c, c?.agent);
   cedarStar.setCurrent(c);
+  cedarPrivate.setCurrent(c);
   els.agentBtn.hidden = Boolean(!c || c.schedule_id || busy || state.sending || !hasCompletedTurn());
   els.stop.hidden = !busy;
   els.when.textContent = c?.created_at ? new Date(c.created_at).toLocaleDateString(cedarI18n.locale, { weekday: 'long', day: 'numeric', month: 'long' }) : '';
@@ -1258,7 +1259,8 @@ function updateChrome() {
   els.cost.title = full;
   els.costFull.textContent = full;
   els.runDetails.hidden = !c || !(full || els.when.textContent);
-  cedarNotify.setTitle(c?.title ? `${c.title} – Cedar` : 'Cedar');
+  // A private chat's title stays out of the tab and the browser's history.
+  cedarNotify.setTitle(c?.private ? `${tr('private.title')} – Cedar` : c?.title ? `${c.title} – Cedar` : 'Cedar');
 }
 
 /** The open conversation has been looked at: nothing in it is unread any more. */
@@ -1607,9 +1609,10 @@ async function sendMessage(answer) {
   try {
     let conversation = state.current;
     if (!conversation) {
-      conversation = await api('POST', '/conversations', {});
+      // A private chat (private.js) is in no list, here as on the server.
+      conversation = await api('POST', '/conversations', cedarPrivate.wanted() ? { private: true } : {});
       state.current = conversation;
-      state.conversations.unshift(conversation);
+      if (!conversation.private) state.conversations.unshift(conversation);
       await cedarSettings.beforeSend(conversation);
       history.pushState(null, '', `#/c/${conversation.id}`);
     }
@@ -1626,7 +1629,7 @@ async function sendMessage(answer) {
     }
     if (token !== state.loadToken) return true;
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
-    state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
+    if (!conversation.private) state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
     addTurn(turn);
     renderRecents();
     loadConversations();
@@ -1758,6 +1761,8 @@ async function init() {
     before: els.input,
     toast,
   });
+  // The Private button goes after the paperclip; its note sits above the message box.
+  cedarPrivate.init({ api, toast, form: els.composer, anchor: els.reasoning, before: els.input });
   bindSplitter();
   updateTabs();
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast(tr('v3.unreachable')); }

@@ -131,6 +131,11 @@ impl CedarClient {
         if opts.hold_writes {
             body["hold_writes"] = json!(true);
         }
+        // Only when asked for: a cedar from before private runs refuses the field, which is
+        // right, since it would remember the conversation.
+        if opts.private {
+            body["private"] = json!(true);
+        }
         if let Some(l) = opts.locale {
             body["locale"] = json!(l);
         }
@@ -632,6 +637,8 @@ pub struct RunOptions<'a> {
     /// What the run would send or change in the user's accounts waits in their outbox instead
     /// (cedar's `hold_writes`). For runs nobody answers: an agent's.
     pub hold_writes: bool,
+    /// A private conversation's run (cedar's `private`): no memory, no records, no trace.
+    pub private: bool,
     /// The user's language and region; `None` leaves cedar's default (or the parent's).
     pub locale: Option<&'a str>,
 }
