@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use cedar_chat::api::{self, AppState};
 use cedar_chat::config::Config;
-use cedar_chat::{notify, schedule, slack, update};
+use cedar_chat::{notify, private, schedule, slack, update};
 use cedar_chat::store::Store;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -38,6 +38,8 @@ async fn main() -> Result<()> {
     // Finished runs are learned from cedar's event stream, so a response that ends while no
     // tab is open is still marked unread and announced.
     let notifier = notify::start(state.clone(), stop.clone());
+    // Private conversations nobody ended are deleted once they have been idle for a while.
+    let private = private::start(state.clone(), stop.clone());
     // A newer release, for the page's banner (see update.rs).
     let updates = update::start(state.clone(), stop.clone());
     // Slack, when its app is set up: messages to the app become conversations (see slack.rs).
@@ -62,6 +64,7 @@ async fn main() -> Result<()> {
         tracing::warn!("the scheduler was still starting runs at shutdown");
     }
     let _ = tokio::time::timeout(Duration::from_secs(2), notifier).await;
+    let _ = tokio::time::timeout(Duration::from_secs(2), private).await;
     let _ = tokio::time::timeout(Duration::from_secs(2), updates).await;
     let _ = tokio::time::timeout(Duration::from_secs(2), slack).await;
     Ok(())

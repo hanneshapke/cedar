@@ -9,6 +9,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /** The client against a fake cedar-chat: the requests it makes and how it reads the answers. */
 class ChatClientTest {
@@ -75,6 +77,28 @@ class ChatClientTest {
             assertEquals("PUT /api/settings/locale", "${it.method} ${it.path}")
             assertEquals(j("""{"locale":null}"""), j(it.body.readUtf8()), "Automatic clears it, explicitly")
         }
+    }
+
+    @Test
+    fun startsAPrivateChatOnlyWhenAskedTo() = runBlocking {
+        val made = """{"id":"c1","created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:36:00Z"}"""
+        server.enqueue(json(made))
+        server.enqueue(json(made.replace("\"id\":\"c1\"", "\"id\":\"c2\",\"private\":true")))
+        server.enqueue(json("{}"))
+
+        assertFalse(client.createConversation().isPrivate)
+        val chat = client.createConversation(private = true)
+        client.delete(chat.id)
+
+        // An ordinary chat doesn't mention the field, so an older server takes it as ever.
+        assertEquals(j("{}"), j(server.takeRequest().body.readUtf8()))
+        server.takeRequest().let {
+            assertEquals("POST /api/conversations", "${it.method} ${it.path}")
+            assertEquals(j("""{"private":true}"""), j(it.body.readUtf8()))
+        }
+        assertTrue(chat.isPrivate)
+        // Leaving it deletes it.
+        assertEquals("DELETE /api/conversations/c2", server.takeRequest().let { "${it.method} ${it.path}" })
     }
 
     @Test

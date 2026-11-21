@@ -257,6 +257,9 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     /** The server can send conversations to a corpus (`/api/config` says so); Settings shows Contribute only then. */
     var serverHasContributions by mutableStateOf(false)
         private set
+    /** The server has private chats (`/api/config` says so); a new chat offers one only then. */
+    var serverHasPrivateChats by mutableStateOf(false)
+        private set
     var showingContribute by mutableStateOf(false)
     var contributionSettings by mutableStateOf<ContributionSettings?>(null)
         private set
@@ -267,8 +270,19 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     /** Conversations the list leaves out (an agent's runs), as their chats loaded them. */
     private val otherConversations = mutableStateMapOf<String, Conversation>()
 
-    /** The selected conversation id, or a draft chat's key. */
-    var selection by mutableStateOf<String?>(null)
+    private var selected by mutableStateOf<String?>(null)
+
+    /**
+     * The selected conversation id, or a draft chat's key. Moving it away from a private chat
+     * ends that chat (see [left]), wherever the move comes from: Back, the list, a notification.
+     */
+    var selection: String?
+        get() = selected
+        set(value) {
+            val old = selected
+            selected = value
+            if (old != null && old != value) left(old)
+        }
     var showingSettings by mutableStateOf(!settings.isConfigured)
 
     /** Whether the feature tour was seen (or skipped); a new install shows it after the language. */
@@ -382,6 +396,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             modelsLoaded = false
             serverHasMemory = false
             serverHasContributions = false
+            serverHasPrivateChats = false
             contributionSettings = null
             contributions = emptyList()
             contributionsError = null
@@ -614,6 +629,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
                 serverHasMemory = config?.memory ?: false
                 serverHasRecords = config?.records ?: false
                 serverHasContributions = config?.contributions ?: false
+                serverHasPrivateChats = config?.privateChats ?: false
             }
         } catch (e: CancellationException) {
             throw e
@@ -1082,6 +1098,30 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         selection = conversationId
         showingSettings = false
         scope.launch { refresh() }
+    }
+
+    /**
+     * The selection moved away from `id` (a conversation's, or a draft's key). A private chat ends
+     * there: it is deleted on the server, a response still being written included, since no list
+     * leads back to it. One that was never sent is only dropped. A draft that just became a
+     * conversation is no longer under its key (see [chatDidStart]), so it is left alone.
+     */
+    private fun left(id: String) {
+        val chat = chats[id]?.takeIf { it.isPrivate } ?: return
+        chats.remove(id)
+        chat.stopStreaming()
+        otherConversations.remove(id)
+        val conversationId = chat.conversationId ?: return
+        val client = client ?: return
+        scope.launch {
+            // If this fails (no connection), the server deletes the chat itself once it has been idle.
+            try {
+                client.delete(conversationId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
     }
 
     /** Called when a draft chat's conversation is created: from now on it has an id. */

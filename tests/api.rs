@@ -1786,6 +1786,7 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         locale: "en".into(),
         import_attachments: false,
         model_auto: false,
+        private: false,
     };
     let running = store
         .insert_run_limited(&new("was running"), 10)

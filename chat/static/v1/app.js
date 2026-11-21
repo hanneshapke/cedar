@@ -384,7 +384,9 @@ function setHeader() {
   els.filesBtn.hidden = !c;
   cedarAgents.badge(els.agentBadge, c, c?.agent);
   cedarStar.setCurrent(c);
-  cedarNotify.setTitle(c?.title ? `${c.title} – Cedar` : 'Cedar');
+  cedarPrivate.setCurrent(c);
+  // A private chat's title stays out of the tab and the browser's history.
+  cedarNotify.setTitle(c?.private ? `${tr('private.title')} – Cedar` : c?.title ? `${c.title} – Cedar` : 'Cedar');
 }
 
 /** The open conversation has been looked at: nothing in it is unread any more. */
@@ -1151,9 +1153,10 @@ async function sendMessage(answer) {
   try {
     let conversation = state.current;
     if (!conversation) {
-      conversation = await api('POST', '/conversations', {});
+      // A private chat (private.js) is in no list, here as on the server.
+      conversation = await api('POST', '/conversations', cedarPrivate.wanted() ? { private: true } : {});
       state.current = conversation;
-      state.conversations.unshift(conversation);
+      if (!conversation.private) state.conversations.unshift(conversation);
       await cedarSettings.beforeSend(conversation);
       history.pushState(null, '', `#/c/${conversation.id}`);
     }
@@ -1170,7 +1173,7 @@ async function sendMessage(answer) {
     }
     if (token !== state.loadToken) return true; // the user navigated away meanwhile
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
-    state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
+    if (!conversation.private) state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
     setHeader();
     addTurn(turn);
     scrollToBottom(true);
@@ -1284,6 +1287,8 @@ async function init() {
     before: els.composer.querySelector('.composer-row'),
     toast,
   });
+  // The Private button goes after the paperclip; its note sits above the message box.
+  cedarPrivate.init({ api, toast, form: els.composer, anchor: els.reasoning, before: els.input });
   try {
     const res = await fetch('/api/config');
     state.config = await res.json();

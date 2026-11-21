@@ -49,6 +49,12 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
     var turns by mutableStateOf<List<TurnTranscript>>(emptyList())
         private set
 
+    /**
+     * A private chat: in no list, not remembered, and deleted when it is left (see
+     * [AppModel.left]). Chosen before the first message; after that it is what the server says.
+     */
+    var isPrivate by mutableStateOf(false)
+
     /** The agent whose run this conversation is, once the server said. */
     var agent by mutableStateOf<AgentRef?>(null)
         private set
@@ -132,6 +138,7 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
         val client = client ?: return
         try {
             val detail = client.conversation(id)
+            isPrivate = detail.conversation.isPrivate
             app.remember(detail.conversation)
             agent = detail.agent
             followups = detail.followups.associateBy { followupKey(it.turnId, it.callId) }
@@ -305,9 +312,12 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
         errorMessage = null
         val settings = app.settings
         try {
-            val id = conversationId ?: client.createConversation().id.also {
-                conversationId = it
-                app.chatDidStart(this, it)
+            val id = conversationId ?: client.createConversation(private = isPrivate).let { created ->
+                conversationId = created.id
+                // No list will have a private chat: its screen knows it from here.
+                if (created.isPrivate) app.remember(created)
+                app.chatDidStart(this, created.id)
+                created.id
             }
             val turn = client.send(id, ChatClient.SendMessage(
                 content = text,

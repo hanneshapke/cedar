@@ -10,6 +10,10 @@
     <string name="language_automatic">Automatique</string>
     <string name="language_footnote">S’applique immédiatement. La langue de l\'application. Les réponses de Cedar, vos agents et les notifications la suivent aussi.</string>
     <string name="new_chat">Nouvelle conversation</string>
+    <string name="private_chat">Conversation privée</string>
+    <string name="private_chat_note">Conversation privée. Elle n\'apparaît ni dans vos conversations ni dans la recherche, rien n\'en est mémorisé, ni données ni trace n\'en sont gardées, et aucune notification n\'est envoyée. Elle est supprimée dès que vous la quittez.</string>
+    <string name="private_chat_open_note">Conversation privée : rien n\'en est conservé ni mémorisé, et elle est supprimée dès que vous la quittez.</string>
+    <string name="private_chat_end">Terminer</string>
     <string name="settings">Réglages</string>
     <string name="cancel">Annuler</string>
     <string name="save">Enregistrer</string>

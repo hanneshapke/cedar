@@ -169,9 +169,20 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/conversations/\(id)"))
     }
 
-    func createConversation(title: String? = nil) async throws -> Conversation {
-        var body: [String: String] = [:]
-        if let title { body["title"] = title }
+    /// `isPrivate` makes it a private chat: in no list, not remembered, and deleted when it is
+    /// left. The field is sent only then, so a server from before private chats refuses it
+    /// rather than keep the conversation.
+    func createConversation(title: String? = nil, isPrivate: Bool = false) async throws -> Conversation {
+        struct Body: Encodable {
+            var title: String?
+            var isPrivate: Bool?
+
+            enum CodingKeys: String, CodingKey {
+                case title
+                case isPrivate = "private"
+            }
+        }
+        let body = Body(title: title, isPrivate: isPrivate ? true : nil)
         return try await decode(makeRequest("api/conversations", method: "POST", json: body))
     }
 
@@ -179,7 +190,8 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/conversations/\(conversationId)", method: "PATCH", json: ["title": title]))
     }
 
-    /// Deletes the conversation and its cedar runs. 409 while a response is running.
+    /// Deletes the conversation and its cedar runs. 409 while a response is running, except for
+    /// a private chat, whose response is stopped.
     func delete(conversationId: String) async throws {
         _ = try await send(makeRequest("api/conversations/\(conversationId)", method: "DELETE"))
     }

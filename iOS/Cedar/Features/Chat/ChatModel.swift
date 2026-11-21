@@ -19,6 +19,9 @@ final class ChatModel {
     private(set) var isLoading = false
     var errorMessage: String?
     var draft = ""
+    /// A private chat: in no list, not remembered, and deleted when it is left (see
+    /// `AppModel.left`). Chosen before the first message; after that it is what the server says.
+    var isPrivate = false
     /// Files picked to go with the next message.
     private(set) var attachments: [OutgoingAttachment] = []
     /// Picked files still being read.
@@ -87,6 +90,7 @@ final class ChatModel {
         guard let conversationId, let client else { return }
         do {
             let detail = try await client.conversation(id: conversationId)
+            isPrivate = detail.conversation.isPrivate
             app?.remember(detail.conversation, agent: detail.agent)
             // Decisions are never taken back, so the server's only add to the ones known here.
             for decision in detail.followups {
@@ -298,8 +302,10 @@ final class ChatModel {
             if let conversationId {
                 id = conversationId
             } else {
-                id = try await client.createConversation().id
+                let created = try await client.createConversation(isPrivate: isPrivate)
+                id = created.id
                 conversationId = id
+                if created.isPrivate { app.remember(created) }
                 app.chatDidStart(self, conversationId: id)
             }
             let turn = try await client.send(conversationId: id, .init(

@@ -171,6 +171,8 @@ const SEARCH_JS: &str = include_str!("../static/search.js");
 const SEARCH_CSS: &str = include_str!("../static/search.css");
 /// The star button and the Starred list in the conversations sidebar; every UI loads it.
 const STAR_JS: &str = include_str!("../static/star.js");
+const PRIVATE_JS: &str = include_str!("../static/private.js");
+const PRIVATE_CSS: &str = include_str!("../static/private.css");
 const MORE_MENU_JS: &str = include_str!("../static/more-menu.js");
 const STAR_CSS: &str = include_str!("../static/star.css");
 /// The inbox of finished responses, the unread count in the title, the Notifications settings and
@@ -520,6 +522,8 @@ pub fn router(state: AppState) -> Router {
         .route("/actions.js", get(|| async { asset(JS, ACTIONS_JS) }))
         .route("/actions.css", get(|| async { asset(CSS, ACTIONS_CSS) }))
         .route("/star.js", get(|| async { asset(JS, STAR_JS) }))
+        .route("/private.js", get(|| async { asset(JS, PRIVATE_JS) }))
+        .route("/private.css", get(|| async { asset(CSS, PRIVATE_CSS) }))
         .route("/search.js", get(|| async { asset(JS, SEARCH_JS) }))
         .route("/search.css", get(|| async { asset(CSS, SEARCH_CSS) }))
         .route("/more-menu.js", get(|| async { asset(JS, MORE_MENU_JS) }))
@@ -623,6 +627,15 @@ async fn find_conversation(state: &AppState, raw_id: &str) -> Result<Conversatio
     state.store.get_conversation(id).await?.ok_or(AppError::NotFound("conversation not found"))
 }
 
+/// A conversation that may be contributed: any but a private one.
+async fn open_conversation(state: &AppState, raw_id: &str) -> Result<Conversation, AppError> {
+    let conversation = find_conversation(state, raw_id).await?;
+    if conversation.private {
+        return Err(AppError::Conflict("a private conversation can't be contributed: nothing of it is kept or sent".into()));
+    }
+    Ok(conversation)
+}
+
 async fn find_turn(state: &AppState, raw_id: &str) -> Result<Turn, AppError> {
     let id = parse_id(raw_id, "turn not found")?;
     state.store.get_turn(id).await?.ok_or(AppError::NotFound("turn not found"))
@@ -675,6 +688,9 @@ async fn client_config(State(state): State<AppState>) -> Json<serde_json::Value>
         // Whether a conversation can be sent to a corpus (CHAT_CONTRIBUTIONS_URL); the review
         // dialog exports to a file either way.
         "contributions": state.cfg.contributions_url.is_some(),
+        // This chat server has private conversations (`"private": true` on a new one), so the
+        // phone apps offer them; on an older server they don't.
+        "private_chats": true,
         // Where the page opens an issue for a report the person wants the project to see
         // (CHAT_FEEDBACK_ISSUES_URL); null when that isn't offered. They file it themselves.
         "feedback_issues_url": state.cfg.feedback_issues_url,
@@ -774,12 +790,27 @@ fn clean_title(title: Option<String>) -> Result<Option<String>, AppError> {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NewConversationBody {
+    title: Option<String>,
+    /// A private conversation: in no list, kept out of memory, records and traces, announced
+    /// nowhere, and deleted when it is left (see `private`). Only at the start: a conversation
+    /// can't be made private, or open, later.
+    #[serde(default)]
+    private: bool,
+}
+
 async fn create_conversation(
     Scoped(state): Scoped,
-    ApiJson(body): ApiJson<TitleBody>,
+    ApiJson(body): ApiJson<NewConversationBody>,
 ) -> Result<(StatusCode, Json<Conversation>), AppError> {
     let title = clean_title(body.title)?;
-    Ok((StatusCode::CREATED, Json(state.store.create_conversation(title.as_deref()).await?)))
+    let conversation = match body.private {
+        true => state.store.create_private_conversation(title.as_deref()).await?,
+        false => state.store.create_conversation(title.as_deref()).await?,
+    };
+    Ok((StatusCode::CREATED, Json(conversation)))
 }
 
 #[derive(Serialize)]
@@ -823,6 +854,12 @@ async fn rename_conversation(
 
 async fn delete_conversation(Scoped(state): Scoped, Path(id): Path<String>) -> Result<StatusCode, AppError> {
     let conversation = find_conversation(&state, &id).await?;
+    // Leaving a private conversation ends it, a response in flight included: there is no list
+    // to come back to it from and stop that first.
+    if conversation.private {
+        crate::private::end(&state, &conversation).await?;
+        return Ok(StatusCode::NO_CONTENT);
+    }
     let mut turns = Vec::new();
     for turn in state.store.list_turns(conversation.id).await? {
         turns.push(refresh(&state, turn).await?);
@@ -863,6 +900,9 @@ async fn unstar_conversation(Scoped(state): Scoped, Path(id): Path<String>) -> R
 /// conversation, end up in the same state.
 async fn set_starred(state: &AppState, id: &str, starred: bool) -> Result<Json<Conversation>, AppError> {
     let conversation = find_conversation(state, id).await?;
+    if conversation.private && starred {
+        return Err(AppError::Conflict("a private conversation can't be starred: it is not kept".into()));
+    }
     state.store.set_starred(conversation.id, starred).await?;
     Ok(Json(state.store.get_conversation(conversation.id).await?.unwrap_or(conversation)))
 }
@@ -1488,8 +1528,12 @@ async fn send_message(
     let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
     let message = NewMessage { content: &content, model: requested, reasoning, plan, locale, attachments, infos };
     let turn = post_message(&state, ConversationRef::Id(&id), message).await?;
-    // Should the response wait for an OK while nobody looks at the page, they are told.
-    crate::attention::watch(state.clone(), turn.clone());
+    // Should the response wait for an OK while nobody looks at the page, they are told. Not
+    // about a private conversation, though: nothing of it leaves the app.
+    let private = state.store.get_conversation(turn.conversation_id).await?.is_some_and(|c| c.private);
+    if !private {
+        crate::attention::watch(state.clone(), turn.clone());
+    }
     Ok((StatusCode::CREATED, Json(turn)))
 }
 
@@ -1532,6 +1576,8 @@ pub(crate) async fn post_message(state: &AppState, conversation: ConversationRef
         attachments: Some(&attachments),
         plan: Some(plan.as_deref().or(settings.plan.as_deref()).unwrap_or(DEFAULT_PLAN)),
         interactive: true,
+        // No memory, no records and no trace for a private conversation's runs.
+        private: conversation.private,
         locale: locale.as_deref().or(settings.locale.as_deref()),
         ..settings.options(parent)
     };
@@ -1637,6 +1683,7 @@ impl RunSettings {
             plan: None,
             interactive: false,
             hold_writes: false,
+            private: false,
             locale: self.locale.as_deref(),
         }
     }
@@ -2392,7 +2439,7 @@ async fn contribution_preview(
     Path(id): Path<String>,
     ApiQuery(opts): ApiQuery<contrib::Options>,
 ) -> Result<Json<contrib::Preview>, AppError> {
-    let conversation = find_conversation(&state, &id).await?;
+    let conversation = open_conversation(&state, &id).await?;
     Ok(Json(contrib::preview(&state, &conversation, opts).await?))
 }
 
@@ -2411,7 +2458,7 @@ async fn send_contribution(
     Path(id): Path<String>,
     ApiJson(body): ApiJson<SendBody>,
 ) -> Result<(StatusCode, Json<Contribution>), AppError> {
-    let conversation = find_conversation(&state, &id).await?;
+    let conversation = open_conversation(&state, &id).await?;
     let saved = contrib::send(&state, &conversation, body.bundle, body.outcome).await?;
     Ok((StatusCode::CREATED, Json(saved)))
 }
@@ -2835,6 +2882,10 @@ async fn turn_events(
 /// what came back, beside the run's conversation and events.
 async fn turn_trace(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     let turn = find_turn(&state, &id).await?;
+    // cedar keeps none for a private run; say why instead of relaying its 404.
+    if state.store.get_conversation(turn.conversation_id).await?.is_some_and(|c| c.private) {
+        return Err(AppError::NotFound("a private conversation keeps no trace"));
+    }
     Ok(Json(state.cedar.trace(turn.run_id).await?))
 }
 
