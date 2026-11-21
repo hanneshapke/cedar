@@ -102,6 +102,8 @@ final class AppModel {
     private(set) var recordsLimits: RecordsList.Limits?
     /// The server can send conversations to a corpus (`/api/config` says so); Settings shows Contribute only then.
     private(set) var serverHasContributions = false
+    /// The server has private chats (`/api/config` says so); a new chat offers one only then.
+    private(set) var serverHasPrivateChats = false
     private(set) var contributionSettings: ContributionSettings?
     private(set) var contributions: [Contribution] = []
     var contributionsError: String?
@@ -175,6 +177,7 @@ final class AppModel {
             modelsLoaded = false
             serverHasMemory = false
             serverHasContributions = false
+            serverHasPrivateChats = false
             contributionSettings = nil
             contributions = []
             contributionsError = nil
@@ -434,6 +437,7 @@ final class AppModel {
                 serverHasMemory = config?.memory ?? false
                 serverHasRecords = config?.records ?? false
                 serverHasContributions = config?.contributions ?? false
+                serverHasPrivateChats = config?.privateChats ?? false
             }
         } catch is CancellationError {
         } catch {
@@ -892,6 +896,24 @@ final class AppModel {
         compactColumn = .detail
         showingSettings = false
         Task { await refresh() }
+    }
+
+    /// The selection moved away from `id` (a conversation's, or a draft's key). A private chat
+    /// ends there: it is deleted on the server, a response still being written included, since
+    /// no list leads back to it. One that was never sent is only dropped.
+    func left(_ id: String) {
+        guard let chat = chats[id], chat.isPrivate else { return }
+        chats.removeValue(forKey: id)?.stopStreaming()
+        otherConversations[id] = nil
+        guard let conversationId = chat.conversationId, let client else { return }
+        // If this fails (no connection), the server deletes the chat itself once it has been idle.
+        Task { try? await client.delete(conversationId: conversationId) }
+    }
+
+    /// Ends the private chat on screen (see `left`).
+    func endPrivateChat() {
+        selection = nil
+        compactColumn = .sidebar
     }
 
     /// Called when a draft chat's conversation is created: from now on it has an id.

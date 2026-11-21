@@ -53,6 +53,9 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Attach PDFs (any model) and photos or images (models registered as multimodal) to a
   message from the paperclip: the photo library or Files. Photos in a type cedar doesn't take,
   such as HEIC, are sent as JPEG; the limits are the server's (10 files, 20 MB each, 32 MB in all)
+- Private chats: the crossed-out eye in a new chat's top bar makes it a
+  [private chat](../chat/README.md#private-chats), which is in no list, is not remembered, sends
+  no notifications and is deleted when you leave it
 - Starred conversations: star a chat or an agent's run with the star in the chat's toolbar, a
   swipe or a long press, and find them under **Starred** in the sidebar's switch, most recently
   starred first. Stars are kept by cedar-chat, so they are the same here, on the web and in the

@@ -424,8 +424,12 @@ written in it for `CHAT_PRIVATE_TTL_SECS` (a day).
 
 A conversation is private from its first message or not at all. While it lasts, the conversation
 and its runs are stored like any other, on your own servers; what it asks the model and the tools
-it uses (a web search, say) go where they always go. The iOS and Android apps never list a private
-chat and can't start one yet.
+it uses (a web search, say) go where they always go.
+
+The iOS and Android apps have private chats too: a new chat has a **Private Chat** button (the
+crossed-out eye) in its top bar, shown when the server says it has them (`private_chats` in
+`GET /api/config`). There the chat is deleted when you go back to the list, open another
+conversation or tap **End Chat**; putting the app in the background keeps it.
 
 ## Notifications
 
@@ -1155,7 +1159,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/google` | The caller's own Google account, as cedar's `GET /v1/google` gives it: `{available, reason, services, connected, account?, missing_scopes?, server}`; `server: true` for the primary user, whose account is the server's |
 | `POST /api/google/connect` | Start connecting the caller's own account: `{url}` to go to (`?browser=1` from the desktop app, as for the server's). `409` for the primary user |
 | `DELETE /api/google` | Disconnect the caller's own account |
-| `GET /api/config` | `{auth_required, admin_enabled, models_access, memory, contributions}`; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), `contributions` is whether `CHAT_CONTRIBUTIONS_URL` is set, and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
+| `GET /api/config` | `{auth_required, admin_enabled, models_access, memory, contributions, private_chats}`; `private_chats` is `true` on a chat server with [private chats](#private-chats), so the apps offer them only there; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), `contributions` is whether `CHAT_CONTRIBUTIONS_URL` is set, and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |

@@ -28,6 +28,8 @@ data class ServerConfig(
     val records: Boolean = false,
     /** The server can send a conversation to a training corpus (`CHAT_CONTRIBUTIONS_URL`). */
     val contributions: Boolean = false,
+    /** The server has private chats; an older one leaves it out, so the app doesn't offer them. */
+    @SerialName("private_chats") val privateChats: Boolean = false,
 )
 
 // -- contributing a conversation (chat/README.md, "Contributing a conversation") --------------
@@ -326,6 +328,8 @@ data class Conversation(
     @SerialName("needs_answer") val needsAnswer: Boolean = false,
     /** When it was starred, on any device; `null` when it isn't. */
     @SerialName("starred_at") val starredAt: Instant? = null,
+    /** A private chat: in no list, not remembered, deleted when it is left. An older server doesn't say. */
+    @SerialName("private") val isPrivate: Boolean = false,
     /** The title of the agent a run belongs to; only the Starred list and a search send it. */
     @SerialName("schedule_title") val scheduleTitle: String? = null,
     /** The passage of a message a search matched; only search results carry it. */
