@@ -1275,6 +1275,7 @@ const cedarSettings = (() => {
     if (entry.is_default) side.append(badge(tr('settings.models.default'), 'ok'));
     if (entry.api_key_set) side.append(badge(tr('settings.models.keySet')));
     if (entry.multimodal) side.append(badge(tr('settings.models.images')));
+    if (entry.video) side.append(badge(tr('settings.models.video')));
     side.append(badge(levels.length
       ? (entry.default_reasoning
         ? tr('settings.models.levelsDefault', { levels: levels.join(', '), level: entry.default_reasoning })
@@ -1557,6 +1558,15 @@ const cedarSettings = (() => {
     });
     showImages();
     advanced.append(imagesSet);
+    // Whether the model can watch a video: a screen recording goes to it whole when an action
+    // is made from one (actions.js). Nothing tells this from the outside, so it is said here.
+    const takesVideo = el('label', 'cedar-set-check small plain');
+    const videoBox = el('input');
+    videoBox.type = 'checkbox';
+    videoBox.checked = Boolean(entry?.video);
+    takesVideo.append(videoBox, el('span', '', tr('settings.form.video')));
+    takesVideo.title = tr('settings.form.videoHelp');
+    advanced.append(takesVideo);
     const makeDefault = el('label', 'cedar-set-check small plain');
     const defaultBox = el('input');
     defaultBox.type = 'checkbox';
@@ -1647,6 +1657,7 @@ const cedarSettings = (() => {
         default_reasoning: defaultLevel.value,
         // Said outright under Advanced, or left to cedar with what the list says as a hint.
         ...(imagesSet.value ? { multimodal: imagesSet.value === 'yes' } : { detect_images: true, ...(listedImages() === undefined ? {} : { images_hint: listedImages() }) }),
+        video: videoBox.checked,
         max_tokens: limit,
         is_default: defaultBox.checked,
       };

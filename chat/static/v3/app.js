@@ -1483,7 +1483,8 @@ document.addEventListener('cedar-models-changed', loadModels);
 function route() {
   closeDrawer();
   // The Agents page has the hash to itself (agents.js); everything else is a conversation.
-  if (cedarAgents.route()) return;
+  // (So has the Actions page, actions.js; both are asked, so each can close when it isn't its turn.)
+  if ([cedarAgents.route(), cedarActions.route()].some(Boolean)) return;
   const m = location.hash.match(/^#\/c\/([0-9a-f-]{36})$/i);
   if (m) { if (state.current?.id !== m[1]) openConversation(m[1]); } else showNewChat();
 }
@@ -1739,6 +1740,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarAgents.init({ api, toast, renderMarkdown });
+  cedarActions.init({ api, toast });
   cedarFollowUp.init({ api, toast });
   cedarStar.init({ api, toast, onOpen: closeDrawer });
   cedarSearch.init({ api, onOpen: closeDrawer, reveal: openDrawer });
@@ -1769,6 +1771,7 @@ async function init() {
   await loadModels();
   cedarSettings.start();
   cedarAgents.start();
+  cedarActions.start();
   cedarStar.start();
   await loadConversations();
   route();

@@ -1,0 +1,46 @@
+/* Actions (actions.js), shared by every UI: the page that lists what the person showed Cedar how
+   to do, the screen recorder that makes a new one, and the form with the passwords stored with
+   an action. The page is built from the Agents page's parts (agents.css, which every UI loads);
+   this file only adds what the recorder and the form need. Colours come from the variables each
+   UI defines, so it reads in the light and dark themes alike. */
+
+.cedar-act-stage { display: flex; flex-direction: column; gap: 14px; }
+.cedar-act-hint { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+.cedar-act-notes { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.cedar-act-page a.copy-btn { display: inline-flex; align-items: center; text-decoration: none; }
+.cedar-act-page .cedar-ag-form-actions { flex-wrap: wrap; }
+
+/* -- recording ---------------------------------------------------------------------------------- */
+
+.cedar-act-live { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink); }
+.cedar-act-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #d03b2c; animation: cedar-act-pulse 1.4s ease-in-out infinite; }
+@keyframes cedar-act-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .cedar-act-dot { animation: none; } }
+.cedar-act-time { margin-left: auto; color: var(--muted); font: 13px var(--mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
+.cedar-act-progress { width: 100%; height: 6px; accent-color: var(--accent); }
+
+/* -- what was recorded -------------------------------------------------------------------------- */
+
+.cedar-act-video { width: 100%; max-height: 360px; border-radius: 8px; background: #000; }
+.cedar-act-strip-label { margin-top: 4px; color: var(--muted); font-size: 12.5px; }
+.cedar-act-strip { display: flex; gap: 6px; padding-bottom: 6px; overflow-x: auto; }
+.cedar-act-strip img { height: 72px; flex: none; border: 1px solid var(--line); border-radius: 6px; background: var(--wash); }
+
+/* -- the form ----------------------------------------------------------------------------------- */
+
+.cedar-ag-field textarea.cedar-act-steps { min-height: 180px; }
+.cedar-act-secrets { display: flex; flex-direction: column; gap: 12px; }
+.cedar-act-secrets:empty { display: none; }
+.cedar-act-secret { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); }
+.cedar-act-secret-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.cedar-act-secret-head .cedar-ag-icon { width: 26px; height: 26px; }
+.cedar-act-secret-head code, .cedar-act-page .cedar-ag-meta code { padding: 1px 6px; border-radius: 5px; background: rgba(128, 128, 128, .12); font: 12px var(--mono, ui-monospace, monospace); }
+.cedar-act-secret-head .copy-btn { margin-left: auto; padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: none; color: var(--ink); font-size: 12.5px; cursor: pointer; }
+.cedar-act-page .cedar-ag-inline .copy-btn { align-self: flex-start; }
+.cedar-act-page .cedar-ag-form-actions .cedar-act-danger { margin-right: auto; color: #b63d2b; }
+@media (prefers-color-scheme: dark) { .cedar-act-page .cedar-ag-form-actions .cedar-act-danger { color: #f09080; } }
+.cedar-act-locked::before { content: "\1F512\FE0E  "; }
+
+/* The sidebar link sits under the Agents one, and is hidden until the server says it has actions. */
+.cedar-ag-nav[hidden] { display: none; }
+.cedar-ag-field textarea.cedar-act-goal { min-height: 0; }

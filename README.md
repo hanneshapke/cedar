@@ -97,6 +97,10 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 | `POST /v1/records/{name}` | Save records by hand, as `records_save` would: `{"records": [{...}, ...], "description"?, "key"?, "health_data"?}`. A weekly export can go straight in this way. Returns `201` with `{set, added, updated}` when the set is new, else `200`. `409` when the set or the limit is full or `RECORDS=off`; `400` with the reason for a bad name, record or key. |
 | `DELETE /v1/records/{name}` | Delete one set with its records. `204`; `404` if it isn't yours. |
 | `DELETE /v1/records` | Delete every set your runs keep. `204`. |
+| `GET /v1/actions` | What you showed the agent how to do, oldest first: `{actions: [{id, name, title, summary, site, steps, secrets: [{name, label, saved}], source, uses, last_used_at, created_at, updated_at}], limits, recording: {video, frames, video_types}, secrets, enabled, browser}`. `recording` says what a registered model can watch, `secrets` whether a password can be kept (`CEDAR_SECRET_KEY`). See [Actions](#actions). |
+| `POST /v1/actions/draft` | Turn a screen recording into steps: `{"goal"?, "frames"?: [{at_ms, media_type, data}], "video"?: {media_type, data}, "duration_ms"?, "model"?, "locale"?}` (base64; up to 40 frames of 1 MB, 12 MB in all, and a 16 MB WebM or MP4). One model call, which saves nothing: `{draft: {title, summary, site, steps, secrets: [{name, label}], notes}, model, model_id, watched: "video" \| "frames", usage}`. `409` when no registered model takes what was sent, `502` when the model's reply holds no steps. |
+| `POST /v1/actions` | Save an action: `{"title", "summary"?, "site"?, "steps": ["..."], "secrets"?: [{name?, label?, value?}], "source"?}`. A secret with a `value` is stored encrypted and needs a `site`; its value is never returned. `201` with the action; `409` at 200 actions or without `CEDAR_SECRET_KEY` for a value. |
+| `GET /v1/actions/{id}`, `PUT /v1/actions/{id}`, `DELETE /v1/actions/{id}` | One action; change it (the same body: a secret sent without `value` keeps its saved one, one left out is forgotten; the `name` stays); delete it with its secrets (`204`). `404` if it isn't yours. |
 | `GET /v1/admin/models` | Admin: every registered model with its `base_url`, whether an `api_key_set`, and the `listed_models` its server reported when it was last checked, plus `storage`, whether a key can be saved at all (`CEDAR_SECRET_KEY`). Never returns a key. |
 | `GET` / `PUT /v1/admin/settings` | Admin: server-wide settings, `{"max_image_side", "sandbox_idle_minutes", "sandbox_runtime", "run_timeout_secs", "model_selection"}`. `max_image_side` is the longer side, in pixels, attached images are downscaled to (256–8192; default 1568, see [Attachments](#attachments)). `sandbox_idle_minutes` is how long a conversation's sandbox keeps running after a run before it is paused (0–1440; default 10, see [Continuing a run](#continuing-a-run)). `sandbox_runtime` is what runs new sandboxes: `docker` (default) or `openshell` (see [OpenShell sandboxes](#openshell-sandboxes-opt-in)), refused on Windows and when the OpenShell gateway doesn't answer. `run_timeout_secs` is the longest a run may take, time spent waiting for the client not counted (60–86400; default `RUN_TIMEOUT_SECS`), from the next run. `model_selection` is whether users choose the model of a run (`true`) or cedar does (`false`, the default; see [Which model a run gets](#which-model-a-run-gets)). A field left out of a `PUT` keeps its value; `null` goes back to the default. Returns `{max_image_side, sandbox_idle_minutes, sandbox_runtime, run_timeout_secs, model_selection, openshell_supported, defaults}`. |
 | `POST /v1/admin/server-models` | Admin: the models a server lists, before registering one (`{"base_url", "api_key"?, "id"?}`). Without an `api_key`, the saved key of the registered model `id` is used, if any. Returns `{"base_url", "models"}` with the address as it would be stored and the names sorted; saves nothing. |
@@ -400,6 +404,10 @@ for it, an account that isn't connected, a site that refused it, a limit it hit.
 is sent as feedback (cedar-chat keeps it [on its own server](chat/README.md#feedback)). `FEEDBACK=off`
 removes the tool.
 
+The other answer to something the agent couldn't do is to show it: the user records their screen
+while they do it themselves, and the steps become a saved [action](#actions) that later runs
+follow.
+
 The system prompt tells each run how it hands over, by what the run can do: in an interactive run,
 which calls wait for an OK and that a declined one is not to be tried another way; in one that
 holds its writes, that they wait in the outbox and must be written complete and final; in any
@@ -677,6 +685,42 @@ Records belong to the API key's owner, like memory: another key never sees them.
 saved can still be listed and deleted). The chat interfaces do not show records in their settings
 yet; the API is the way to see them.
 
+## Actions
+
+When the agent can't do something, the user can show it how. They record their screen, or one
+window, while they do the thing themselves; a model that can watch the recording writes the steps
+down as instructions for the agent; the user reads them, corrects them and saves them as an
+**action**. From then on a run whose request matches reads the steps and follows them. Nothing is
+learned behind the user's back: an action exists only because they saved it, says exactly what
+they approved, and is theirs to change or delete ([cedar-chat's Actions page](chat/README.md#actions)
+does all of this, recorder included).
+
+- **A recording is made small before it is sent.** The client captures at a low frame rate and
+  resolution and picks the frames in which the screen changed. `POST /v1/actions/draft` takes
+  those frames, the video, or both, and makes one model call with no tools: the video, as a
+  `video_url` content part (what vLLM and OpenRouter take), goes to a model registered with
+  `"video": true`; otherwise the frames go, each with its time, to a model that takes images. The
+  model is told which tools the agent has, so the steps are written for them, to write what
+  varies as a `{placeholder}`, and never to write out a password. The recording is not kept.
+- **Runs are told what was saved.** The per-request note lists the owner's actions by name, title
+  and site (the first 40), and the `saved_actions` tool returns one's steps, or lists them all.
+  An action's steps are the user's instructions for that task; a page may have changed since, so
+  the model goes by what the page shows now.
+- **A password can be kept with an action**, when `CEDAR_SECRET_KEY` is set. It is encrypted like
+  the other saved credentials, and the action only names it (`password`). The model never sees
+  the value: it calls `browser` with `{"action": "type", "ref": 7, "secret":
+  "sign_in/password"}`, and cedar types it. That happens **only on the action's site** (its host
+  or a subdomain of it, checked against the page the browser is on), so a page that talks the
+  model into typing it elsewhere gets an error. The value is taken out of whatever the page
+  shows afterwards, reaches the browser container in an environment variable and not on a command
+  line, and a password field's contents are never part of a page's description. Without the key,
+  an action can still name a secret; the agent then asks for it.
+- **Limits.** 200 actions per owner, 60 steps of 600 characters, 5 secrets. `ACTIONS=off` removes
+  the tool, the note and the browser's `secret`; `/v1/actions` still lists and deletes.
+
+Steps on a website need the [browser](#the-browser) (`BROWSER=on`). What a recording shows in a
+desktop application is written down too, with a note on what the agent will need the user for.
+
 ## Web chat
 
 `chat/` holds **cedar-chat**, a separate Rust service with a web UI for talking to the agent, in a
@@ -775,6 +819,7 @@ Settings come from environment variables. The important ones:
 | `RECORDS_MAX_SETS` | 50 (how many record sets one API key may keep) |
 | `RECORDS_MAX_ITEMS` | 10000 (how many records one set may hold) |
 | `RECORDS_IMPORT_ATTACHMENTS` | `on` (import a run's CSV and JSON attachments into record sets named after the files unless the run says `"import_attachments": false`; see [Records](#records)) |
+| `ACTIONS` | `on` (set `off` to remove the `saved_actions` tool, the list of saved actions in a run's prompt and the browser's `secret`; see [Actions](#actions)) |
 | `TRANSIT_BASE_URL` / `DRIVING_BASE_URL` | `https://api.transitous.org` / `https://router.project-osrm.org` (the roots of the MOTIS trip planner and the OSRM router `plan_trip` uses; point them at your own instances for anything beyond light use) |
 | `SERPAPI_API_KEY` | empty (set it, or save one in the chat UI's Settings → Server, to offer `search_flights`; a key from [SerpApi](https://serpapi.com), whose free plan covers a limited number of searches a month) |
 | `FLIGHTS` | `on` (set `off` to remove the `search_flights` tool even with a SerpApi key) |
@@ -843,6 +888,7 @@ produce its result from what it has, since a run that is stopped delivers nothin
 | `records_save` | Adds or updates records in a set, creating it on first use. Takes `set` (lowercase letters, digits and underscores), `records` (1–500 JSON objects with such field names, at most 8,000 characters each), and for a new set `description` and `key` (the fields that identify a row, e.g. `["date"]`; fixed once the set holds records; without one, every save appends), plus optional `health_data`. A record whose key is already in the set replaces it. Returns `{set, added, updated, count, key}`. Nothing is written when any record is refused or the set would go over `RECORDS_MAX_ITEMS`. |
 | `records_lookup` | One read-only SQL query (SQLite) over the user's sets: each set the query names is copied into a private in-memory database as a table of that name, with the records' fields as columns plus `_id` and `_saved_at`, and the query runs there with `PRAGMA query_only`, at most 10 seconds, and nothing else reachable. Takes `sql` (a single `SELECT` or `WITH ... SELECT`; anything that would write, attach or change settings is refused by name) and optional `max_rows` (1–1000, default 100). Returns `{columns, rows, truncated, tables}`. |
 | `records_drop` | Deletes one set with everything in it. Takes `set`. Refused in non-interactive runs. |
+| `saved_actions` | What the user showed the agent how to do (see [Actions](#actions)). With `name`, that action's `title`, `summary`, `site`, `steps` and the names of the secrets saved with it (never a value); without, the list. Read-only. |
 | `weather_forecast` | Current conditions and a daily forecast from [Open-Meteo](https://open-meteo.com) (open source, open data, no API key). Takes a `location` (a place name or postal code, geocoded to its best match) or `latitude` and `longitude`, optional `days` (1–16, default 3) and optional `units` (`metric` or `imperial`). Returns the resolved place, current temperature, conditions, humidity, wind, and precipitation, then per day the conditions, low and high, precipitation and its chance, wind, UV index, and sunrise and sunset. The chat interfaces draw the report as a weather card ([chat/README.md](chat/README.md)). Unless `WEATHER=off`. |
 | `show_map` | Shows the user a map in the chat, with a numbered pin for each place. Takes `markers` (1–25 objects, each with a `location` such as `Berlin` or `Paris, France`, or `latitude` and `longitude`, and an optional `label`) and an optional `title`. Names are looked up with Open-Meteo's geocoding API, which knows cities, towns, and regions but not street addresses or businesses. Returns JSON with the coordinates used; names that could not be found are listed under `not_found`, and a call where none are found is an error. The chat interfaces draw the JSON as a map ([chat/README.md](chat/README.md)); other clients just get the JSON. Unless `MAPS=off`. |
 | `show_recipe` | Shows the user a recipe in the chat: a photo of the dish, the times and servings, the ingredients as a checklist, and the steps as a timeline. Takes `title`, `ingredients` (1–60, each `{quantity?, item}` or a string), `steps` (1–40, each `{title?, text, duration?}` or a string), and optional `description`, `servings`, `prep_time`, `cook_time`, `total_time`, `tips`, and `image_query` (what to search for the photo; defaults to the title). A photo is always looked up: the lead image of the best matching Wikipedia article, else the best matching bitmap on Wikimedia Commons. Returns the checked recipe as JSON with an `image` (`url`, `page_url`, `title`, `source`), or an `image_note` saying why there is none; a missing photo never fails the call. The system prompt asks the model to use it whenever its answer is a recipe. The chat interfaces draw the JSON as a card ([chat/README.md](chat/README.md)). Unless `RECIPES=off`. |
@@ -972,6 +1018,7 @@ The image's working directory is `/sandbox`, not `/workspace`: OpenShell won't m
 
 - **One browser per run, started on first use.** The first `browser` call starts a container from `BROWSER_IMAGE` for the run; later calls talk to the same browser, so the page, open dialogs, and history carry over. The container is removed when the run ends (also on failure or cancellation), and leftovers from a crash are removed at startup. Runs that never browse start nothing.
 - **Pages as text.** Every call answers with the page's URL, title, HTTP status (when it isn't a success), and text: headings as Markdown, list items, and each visible interactive element numbered, like `[12] button "Show all 12 reviews"` or `[3] link "Next page" -> /search?page=2`. The model passes that number as `ref` to `click` or `type`. The numbers are reassigned on every call. When a modal dialog is open, only the dialog is described. `scroll` scrolls the open dialog (or the page) and says when it has reached the bottom, after giving the page time to load more. Long pages are cut at `TOOL_OUTPUT_MAX_BYTES`, continued with `{"action": "snapshot", "start": N}`, and runs of look-alike numbered buttons (a calendar's days) are written as one line.
+- **Saved passwords.** `type` takes `secret` in place of `text`: the name of a secret the user stored with a saved [action](#actions). cedar types it without the model seeing it, and only on that action's site. What a password field holds is never in a page's text; it reads `(filled in)`.
 - **Limits.** Only the six actions are passed to the browser; the model can't run scripts of its own in it. Images, media, and fonts are not loaded, downloads are refused, and links that would open a new tab open in the same one. A browser that hangs (no answer within 90 s) or dies (out of memory, say) is removed, the model is told to navigate again, and its next call starts a new one.
 
 The URL in a `navigate` call is checked like `fetch_url`'s: http(s) only, and it must resolve to public addresses unless `WEB_FETCH_ALLOW_PRIVATE=on`. Pages the browser reaches on its own (links, redirects, a page's scripts) are not checked, so it can reach whatever its Docker network reaches; see [Safety](#safety).
@@ -1210,6 +1257,9 @@ setting for the model server: a fresh cedar has no model, says so at startup and
 - `multimodal`: whether the model takes images with a prompt (see [Attachments](#attachments));
   it is also shown the first pages of attached PDFs. A run with images on a model without it is
   refused with `400`; PDFs are fine for any model. Off unless set;
+- `video`: whether the model takes a video with a prompt, as a `video_url` content part. A screen
+  recording is sent whole to such a model when it is turned into an [action](#actions); nothing
+  can find this out by asking the server, so it is off unless set;
 - `max_tokens`: the most tokens one reply may take, a reasoning model's thinking included (1 to
   1000000, 16384 unless set). A reply that reaches it ends with `stop_reason` `max_tokens`. It
   replaces the old server-wide `MAX_TOKENS` setting, which is now ignored with a warning;

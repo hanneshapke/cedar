@@ -277,6 +277,39 @@ impl CedarClient {
         Ok(())
     }
 
+    /// The user's saved actions (`GET /v1/actions`): `{actions, limits, recording, secrets, ...}`.
+    /// `None` from a cedar from before actions, which doesn't know the route.
+    pub async fn actions(&self) -> Result<Option<Value>, AppError> {
+        match self.json(self.http.get(self.url("/actions"))).await {
+            Err(AppError::Upstream { status: StatusCode::NOT_FOUND, .. }) => Ok(None),
+            other => other.map(Some),
+        }
+    }
+
+    pub async fn action(&self, id: Uuid) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url(&format!("/actions/{id}")))).await
+    }
+
+    /// The steps a model reads from a screen recording (`POST /v1/actions/draft`). One model
+    /// call over a video or dozens of images, so it gets the time a tool call gets.
+    pub async fn draft_action(&self, recording: &Value) -> Result<Value, AppError> {
+        self.json_within(self.http.post(self.url("/actions/draft")).json(recording), TOOL_CALL_TIMEOUT).await
+    }
+
+    /// Save a new action, or with `id` change that one.
+    pub async fn save_action(&self, id: Option<Uuid>, action: &Value) -> Result<Value, AppError> {
+        let req = match id {
+            Some(id) => self.http.put(self.url(&format!("/actions/{id}"))),
+            None => self.http.post(self.url("/actions")),
+        };
+        self.json(req.json(action)).await
+    }
+
+    pub async fn delete_action(&self, id: Uuid) -> Result<(), AppError> {
+        self.send(self.http.delete(self.url(&format!("/actions/{id}"))).timeout(REQUEST_TIMEOUT)).await?;
+        Ok(())
+    }
+
     // -- admin: integrations (needs CEDAR_API_KEY to be one of cedar's CEDAR_ADMIN_KEYS) --------
 
     pub async fn integrations(&self) -> Result<Value, AppError> {

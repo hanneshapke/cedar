@@ -488,7 +488,8 @@ document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
   // The Agents page has the hash to itself (agents.js); everything else is a conversation.
-  if (cedarAgents.route()) {
+  // (So has the Actions page, actions.js; both are asked, so each can close when it isn't its turn.)
+  if ([cedarAgents.route(), cedarActions.route()].some(Boolean)) {
     toggleSidebar(false);
     return;
   }
@@ -1264,6 +1265,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarAgents.init({ api, toast, renderMarkdown });
+  cedarActions.init({ api, toast });
   cedarFollowUp.init({ api, toast });
   cedarStar.init({ api, toast, onOpen: () => toggleSidebar(false) });
   cedarSearch.init({ api, onOpen: () => toggleSidebar(false), reveal: () => toggleSidebar(true) });
@@ -1296,6 +1298,7 @@ async function init() {
   await loadModels();
   cedarSettings.start();
   cedarAgents.start();
+  cedarActions.start();
   cedarStar.start();
   await loadConversations();
   route();

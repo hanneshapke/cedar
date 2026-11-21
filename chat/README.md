@@ -41,6 +41,9 @@ Both interfaces have all of these, except where noted:
   Agents page until you approve, edit or discard it
 - [Feedback](#feedback): when Cedar can't do something you asked for, it says so in a card you can
   send as feedback, which stays on this server
+- [Actions](#actions): show Cedar how to do what it couldn't, by recording your screen while you do
+  it; a model writes the steps, you correct and save them, and Cedar follows them from then on,
+  with a password it can type but never sees, if you store one
 - A response that needs your OK while you are away [is announced](#when-a-response-waits-for-you)
   by your notification method, and "Always allow" is offered only once you have allowed the same
   thing a few times
@@ -921,6 +924,45 @@ your saved choice predates memory and leaves it off; the Memory page says so. Ev
 chat server shares one memory, since the chat calls cedar with one `CEDAR_API_KEY`. Memory stays
 on your own cedar server and is never shared with a third party (see [PRIVACY.md](../PRIVACY.md)).
 
+### Actions
+
+When Cedar can't do something, show it how. **Actions**, in the sidebar, lists what you have shown
+it; **Record an action** (or **Show Cedar how**, on the card of [something it couldn't
+do](#feedback)) starts a new one:
+
+1. Say in a sentence what you are about to show, and choose **One window** (a window or browser
+   tab, best for a website) or **Entire screen**. Your browser asks what to share.
+2. Do the task yourself, at your usual pace, then come back and press **Stop** (or end the share
+   from the browser's own bar). A recording can be ten minutes long.
+3. The page makes the recording small, without sending anything: it was captured at a few frames
+   a second and at most 1600 pixels a side, and is now played through once, fast, to keep the
+   frames in which the screen changed, and the one before each change, which shows what you had
+   typed and where the pointer was. You see the video, its size, and those frames.
+4. **Write the steps** sends it to cedar's model once: the video if a model there is marked
+   *Takes video* (Settings → Models → Advanced), the frames otherwise. Nothing of the recording is
+   kept, here or on cedar.
+5. You get the steps as text to read and correct: one per line, with what changes each time in
+   `{curly braces}`. **Save action** keeps them; the page says so if the model noticed something
+   Cedar will need you for (a code sent to your phone, a desktop app).
+
+From then on Cedar is told which actions you saved and reads the steps of the one a request
+matches. An action's page shows how often that happened, and is where you correct the steps when
+a site changes, or delete it.
+
+**Passwords.** What you type into a password field shows as dots in a recording, and the steps
+never hold one. Under *Passwords* you can store it with the action, so Cedar can sign in on its
+own: it is encrypted on cedar's server, Cedar's model never sees it, and it is typed only on the
+website the action names (you can't store one without naming the site). The field is empty when
+you open an action again; leave it so to keep what is stored. Without `CEDAR_SECRET_KEY` on
+cedar, the page says passwords can't be stored, and Cedar asks you instead. See
+[cedar's README](../README.md#actions) for how the typing is kept away from the model.
+
+A browser that can't record the screen (the desktop app's window on some systems, a phone) offers
+**Use a video file** instead: record with the system's own screen recorder and choose the file;
+the same reduction runs on it. Steps on a website need cedar's browser tool (`BROWSER=on`); the
+form says so when it is off. Actions are the `actions` tool group. Close what you don't want
+the model to see before you record: the frames go to the model server cedar is set up with.
+
 ### Records
 
 Memory holds a few facts; for data you will come back to, cedar keeps [records](../README.md#records):
@@ -1179,6 +1221,9 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PUT /api/turns/{id}/limitations/{call_id}` | Decide about [something the model reported it could not do](#feedback) in that turn (`call_id` is the `report_limitation` call's id): `{"decision": "send", "summary", "category"?, "needed"?, "comment"?}` keeps it as feedback, `{"decision": "dismiss"}` keeps only that it was seen. Returns `{feedback}`; the first decision stands |
 | `GET /api/feedback` | `{feedback, by_category}`: the reports you sent, newest first, each `{id, turn_id, call_id, status, summary, category, needed, comment, created_at}`. With `?users=all` and the admin token, everyone's, each with `user_name` |
 | `DELETE /api/feedback/{id}` | Take one report back (with `?users=all` and the admin token, anyone's). `204` |
+| `GET /api/actions` | cedar's `GET /v1/actions` for whoever is signed in, with `supported` (`false` on a cedar from before actions) |
+| `POST /api/actions/draft` | The steps cedar's model reads from a recording (cedar's body, up to 40 MB, passed on as it is). Saves nothing |
+| `POST /api/actions`, `GET`/`PUT`/`DELETE /api/actions/{id}` | Save, read, change and delete an action, as cedar's routes do |
 | `GET /api/outbox` | `{items}`: what waits for your approval in [the outbox](#the-outbox), newest first: cedar's held calls (`{id, run_id, tool, input, reason, why, status, edited, output, created_at, decided_at}`), each with `turn_id`, `conversation_id`, `title` and `agent: {id, title}` where the run is one of this chat's. `?status=` asks for `sent`, `failed`, `discarded` or `all` instead |
 | `GET /api/outbox/{id}` | One held call, whatever became of it |
 | `POST /api/outbox/{id}` | `{"decision": "approve" \| "discard", "input"?}`: approve a held call, which makes it now (with `input` in place of what the model wrote, if given), or discard it. Returns the call as it is afterwards; the open tabs get an `outbox.changed` notice |
