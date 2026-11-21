@@ -14,6 +14,18 @@ import kotlin.test.assertTrue
 // Ported from iOS/CedarTests/APITests.swift.
 class ApiTest {
     @Test
+    fun decodesPrivateChatsAndTheConfigFlag() {
+        val chat = CedarJson.decodeFromString(Conversation.serializer(), """{"id":"c1","title":"My secret trip","private":true,
+            "created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:40:00Z"}""")
+        assertTrue(chat.isPrivate)
+        // A server from before private chats says nothing, in a conversation or in its config.
+        val plain = CedarJson.decodeFromString(Conversation.serializer(), """{"id":"c2","created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:40:00Z"}""")
+        assertFalse(plain.isPrivate)
+        assertFalse(CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":false,"admin_enabled":false}""").privateChats)
+        assertTrue(CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":false,"admin_enabled":false,"private_chats":true}""").privateChats)
+    }
+
+    @Test
     fun configSaysWhetherTheServerHasMemory() {
         // A server from before memory leaves the field out.
         val old = CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":true,"admin_enabled":false}""")

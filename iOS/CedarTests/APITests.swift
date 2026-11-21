@@ -105,6 +105,23 @@ final class APITests: XCTestCase {
         XCTAssertEqual(Conversation(id: "x", unread: false, needsAnswer: false, createdAt: Date(), updatedAt: Date()).displayTitle, "New chat")
     }
 
+    func testDecodesPrivateChatsAndTheConfigFlag() throws {
+        // A private chat says so, and shows as one instead of by what was written in it.
+        let json = """
+        {"id":"c1","title":"My secret trip","model":null,"reasoning":null,"schedule_id":null,"tools":null,"unread":false,
+         "needs_answer":false,"starred_at":null,"private":true,"created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:40:00Z"}
+        """
+        let chat = try JSONDecoder.cedar.decode(Conversation.self, from: Data(json.utf8))
+        XCTAssertTrue(chat.isPrivate)
+        XCTAssertEqual(chat.displayTitle, "Private Chat")
+        // A server from before private chats says nothing, in a conversation or in its config.
+        XCTAssertFalse(Conversation(id: "x", unread: false, needsAnswer: false, createdAt: Date(), updatedAt: Date()).isPrivate)
+        let old = try JSONDecoder.cedar.decode(ServerConfig.self, from: Data(#"{"auth_required":false,"admin_enabled":false}"#.utf8))
+        XCTAssertFalse(old.privateChats)
+        let new = try JSONDecoder.cedar.decode(ServerConfig.self, from: Data(#"{"auth_required":false,"admin_enabled":false,"private_chats":true}"#.utf8))
+        XCTAssertTrue(new.privateChats)
+    }
+
     func testDecodesSearchResults() throws {
         let json = """
         {"conversations":[

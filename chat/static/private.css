@@ -1,0 +1,23 @@
+/* Private chats (private.js), shared by every UI: the "Private" button in the composer and the
+   note above the message box. Like attach.css it relies only on --accent and --muted plus
+   translucent greys, so it reads the same in either style and theme. */
+
+.cedar-private-btn { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; }
+.cedar-private-btn[hidden] { display: none; }
+.cedar-private-btn svg, .cedar-private-note svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.cedar-private-btn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: rgba(128, 128, 128, .12); }
+.cedar-private-btn:disabled { opacity: 1; cursor: default; }
+
+.cedar-private-note { display: flex; align-items: flex-start; gap: 8px; width: 100%; flex-basis: 100%; box-sizing: border-box; margin-bottom: 8px; padding: 7px 10px; border: 1px dashed rgba(128, 128, 128, .5); border-radius: 10px; background: rgba(128, 128, 128, .08); color: var(--muted); font-size: 12.5px; line-height: 1.45; text-align: left; }
+.cedar-private-note[hidden] { display: none; }
+.cedar-private-note svg { margin-top: 2px; color: var(--accent); }
+.cedar-private-text { flex: 1; min-width: 0; }
+.cedar-private-end { flex: none; align-self: center; white-space: nowrap; }
+.cedar-private-end[hidden] { display: none; }
+
+/* What a private chat doesn't have: it can't be starred, contributed or turned into an agent,
+   and it keeps no trace to open. */
+body.cedar-private-open [data-star-toggle],
+body.cedar-private-open #agent-btn,
+body.cedar-private-open #contribute-item,
+body.cedar-private-open .trace-btn { display: none !important; }

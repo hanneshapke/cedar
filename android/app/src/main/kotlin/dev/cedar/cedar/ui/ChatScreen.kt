@@ -49,6 +49,7 @@ import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,6 +59,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Scaffold
@@ -114,7 +117,9 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
 
     val conversationId = chat.conversationId
     val newChat = stringResource(R.string.new_chat)
-    val title = conversationId?.let { app.conversation(it) }?.titleOr(newChat)
+    // A private chat is named as one, not by what was written in it: the title also shows in Recents.
+    val title = stringResource(R.string.private_chat).takeIf { chat.isPrivate }
+        ?: conversationId?.let { app.conversation(it) }?.titleOr(newChat)
         ?: chat.turns.firstOrNull()?.prompt?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()?.let { if (it.length > 80) it.take(80) + "…" else it }
         ?: newChat
     val webURL = conversationId?.let { id -> app.client?.webURL(id) }
@@ -123,7 +128,8 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
     val conversation = conversationId?.let { app.conversation(it) }
     val agent = chat.agent ?: conversation?.let { c -> c.scheduleId?.let { id -> AgentRef(id, c.scheduleTitle ?: app.agent(id)?.title.orEmpty()) } }
     // A finished chat can become an agent; an agent's own run can't.
-    val canMakeAgent = conversationId != null && agent == null && !chat.isActive && chat.turns.any { it.turn.status == TurnStatus.COMPLETED }
+    // A private chat can't: it isn't kept, and can't be starred or contributed either.
+    val canMakeAgent = conversationId != null && agent == null && !chat.isActive && !chat.isPrivate && chat.turns.any { it.turn.status == TurnStatus.COMPLETED }
 
     // Keep the newest content in view as it arrives.
     val signature = listOf(chat.turns.size, chat.turns.lastOrNull()?.lastSeq ?: 0, if (chat.pendingPrompt == null) 0 else 1, if (openQuestions == null) 0 else 1)
@@ -140,7 +146,17 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
                     if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
                 },
                 actions = {
-                    if (conversationId != null) {
+                    // Before the first message, on a server that has them: make this chat a private one.
+                    if (conversationId == null && chat.pendingPrompt == null && app.serverHasPrivateChats) {
+                        IconToggleButton(checked = chat.isPrivate, onCheckedChange = { chat.isPrivate = it }) {
+                            Icon(
+                                Icons.Outlined.VisibilityOff,
+                                stringResource(R.string.private_chat),
+                                tint = if (chat.isPrivate) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                            )
+                        }
+                    }
+                    if (conversationId != null && !chat.isPrivate) {
                         val starred = app.isStarred(conversationId)
                         IconButton(onClick = {
                             scope.launch {
@@ -160,7 +176,7 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
                             }
                         }
                     }
-                    if (conversationId != null && app.serverHasContributions) {
+                    if (conversationId != null && app.serverHasContributions && !chat.isPrivate) {
                         IconButton(onClick = { showingContribute = true }) { Icon(Icons.Outlined.Share, stringResource(R.string.contribute_this_conversation)) }
                     }
                     if (conversationId != null && chat.client != null) {
@@ -210,6 +226,8 @@ fun ChatScreen(app: AppModel, chat: ChatModel, onBack: (() -> Unit)?) {
         bottomBar = { Composer(chat) },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            // A private chat says so for as long as it is open, and can be ended from here.
+            if (chat.isPrivate) PrivateNote(started = conversationId != null, onEnd = { app.selection = null })
             if (agent != null) AgentBadge(agent.title) { app.openAgent(agent.id) }
             LazyColumn(
                 state = listState,
@@ -295,6 +313,28 @@ private fun AgentBadge(title: String, onClick: () -> Unit) {
             modifier = Modifier.widthIn(max = 260.dp),
         )
         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** Over a private chat: what that means, and the way out of it once it has started. */
+@Composable
+private fun PrivateNote(started: Boolean, onEnd: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Icons.Outlined.VisibilityOff, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(
+            stringResource(if (started) R.string.private_chat_open_note else R.string.private_chat_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = CedarColors.secondaryText,
+            modifier = Modifier.weight(1f),
+        )
+        if (started) TextButton(onClick = onEnd) { Text(stringResource(R.string.private_chat_end)) }
     }
 }
 

@@ -157,15 +157,23 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     suspend fun conversation(id: String): ConversationDetail =
         decode(request("api/conversations/$id"), ConversationDetail.serializer())
 
-    suspend fun createConversation(title: String? = null): Conversation {
-        val body = buildJsonObject { if (title != null) put("title", title) }
+    /**
+     * `private` makes it a private chat: in no list, not remembered, and deleted when it is left.
+     * The field is sent only then, so a server from before private chats refuses it rather than
+     * keep the conversation.
+     */
+    suspend fun createConversation(title: String? = null, private: Boolean = false): Conversation {
+        val body = buildJsonObject {
+            if (title != null) put("title", title)
+            if (private) put("private", true)
+        }
         return decode(request("api/conversations", "POST", body), Conversation.serializer())
     }
 
     suspend fun rename(conversationId: String, title: String): Conversation =
         decode(request("api/conversations/$conversationId", "PATCH", buildJsonObject { put("title", title) }), Conversation.serializer())
 
-    /** Deletes the conversation and its cedar runs. 409 while a response is running. */
+    /** Deletes the conversation and its cedar runs. 409 while a response is running, except for a private chat, whose response is stopped. */
     suspend fun delete(conversationId: String) {
         send(request("api/conversations/$conversationId", "DELETE"))
     }

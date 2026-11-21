@@ -6705,6 +6705,28 @@
         }
       }
     },
+    "End Chat" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat beenden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminar chat"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminer"
+          }
+        }
+      }
+    },
     "Enter a number to compare with." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13176,6 +13198,72 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Les prix changent vite et aucune place n'est réservée."
+          }
+        }
+      }
+    },
+    "Private Chat" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privater Chat"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat privado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation privée"
+          }
+        }
+      }
+    },
+    "Private chat. It stays out of your conversations and search, nothing from it is remembered, no records or trace of it are kept, and no notifications are sent. It is deleted when you leave it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privater Chat. Er erscheint weder in deinen Unterhaltungen noch in der Suche, nichts daraus wird gemerkt, es werden weder Datensätze noch ein Trace dazu angelegt und keine Benachrichtigungen gesendet. Er wird gelöscht, sobald du ihn verlässt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat privado. No aparece en tus conversaciones ni en la búsqueda, no se recuerda nada de él, no se guardan registros ni una traza, y no se envían notificaciones. Se elimina cuando lo dejas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation privée. Elle n'apparaît ni dans vos conversations ni dans la recherche, rien n'en est mémorisé, ni données ni trace n'en sont gardées, et aucune notification n'est envoyée. Elle est supprimée dès que vous la quittez."
+          }
+        }
+      }
+    },
+    "Private chat: nothing of it is kept or remembered, and it is deleted when you leave it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privater Chat: Nichts davon wird aufbewahrt oder gemerkt, und er wird gelöscht, sobald du ihn verlässt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat privado: no se guarda ni se recuerda nada de él, y se elimina cuando lo dejas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation privée : rien n'en est conservé ni mémorisé, et elle est supprimée dès que vous la quittez."
           }
         }
       }

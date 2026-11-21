@@ -13,11 +13,14 @@ struct ServerConfig: Decodable, Sendable {
     let records: Bool
     /// The server can send a conversation to a training corpus (`CHAT_CONTRIBUTIONS_URL`).
     let contributions: Bool
+    /// The server has private chats; an older one leaves it out, so the app doesn't offer them.
+    let privateChats: Bool
 
     enum CodingKeys: String, CodingKey {
         case authRequired = "auth_required"
         case adminEnabled = "admin_enabled"
         case memory, records, contributions
+        case privateChats = "private_chats"
     }
 
     init(from decoder: Decoder) throws {
@@ -27,6 +30,7 @@ struct ServerConfig: Decodable, Sendable {
         memory = try c.decodeIfPresent(Bool.self, forKey: .memory) ?? false
         records = try c.decodeIfPresent(Bool.self, forKey: .records) ?? false
         contributions = try c.decodeIfPresent(Bool.self, forKey: .contributions) ?? false
+        privateChats = try c.decodeIfPresent(Bool.self, forKey: .privateChats) ?? false
     }
 }
 
@@ -531,6 +535,9 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
     var needsAnswer: Bool
     /// When it was starred, on any device; `nil` when it isn't.
     var starredAt: Date?
+    /// A private chat: in no list, not remembered, deleted when it is left. A server from before
+    /// private chats doesn't say.
+    var privateChat: Bool?
     /// The title of the agent a run belongs to; only the Starred list and a search send it.
     var scheduleTitle: String?
     /// The passage of a message a search matched; only search results carry it.
@@ -543,13 +550,16 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
         case scheduleId = "schedule_id"
         case needsAnswer = "needs_answer"
         case starredAt = "starred_at"
+        case privateChat = "private"
         case scheduleTitle = "schedule_title"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
 
-    /// The title cedar-chat gave it (the first message), or a placeholder.
+    /// The title cedar-chat gave it (the first message), or a placeholder. A private chat's
+    /// title stays out of the navigation bar and the app switcher.
     var displayTitle: String {
+        if isPrivate { return L10n.string("Private Chat") }
         let t = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? L10n.string("New chat") : t
     }
@@ -557,6 +567,7 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
 
 extension Conversation {
     var isStarred: Bool { starredAt != nil }
+    var isPrivate: Bool { privateChat ?? false }
 }
 
 struct ConversationList: Decodable, Sendable {

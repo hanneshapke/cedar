@@ -153,6 +153,10 @@ pub async fn announce(state: &AppState, turn: &Turn, key: &str, waiting: &Waitin
         return Ok(None);
     }
     let conversation = state.store.get_conversation(turn.conversation_id).await?;
+    // Nothing about a private conversation is sent anywhere.
+    if conversation.as_ref().is_some_and(|c| c.private) {
+        return Ok(None);
+    }
     let locale = state.store.preferences().await?.locale;
     let (title, body) = i18n::waiting_message(locale.as_deref(), conversation.as_ref().and_then(|c| c.title.as_deref()), waiting);
     let message = Message {

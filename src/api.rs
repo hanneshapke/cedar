@@ -550,6 +550,8 @@ async fn create_run(
             _ => return Err(AppError::NotFound("parent run not found")),
         },
     };
+    // Once private, a conversation stays so: what was said in it must not reach memory later.
+    let private = req.private.unwrap_or(false) || parent.as_ref().is_some_and(|p| p.private);
     let has_images = attachments.iter().any(Attachment::is_image);
     // Without a model named, and unless users choose models here, cedar chooses as the run goes
     // (see `routing`); this is the model it starts with.
@@ -631,6 +633,11 @@ async fn create_run(
         .as_deref()
         .map(str::trim)
         .filter(|u| !u.is_empty());
+    if private && callback_url.is_some() {
+        return Err(AppError::BadRequest(
+            "a private run calls no webhook: leave out callback_url, or private".into(),
+        ));
+    }
     let callback_secret = match req.callback_secret.filter(|s| !s.is_empty()) {
         None => None,
         Some(_) if callback_url.is_none() => {
@@ -673,7 +680,8 @@ async fn create_run(
         interactive: req.interactive.unwrap_or(false),
         hold_writes: req.hold_writes.unwrap_or(false),
         locale,
-        import_attachments: cfg.records && req.import_attachments.unwrap_or(cfg.records_import_attachments),
+        import_attachments: !private && cfg.records && req.import_attachments.unwrap_or(cfg.records_import_attachments),
+        private,
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -1880,6 +1888,9 @@ async fn get_trace(
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let run = owned_run(&state, &owner, &id).await?;
+    if run.private {
+        return Err(AppError::NotFound("a private run keeps no trace"));
+    }
     Ok(Json(crate::trace::build(&state.store, &run).await?))
 }
 

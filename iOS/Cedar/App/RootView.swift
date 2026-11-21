@@ -71,7 +71,9 @@ struct RootView: View {
         .sheet(isPresented: $app.showingSettings) {
             SettingsView()
         }
-        .onChange(of: app.selection) { _, id in
+        .onChange(of: app.selection) { old, id in
+            // A private chat is deleted when it is left.
+            if let old, old != id { app.left(old) }
             // Which column a compact canvas shows follows the selection, so a conversation opened
             // on the wide inner display is what the folded outer display shows, and clearing the
             // selection goes back to the list. In compact width the split view sets this itself.

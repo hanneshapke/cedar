@@ -10,6 +10,10 @@
     <string name="language_automatic">Automatisch</string>
     <string name="language_footnote">Gilt sofort. Die Sprache der App. Cedars Antworten, deine Agenten und Benachrichtigungen folgen ihr auch.</string>
     <string name="new_chat">Neuer Chat</string>
+    <string name="private_chat">Privater Chat</string>
+    <string name="private_chat_note">Privater Chat. Er erscheint weder in deinen Unterhaltungen noch in der Suche, nichts daraus wird gemerkt, es werden weder Datensätze noch ein Trace dazu angelegt und keine Benachrichtigungen gesendet. Er wird gelöscht, sobald du ihn verlässt.</string>
+    <string name="private_chat_open_note">Privater Chat: Nichts davon wird aufbewahrt oder gemerkt, und er wird gelöscht, sobald du ihn verlässt.</string>
+    <string name="private_chat_end">Chat beenden</string>
     <string name="settings">Einstellungen</string>
     <string name="cancel">Abbrechen</string>
     <string name="save">Speichern</string>
