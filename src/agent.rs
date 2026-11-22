@@ -581,7 +581,13 @@ async fn route(
     let Some(tiers) = routing::Tiers::pick(&env.integrations.models(), images) else {
         return Ok(None);
     };
-    let first = if plan::wanted(run.plan, &run.prompt) { &tiers.big } else { &tiers.small };
+    // A request to do something out in the world (buy, book, cancel) starts with the biggest
+    // model, like one that plans: see [`routing::asks_to_act`].
+    let first = if plan::wanted(run.plan, &run.prompt) || routing::asks_to_act(&run.prompt) {
+        &tiers.big
+    } else {
+        &tiers.small
+    };
     let start = on_model(run, first);
     if start.model_id != run.model_id || start.reasoning != run.reasoning {
         env.store

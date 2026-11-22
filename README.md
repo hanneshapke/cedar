@@ -1330,10 +1330,14 @@ Settings → Advanced settings → *Choose the model yourself* in the chat):
     files in the sandbox (`bash`, `run_python`, `write_file`, `generate_pdf`, `generate_chart`),
     the `browser`, `propose_plan`, and every call that changes something outside the sandbox
     (sending mail, creating events, posting to Slack). It also takes over a task that is still
-    going after 4 turns.
+    going after 4 turns, and it takes requests to do something for the user out in the world from
+    the first turn: a prompt that asks to buy, book, pay for, order or cancel something (a word
+    list in English, German, French and Spanish). Giving up is its call too: `report_limitation`
+    counts as a complex tool, so before the user is told something can't be done, the biggest
+    model has looked at it.
   - **The smallest model** gets everything else: everyday questions, searches, reading pages and
     files, the weather, maps and stocks cards.
-  - A run starts on the smallest model unless it plans first. When that model asks for a complex
+  - A run starts on the smallest model unless it plans first or is asked to act. When that model asks for a complex
     tool, its reply is dropped (its tokens still count, and the call is in the trace) and the turn
     is asked again of the biggest model, which keeps the run from then on. Each model is sent its
     own `default_reasoning`. `model_id` and `model` on the run are the model it last used, and
