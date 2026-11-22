@@ -314,6 +314,8 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
         val plan: String? = null,
         /** The user's locale as a BCP 47 tag (`de-CH`), so the agent answers in it ([AppLocales.effective]). */
         val locale: String? = null,
+        /** The device's time zone (`America/Los_Angeles`), so "today" and "tomorrow" are the user's. */
+        val timezone: String? = null,
     ) {
         @Serializable
         data class Upload(

@@ -37,7 +37,8 @@ pub const MAX_FACTS: usize = 10;
 const SHOWN_MEMORIES: usize = 30;
 
 /// What the note call asks for.
-fn instruction(facts: bool, experience: bool, records: bool, outcome: &str) -> String {
+/// `today` is the user's date (see [`crate::timezone::today`]), for making relative dates absolute.
+fn instruction(facts: bool, experience: bool, records: bool, outcome: &str, today: NaiveDate) -> String {
     let mut s = String::from("Reply with JSON only, of this shape: {");
     if facts {
         s.push_str(
@@ -113,7 +114,7 @@ fn instruction(facts: bool, experience: bool, records: bool, outcome: &str) -> S
     s.push_str(
         "topics: up to five short tags for the conversation (a project name, a domain, a place).",
     );
-    s.replace("{today}", &Utc::now().format("%Y-%m-%d").to_string())
+    s.replace("{today}", &today.format("%Y-%m-%d").to_string())
 }
 
 /// A conversation as the note call reads it: who said what, one line per tool call, no tool
@@ -225,6 +226,7 @@ pub fn call(
     facts: bool,
     experience: bool,
     outcome: &str,
+    today: NaiveDate,
 ) -> (String, Vec<Value>) {
     let mut body = String::new();
     let about_user: Vec<Memory> = remembered
@@ -269,7 +271,7 @@ pub fn call(
     body.push_str("\n\nThe conversation:\n\"\"\"\n");
     body.push_str(&transcript.text);
     body.push_str("\n\"\"\"\n\n---\n");
-    body.push_str(&instruction(facts, experience, sets.is_some(), outcome));
+    body.push_str(&instruction(facts, experience, sets.is_some(), outcome, today));
     (
         SYSTEM.to_string(),
         vec![json!({ "role": "user", "content": body })],
@@ -727,6 +729,10 @@ mod tests {
     use crate::memory::tests::{fact, memories};
     use crate::memory::Actor;
 
+    fn today() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 11, 21).unwrap()
+    }
+
     #[test]
     fn the_transcript_reads_text_and_tool_calls_but_no_results() {
         let messages = vec![
@@ -762,20 +768,20 @@ mod tests {
     #[test]
     fn the_call_shows_memories_and_asks_for_the_right_sections() {
         let t = transcript(&[], "I moved to Zurich");
-        let (system, messages) = call(&[], None, &t, true, false, "completed");
+        let (system, messages) = call(&[], None, &t, true, false, "completed", today());
         assert_eq!(system, SYSTEM);
         let body = messages[0]["content"].as_str().unwrap();
         assert!(body.starts_with("Nothing is remembered"), "{body}");
         assert!(body.contains("I moved to Zurich"));
         assert!(body.contains("\"remember\""));
         assert!(!body.contains("\"episode\""));
-        let (_, messages) = call(&[], None, &t, false, true, "failed: timed out");
+        let (_, messages) = call(&[], None, &t, false, true, "failed: timed out", today());
         let body = messages[0]["content"].as_str().unwrap();
         assert!(!body.contains("\"remember\""));
         assert!(body.contains("\"episode\"") && body.contains("The run ended: failed: timed out"));
         assert!(!body.contains("\"records\""));
         let sets = vec![("running_log".to_string(), vec!["date".to_string(), "km".to_string()])];
-        let (_, messages) = call(&[], Some(&sets), &t, true, false, "completed");
+        let (_, messages) = call(&[], Some(&sets), &t, true, false, "completed", today());
         let body = messages[0]["content"].as_str().unwrap();
         assert!(body.contains("Record sets kept for this person, name (columns):\n- running_log (date, km)"), "{body}");
         assert!(body.contains("\"records\": [{"), "{body}");

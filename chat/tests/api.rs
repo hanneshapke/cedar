@@ -2154,6 +2154,32 @@ async fn the_language_goes_with_messages_schedules_and_notifications() {
 }
 
 #[tokio::test]
+async fn the_devices_time_zone_goes_with_messages_and_is_kept_for_later_runs() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("first", "ok").await;
+    let first = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+    assert!(first.get("timezone").is_none(), "no zone known: cedar's default");
+
+    let msgs = format!("/api/conversations/{cid}/messages");
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "tomorrow?", "timezone": " America/Los_Angeles " }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap()["timezone"], "America/Los_Angeles");
+    // It is kept, for the runs nobody sends a message for, and saving settings keeps it.
+    let (_, got) = h.json(Method::GET, "/api/settings", None).await;
+    assert_eq!(got["timezone"], "America/Los_Angeles");
+    let (_, prefs) = h.json(Method::PUT, "/api/settings", Some(json!({ "system": "be brief" }))).await;
+    assert_eq!(prefs["timezone"], "America/Los_Angeles");
+    // A message without one uses the kept one.
+    let (_, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "and after?" }))).await;
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap()["timezone"], "America/Los_Angeles");
+
+    let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "x", "timezone": "Mars/Base" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
     let h = Harness::new(&[]).await;
 
@@ -2175,7 +2201,7 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{prefs}");
-    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7, "plan": "off", "locale": null }));
+    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7, "plan": "off", "locale": null, "timezone": null }));
     let (status, _) = h.json(Method::PUT, "/api/settings", Some(json!({ "plan": "sometimes" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (_, got) = h.json(Method::GET, "/api/settings", None).await;

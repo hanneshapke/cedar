@@ -103,6 +103,9 @@ pub struct Run {
     pub hold_writes: bool,
     /// The user's language and region (a BCP 47 tag such as `de-CH`; see [`crate::locale`]).
     pub locale: String,
+    /// The user's time zone (an IANA name such as `America/Los_Angeles`; see
+    /// [`crate::timezone`]), or `None` when it isn't known and the run is told UTC's date.
+    pub timezone: Option<String>,
     /// The user's verdict on the run (`POST /v1/runs/{id}/feedback`), if they gave one.
     pub rating: Option<Rating>,
     /// Whether its CSV and JSON attachments were imported into record sets when it started.
@@ -140,6 +143,7 @@ pub struct NewRun {
     pub interactive: bool,
     pub hold_writes: bool,
     pub locale: String,
+    pub timezone: Option<String>,
     /// Import CSV and JSON attachments into record sets when the run starts.
     pub import_attachments: bool,
     /// Keep the run out of memory, records and traces, and call no webhook for it.
@@ -466,6 +470,11 @@ pub struct CreateRunRequest {
     /// The user's language and region, a BCP 47 tag such as `de` or `fr-CH` (see
     /// [`crate::locale`]). Absent: the parent's for a continuation, else `DEFAULT_LOCALE`.
     pub locale: Option<String>,
+    /// The user's time zone, an IANA name such as `America/Los_Angeles` (see
+    /// [`crate::timezone`]): the run is told the date and time there, so "today" and "tomorrow"
+    /// are the user's. Absent: the parent's for a continuation, else `DEFAULT_TIMEZONE`, else
+    /// unknown.
+    pub timezone: Option<String>,
     /// Import the run's CSV and JSON attachments into record sets named after the files when it
     /// starts (see "Records" in the README). Absent: `RECORDS_IMPORT_ATTACHMENTS`.
     pub import_attachments: Option<bool>,
