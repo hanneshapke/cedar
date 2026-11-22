@@ -963,12 +963,13 @@ const cedarActions = (() => {
     const site = input(action.site, { max: 253, placeholder: 'portal.example.com' });
     const app = input(action.app, { max: 80, placeholder: 'LibreOffice Calc' });
     const runsOn = el('select');
-    for (const value of ['browser', 'computer', 'own_computer']) {
+    for (const value of ['browser', 'own_computer', 'computer']) {
       const option = el('option', '', tr(`actions.runsOn.${value}`));
       option.value = value;
       runsOn.append(option);
     }
-    runsOn.value = action.runs_on || (action.app && !action.site ? 'computer' : 'browser');
+    // An application is on your own computer unless you say any desktop would do.
+    runsOn.value = action.runs_on || (action.app && !action.site ? 'own_computer' : 'browser');
     const where = el('div', 'cedar-ag-box warn');
     const showWhere = () => {
       const why = cannotRun(runsOn.value);

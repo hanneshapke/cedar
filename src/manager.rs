@@ -400,7 +400,7 @@ impl Inner {
         // Nor until it first uses the computer: a desktop in a container on the conversation's
         // files, or the user's own, whichever is in force as the run starts.
         let computer: Option<Arc<ComputerSession>> = match &self.computers {
-            Some(computers) => Some(Arc::new(computers.session(run.id, run.workspace_id).await)),
+            Some(computers) => Some(Arc::new(computers.session(run.id, run.workspace_id, run.interactive).await)),
             None => None,
         };
         let child = {

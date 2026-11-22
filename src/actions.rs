@@ -116,6 +116,16 @@ impl RunsOn {
     }
 }
 
+/// What an action is carried out with when nobody said: a website with the browser, and
+/// anything in an application on the user's own computer, where it was recorded and where their
+/// applications, files and sign-ins are.
+fn default_runs_on(site: &Option<String>, app: &Option<String>) -> RunsOn {
+    match (site, app) {
+        (None, Some(_)) => RunsOn::OwnComputer,
+        _ => RunsOn::Browser,
+    }
+}
+
 /// The desktop a run's `computer` tool works.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Desktop {
@@ -204,7 +214,7 @@ pub struct ActionInput {
     pub site: Option<String>,
     #[serde(default)]
     pub app: Option<String>,
-    /// Left out: `browser` for a website, `computer` for an application without one.
+    /// Left out: `browser` for a website, `own_computer` for an application without one.
     #[serde(default)]
     pub runs_on: Option<RunsOn>,
     pub steps: Vec<String>,
@@ -366,10 +376,7 @@ fn check(input: &ActionInput) -> Result<Checked, Refused> {
     if app.as_ref().is_some_and(|a| a.chars().count() > MAX_APP_CHARS) {
         return Err(invalid(format!("the application's name is longer than {MAX_APP_CHARS} characters")));
     }
-    let runs_on = input.runs_on.unwrap_or(match (&site, &app) {
-        (None, Some(_)) => RunsOn::Computer,
-        _ => RunsOn::Browser,
-    });
+    let runs_on = input.runs_on.unwrap_or(default_runs_on(&site, &app));
     let frames = match &input.frames {
         None => None,
         Some(sent) => {
@@ -874,12 +881,20 @@ pub fn note(actions: &[Action], hands: Hands) -> String {
          no longer fits.",
     );
     if hands.computer.is_some() {
-        note.push_str(if hands.browser {
-            " Carry out steps on a website with the browser tool, which is quicker and surer, and \
-             steps in an application with the computer tool; use the computer tool's own web \
-             browser where the browser tool can't do what a page needs."
-        } else {
-            " Carry the steps out with the computer tool, a website's in its web browser."
+        note.push_str(match (hands.browser, hands.computer) {
+            (true, Some(Desktop::Own)) => {
+                " The computer tool works the user's own computer, with their OK: that is where \
+                 these were recorded and where their applications, files and sign-ins are, so \
+                 carry an action out there whenever it is in an application or needs a site \
+                 they are signed in to. For steps on a website that needs nothing of theirs, \
+                 the browser tool is quicker and surer."
+            }
+            (true, _) => {
+                " Carry out steps on a website with the browser tool, which is quicker and \
+                 surer, and steps in an application with the computer tool; use the computer \
+                 tool's own web browser where the browser tool can't do what a page needs."
+            }
+            (false, _) => " Carry the steps out with the computer tool, a website's in its web browser.",
         });
     }
     if actions.iter().take(NOTE_MAX_ACTIONS).any(|a| hands.lacks(a).is_some()) {
@@ -1154,7 +1169,7 @@ fn instruction(recording: &Recording, as_video: bool, tools: &[(String, String)]
          \"summary\": \"one sentence: when the agent should use this\", \
          \"site\": \"the host of the website it happens on, like portal.example.com, or null\", \
          \"app\": \"the application it happens in when that is not just a web browser, like LibreOffice Calc, or null\", \
-         \"runs_on\": \"browser if it is all on a website anyone's browser could open; computer if it needs an application with windows that any desktop could have; own_computer if it needs this person's own computer (their applications, their files, a site they are already signed in to)\", \
+         \"runs_on\": \"browser if it is all on a website anyone's browser could open; own_computer if it happens in an application, or needs anything else of this person's own computer, where it was recorded (their applications, their files, a site they are already signed in to); computer only if it is in an application and plainly needs nothing of theirs, so that any desktop with that application would do\", \
          \"steps\": [\"...\"], \
          \"secrets\": [{\"name\": \"password\", \"label\": \"what it is\"}], \
          \"notes\": \"what the agent can't do as shown, or an empty string\"",
@@ -1239,10 +1254,7 @@ pub fn parse_draft(text: &str) -> Result<Draft> {
     let site = object["site"].as_str().and_then(site_host);
     let app = Some(clip(&text_of(&object["app"]), MAX_APP_CHARS)).filter(|a| !a.is_empty() && a != "null");
     // What the model didn't say follows from what it found: a website, or an application.
-    let runs_on = object["runs_on"].as_str().and_then(RunsOn::parse).unwrap_or(match (&site, &app) {
-        (None, Some(_)) => RunsOn::Computer,
-        _ => RunsOn::Browser,
-    });
+    let runs_on = object["runs_on"].as_str().and_then(RunsOn::parse).unwrap_or(default_runs_on(&site, &app));
     let mut frames: Vec<DraftFrame> = Vec::new();
     for f in object["frames"].as_array().into_iter().flatten() {
         let number = if f.is_u64() { f.as_u64() } else { f["frame"].as_u64() };
@@ -1528,7 +1540,11 @@ mod tests {
         // There, the model is told how the user is asked once for the whole action.
         let told = for_model(&mine, own)["carry_out_with"].as_str().unwrap().to_string();
         assert!(told.contains("\"saved_action\": \"export_report\""), "{told}");
-        assert!(note(std::slice::from_ref(&mine), own).contains("steps in an application with the computer tool"));
+        // And a run that has the user's own computer is told to prefer it, with their OK.
+        let n = note(std::slice::from_ref(&mine), own);
+        assert!(n.contains("The computer tool works the user's own computer, with their OK"), "{n}");
+        assert!(n.contains("carry an action out there whenever it is in an application"), "{n}");
+        assert!(note(std::slice::from_ref(&mine), container).contains("steps in an application with the computer tool"));
     }
 
     /// A small PNG, as base64.
@@ -1553,7 +1569,7 @@ mod tests {
         ]);
         let saved = a.save("alice", &i).await.unwrap().unwrap();
         assert_eq!(saved.app.as_deref(), Some("LibreOffice Calc"));
-        assert_eq!(saved.runs_on, RunsOn::Computer, "an application without a site");
+        assert_eq!(saved.runs_on, RunsOn::OwnComputer, "an application without a site: where it was recorded");
         assert_eq!(saved.frames, ["The Export button in the toolbar", ""]);
         // Listing reads no picture; asking for them gives each, made small, as a JPEG.
         assert!(!serde_json::to_string(&a.list("alice").await.unwrap()).unwrap().contains("base64"));
@@ -1704,13 +1720,17 @@ mod tests {
              \"frames\": [{\"frame\": 2, \"shows\": \"The Export button\"}, 2, {\"frame\": 0}, {\"frame\": 7, \"shows\": \"The dialog\"}, \"x\"]}",
         )
         .unwrap();
-        assert_eq!((d.app.as_deref(), d.runs_on), (Some("LibreOffice Calc"), RunsOn::Computer), "an application without a site");
+        assert_eq!(
+            (d.app.as_deref(), d.runs_on),
+            (Some("LibreOffice Calc"), RunsOn::OwnComputer),
+            "an application without a site: the person's own computer"
+        );
         assert_eq!(
             d.frames,
             [DraftFrame { frame: 2, shows: "The Export button".into() }, DraftFrame { frame: 7, shows: "The dialog".into() }]
         );
-        let d = parse_draft("{\"steps\": [\"x\"], \"app\": \"Numbers\", \"runs_on\": \"own_computer\"}").unwrap();
-        assert_eq!(d.runs_on, RunsOn::OwnComputer);
+        let d = parse_draft("{\"steps\": [\"x\"], \"app\": \"LibreOffice Calc\", \"runs_on\": \"computer\"}").unwrap();
+        assert_eq!(d.runs_on, RunsOn::Computer, "any desktop, when the model says so");
 
         assert!(parse_draft("I can't see a video.").unwrap_err().to_string().contains("not the JSON"));
         assert!(parse_draft("{\"steps\": []}").unwrap_err().to_string().contains("no steps"));

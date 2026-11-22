@@ -405,15 +405,23 @@ async fn the_users_own_computer_asks_before_every_call_until_always() {
 }
 
 #[tokio::test]
-async fn a_run_nobody_answers_for_gets_no_computer_of_the_users_own() {
-    let app = native_app(vec![json!({ "action": "screenshot" })], COMPUTER_ON).await;
+async fn a_run_nobody_answers_for_gets_a_desktop_in_a_container_not_the_users_own() {
+    let app = native_app(vec![json!({ "action": "open", "path": "report.ods" })], COMPUTER_ON).await;
     let created = app.create_run(KEY_A, "tidy my desktop").await;
-    app.wait_status(KEY_A, created["id"].as_str().unwrap(), "completed")
-        .await;
+    let id = created["id"].as_str().unwrap().to_string();
+    app.wait_status(KEY_A, &id, "completed").await;
+    // The tool is the sandboxed one: described as a desktop of its own, with `open`, and its
+    // calls run without a card, on the conversation's files.
     let request = &app.llm.requests()[0];
-    assert!(!offered(request).contains(&"computer"), "{:?}", offered(request));
-    assert_eq!(tool_result(&app, 1)["content"], "unknown tool: computer");
-    assert!(app.computers.created.lock().unwrap().is_empty());
+    let tool = request["tools"].as_array().unwrap().iter().find(|t| t["name"] == "computer").unwrap();
+    assert!(tool["description"].as_str().unwrap().starts_with("Work a desktop computer"), "{tool}");
+    assert!(!tool.to_string().contains("their real computer"), "{tool}");
+    let events = app.events(KEY_A, &id, None).await;
+    assert!(events.iter().all(|e| e.event != "approval.required"));
+    assert_eq!(
+        *app.computers.computer(0).requests.lock().unwrap(),
+        [json!({ "action": "open", "path": "report.ods" })]
+    );
 
     // A container is a sandbox, so an unattended run may have one.
     let (sandboxed, _) = run_calls(vec![json!({ "action": "screenshot" })], COMPUTER_ON).await;

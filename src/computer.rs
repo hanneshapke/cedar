@@ -269,10 +269,12 @@ impl Computers {
         }
     }
 
-    /// A run's computer on the runtime in force now; nothing starts before its first call.
-    pub async fn session(&self, run_id: Uuid, workspace_id: Uuid) -> ComputerSession {
+    /// A run's computer on the runtime in force now; nothing starts before its first call. The
+    /// user's own computer is only for a run they attend, since every call on it waits for
+    /// their OK: a run nobody answers for gets a desktop in a container instead.
+    pub async fn session(&self, run_id: Uuid, workspace_id: Uuid, attended: bool) -> ComputerSession {
         match (self.runtime().await, &self.native) {
-            (ComputerRuntime::Native, Some(native)) => {
+            (ComputerRuntime::Native, Some(native)) if attended => {
                 ComputerSession::new(native.clone(), run_id, workspace_id).on_the_users_computer()
             }
             _ => ComputerSession::new(self.docker.clone(), run_id, workspace_id),

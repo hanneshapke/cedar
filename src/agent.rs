@@ -218,8 +218,9 @@ pub async fn run_agent(
         .models()
         .iter()
         .any(|m| m.id == run.model_id && m.multimodal);
-    // The user's own computer is only for a run someone is there to answer for: its calls wait
-    // for their OK (see [`approve`]).
+    // The user's own computer is only for a run someone is there to answer for, since its calls
+    // wait for their OK (see [`approve`]); a run nobody answers for was given a desktop in a
+    // container instead (see [`crate::computer::Computers::session`]).
     let own_computer = ctx.computer.as_ref().is_some_and(|c| c.native());
     let tools = if reads_images && (run.interactive || !own_computer) {
         tools

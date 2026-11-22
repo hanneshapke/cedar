@@ -181,6 +181,8 @@ pub struct ComputerConfig {
     /// Offer the `computer` tool (off by default).
     pub enabled: bool,
     /// What the tool works unless an admin chose otherwise (the `computer_runtime` setting).
+    /// Unset, it is the computer cedar runs on in a build that can drive it (the
+    /// `native-computer` feature, as in the desktop app), else a desktop in a container.
     pub runtime: ComputerRuntime,
     /// The `docker` command, as in [`SandboxConfig`].
     pub docker_bin: String,
@@ -883,7 +885,10 @@ impl Config {
             },
             computer: ComputerConfig {
                 enabled: flag("COMPUTER", false)?,
+                // The user's own computer where this cedar can drive it (and they allow each
+                // call); a desktop in a container where it can't.
                 runtime: match get("COMPUTER_RUNTIME") {
+                    None if cfg!(feature = "native-computer") => ComputerRuntime::Native,
                     None => ComputerRuntime::Docker,
                     Some(name) => ComputerRuntime::parse(name.trim()).ok_or_else(|| {
                         anyhow!("COMPUTER_RUNTIME must be docker or native, not {name:?}")
@@ -1288,7 +1293,12 @@ mod tests {
         assert_eq!((cfg.computer.width, cfg.computer.height), (1024, 768));
         assert_eq!(cfg.computer.docker_bin, "/opt/homebrew/bin/docker");
 
-        assert_eq!(cfg.computer.runtime, ComputerRuntime::Docker);
+        let said = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_RUNTIME", "docker")])).unwrap();
+        assert_eq!(said.computer.runtime, ComputerRuntime::Docker, "said outright");
+        // Unset, it is the user's own computer where this build can drive it.
+        let unset = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        let preferred = if cfg!(feature = "native-computer") { ComputerRuntime::Native } else { ComputerRuntime::Docker };
+        assert_eq!(unset.computer.runtime, preferred);
         let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_RUNTIME", "vm")]))
             .unwrap_err();
         assert!(err.to_string().contains("COMPUTER_RUNTIME"), "{err}");

@@ -757,6 +757,8 @@ pub fn test_config(extra: &[(&str, &str)]) -> Config {
         ("CEDAR_API_KEYS", "key-a,key-b"),
         ("MAX_ACTIVE_RUNS_PER_KEY", "10"),
         ("MAX_TURNS_CAP", "10"),
+        // A desktop in a container unless a test says otherwise, whatever this build can drive.
+        ("COMPUTER_RUNTIME", "docker"),
         // Off here, so a scripted reply isn't spent on them; tests/memory.rs turns them on.
         ("MEMORY_EXTRACT", "off"),
         ("MEMORY_EXPERIENCE", "off"),

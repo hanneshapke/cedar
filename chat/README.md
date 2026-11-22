@@ -989,7 +989,8 @@ a site changes, or delete it.
 **Applications, and your own computer.** An action isn't only a website. The form has an
 *Application* field and *Carried out with*: a website, an application on any desktop, or your own
 computer (your applications, your files, the sites you are signed in to). The model proposes
-both from the recording, and the page says when this server can't carry an action out yet: the
+both from the recording (an application is taken to be on your own computer, where you recorded
+it, unless any desktop would do), and the page says when this server can't carry an action out yet: the
 computer tool is off, or it works a separate desktop and the action needs yours. With *Let Cedar
 use this computer* in the Cedar app, an action that needs your own computer is asked about once,
 with its steps on the card, instead of before every click.
