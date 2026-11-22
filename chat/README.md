@@ -971,7 +971,9 @@ the card of [something it couldn't do](#feedback):
 3. The page makes the recording small, without sending anything: it was captured at a few frames
    a second and at most 1600 pixels a side, and is now played through once, fast, to keep the
    frames in which the screen changed, and the one before each change, which shows what you had
-   typed and where the pointer was. You see the video, its size, and those frames.
+   typed and where the pointer was. Of those it keeps at most one a second, at most 1200 pixels
+   a side, which is what a model that reads images is sent. You see the video, its size, and
+   those frames.
 4. **Write the steps** sends it to cedar's model once: the video if a model there is marked
    *Takes video* (Settings → Models → Advanced), the frames otherwise. Nothing of the recording is
    kept, here or on cedar.

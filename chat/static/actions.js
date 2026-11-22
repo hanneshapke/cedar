@@ -42,9 +42,11 @@ const cedarActions = (() => {
    * different cells make a new picture (a page, a dialog, a list that opened), kept once it has
    * stood for `settleMs`, so a page half drawn is not; more than `settled` cells since the last
    * frame kept mean something small happened: text typed into a field, the pointer on a button.
-   * A change that never comes to rest (a video on the page) is kept after `restlessMs`.
+   * A change that never comes to rest (a video on the page) is kept after `restlessMs`. What is
+   * kept is at most `maxSide` pixels a side, and at most one frame per `everyMs` of the recording
+   * (see `spaced`).
    */
-  const FRAME = { maxSide: 1568, quality: 0.72, sigW: 96, sigH: 54, cell: 14, changed: 12, settled: 2, settleMs: 400, gapMs: 100, restlessMs: 1500 };
+  const FRAME = { maxSide: 1200, everyMs: 1000, quality: 0.72, sigW: 96, sigH: 54, cell: 14, changed: 12, settled: 2, settleMs: 400, gapMs: 100, restlessMs: 1500 };
   const PLAYBACK_RATES = [8, 4, 2];
   const MIME_TYPES = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
   const ICONS = {
@@ -533,12 +535,28 @@ const cedarActions = (() => {
       // What the screen ended on.
       if (kept && prev.sig && difference(prev.sig, kept) > FRAME.settled) keep(prev, Infinity);
       onProgress?.(1);
-      return thin(frames, maxFrames, maxBytes);
+      return thin(spaced(frames, FRAME.everyMs), maxFrames, maxBytes);
     } finally {
       video.removeAttribute('src');
       video.load();
       if (!blob.remote) URL.revokeObjectURL(url);
     }
+  }
+
+  /**
+   * At most one frame per `everyMs` of the recording: of frames closer together than that, the
+   * one that differs more from what came before stays. The last frame always stays, since it
+   * is what the screen ended on.
+   */
+  function spaced(frames, everyMs) {
+    const out = [];
+    let since = 0; // when the second the last kept frame stands for began
+    frames.forEach((f, i) => {
+      const prev = out[out.length - 1];
+      if (!prev || f.at_ms - since >= everyMs) { out.push(f); since = f.at_ms; }
+      else if (i === frames.length - 1 || f.score > prev.score) out[out.length - 1] = f;
+    });
+    return out;
   }
 
   /** At most `maxFrames` frames and `maxBytes` in all: those that differ least go first, the first and last never. */
@@ -1000,5 +1018,5 @@ const cedarActions = (() => {
     return b;
   }
 
-  return { init, start, route, record: show_, button: turnButton, keyFrames, thin };
+  return { init, start, route, record: show_, button: turnButton, keyFrames, thin, spaced };
 })();
