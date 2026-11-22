@@ -212,6 +212,9 @@ const cedarActions = (() => {
   }
 
   function renderNav() {
+    // The button on every exchange (see `button`) shows only where there are actions to make.
+    if (info.supported && info.enabled) document.documentElement.dataset.actions = '';
+    else delete document.documentElement.dataset.actions;
     for (const nav of document.querySelectorAll('[data-actions-nav]')) {
       nav.hidden = !info.supported;
       const count = nav.querySelector('.cedar-ag-count');
@@ -937,5 +940,24 @@ const cedarActions = (() => {
     location.hash = `#/actions/new${goal ? `?goal=${encodeURIComponent(goal)}` : ''}`;
   }
 
-  return { init, start, route, record: show_, keyFrames, thin };
+  /**
+   * "Show Cedar how", for every exchange: each app puts it beside the person's message, next to
+   * the run's details. It opens the recorder with that message as what is about to be shown, so
+   * the way is there whether or not the model said it couldn't do something (the card of
+   * `report_limitation` only appears when the model calls that tool).
+   */
+  function turnButton(turn) {
+    const b = el('button', 'cedar-act-how');
+    b.type = 'button';
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.action}</svg>`;
+    b.append(el('span', '', tr('actions.showHow')));
+    b.title = tr('actions.showHowNote');
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      show_(String(turn?.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 300));
+    });
+    return b;
+  }
+
+  return { init, start, route, record: show_, button: turnButton, keyFrames, thin };
 })();

@@ -960,8 +960,9 @@ on your own cedar server and is never shared with a third party (see [PRIVACY.md
 ### Actions
 
 When Cedar can't do something, show it how. **Actions**, in the sidebar, lists what you have shown
-it; **Record an action** (or **Show Cedar how**, on the card of [something it couldn't
-do](#feedback)) starts a new one:
+it; **Record an action** starts a new one, and so does **Show Cedar how**, which is beside every
+message you send (it opens the recorder with that message as what you are about to show) and on
+the card of [something it couldn't do](#feedback):
 
 1. Say in a sentence what you are about to show, and choose **One window** (a window or browser
    tab, best for a website) or **Entire screen**. Your browser asks what to share.

@@ -48,3 +48,16 @@
 .cedar-ag-field textarea.cedar-act-goal { min-height: 0; border-color: var(--line); background: var(--sheet); }
 .cedar-ag-field textarea.cedar-act-goal:focus { border-color: var(--accent); }
 .cedar-ag-box.cedar-act-notice { border-color: rgba(128, 128, 128, .4); background: rgba(128, 128, 128, .07); color: var(--ink-2); }
+
+/* "Show Cedar how" on every exchange, beside the person's message (and the run's details, in
+   expert mode). Quiet until pointed at; hidden where the server keeps no actions. */
+.cedar-act-how { display: none; }
+:root[data-actions] .cedar-act-how {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 7px;
+  border: 1px solid rgba(128, 128, 128, .35); border-radius: 999px; background: none;
+  color: var(--muted, #6b685f); font: 500 11px/1.6 var(--mono, ui-monospace, monospace);
+  letter-spacing: .02em; vertical-align: middle; white-space: nowrap; cursor: pointer; opacity: .75;
+}
+:root[data-actions] .cedar-act-how:hover, :root[data-actions] .cedar-act-how:focus-visible { border-color: var(--accent, #1f7a5c); color: var(--accent, #1f7a5c); opacity: 1; }
+:root[data-actions] .user-msg > .cedar-act-how { align-self: center; margin: 0 8px 0 0; }
+.cedar-act-how svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
