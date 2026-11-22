@@ -36,6 +36,13 @@ pub fn tool_secret(tool: &str, name: &str) -> String {
 }
 pub const TOOL_SECRET_PREFIX: &str = "tool_secret:";
 
+/// Where a secret kept with a saved action is (see [`crate::actions`]): a password the user
+/// stored for the agent to type on that action's site.
+pub fn action_secret(action: uuid::Uuid, name: &str) -> String {
+    format!("{ACTION_SECRET_PREFIX}{action}:{name}")
+}
+pub const ACTION_SECRET_PREFIX: &str = "action_secret:";
+
 /// Where a registered model's API key is kept.
 pub fn model_api_key(model_id: &str) -> String {
     format!("model_api_key:{model_id}")

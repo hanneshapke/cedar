@@ -200,6 +200,7 @@ async fn call_tool(
         timezone: cfg.default_timezone.clone(),
         memory: None,
         records: None,
+        actions: None,
     };
     if tool.personal().is_none() {
         return tool.call(&context(Arc::new(NoSandbox)), input).await;
@@ -231,6 +232,7 @@ pub async fn call_without_run(cfg: &Config, tool: &dyn Tool, input: &Value) -> R
         timezone: cfg.default_timezone.clone(),
         memory: None,
         records: None,
+        actions: None,
     };
     let limit = cfg.tool_timeout * 2 + Duration::from_secs(60);
     match tokio::time::timeout(limit, tool.call(&ctx, input)).await {

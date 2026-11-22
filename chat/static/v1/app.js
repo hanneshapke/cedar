@@ -490,7 +490,8 @@ document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
   // The Agents page has the hash to itself (agents.js); everything else is a conversation.
-  if (cedarAgents.route()) {
+  // (So has the Actions page, actions.js; both are asked, so each can close when it isn't its turn.)
+  if ([cedarAgents.route(), cedarActions.route()].some(Boolean)) {
     toggleSidebar(false);
     return;
   }
@@ -520,7 +521,7 @@ function addTurn(turn) {
   const bubble = h('div', 'bubble');
   if (turn.attachments?.length) bubble.append(cedarAttach.chips(turn.attachments));
   bubble.append(document.createTextNode(turn.prompt));
-  user.append(cedarTrace.button(turn.id), bubble);
+  user.append(cedarActions.button(turn), cedarTrace.button(turn.id), bubble);
   const body = h('div', 'assistant');
   const thinking = h('div', 'thinking', `${ICONS.logo}<span>${escapeHtml(tr('v1.thinking'))}</span>`);
   body.append(thinking);
@@ -895,7 +896,12 @@ function toolResult(view, d) {
   if (!d.is_error) {
     const limitation = details.dataset.tool === 'report_limitation' && cedarHandover.limitation.parse(text);
     const held = !limitation && cedarHandover.held.parse(text);
-    if (limitation) details.after(cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: d.id }));
+    if (limitation) {
+      const card = cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: d.id });
+      details.after(card);
+      // Once the reply is written this goes below it (see finishTurn), where it is seen.
+      (view.limitCards ||= []).push(card);
+    }
     if (held) details.after(cedarHandover.held.element(held));
     if (limitation || held) scrollToBottom(false);
   }
@@ -952,6 +958,10 @@ function finishTurn(view, event) {
     view.body.append(box);
   }
 
+  // What Cedar couldn't do, with its buttons, belongs after what it says about it: left where
+  // the call was made, the answer written afterwards pushes it out of sight.
+  for (const card of view.limitCards || []) view.body.append(card);
+
   const footer = h('div', 'turn-footer');
   if (view.texts.length) {
     const copy = h('button', 'copy-btn', `${ICONS.copy}${escapeHtml(tr('v1.copy'))}`);
@@ -968,7 +978,8 @@ function finishTurn(view, event) {
   if (footer.childElementCount) view.body.append(footer);
   view.lastEvent = event.type;
 
-  if (state.activeTurn === view) {
+  const watched = state.activeTurn === view;
+  if (watched) {
     state.activeTurn = null;
     renderSidebar();
     // Watched to the end: not news. Hidden tabs leave it unread, for the inbox and the title.
@@ -976,7 +987,11 @@ function finishTurn(view, event) {
   }
   updateComposer();
   if (els.filesDialog.open) loadFiles(); // the response may have added or changed files
-  scrollToBottom(false);
+  // A reply that says what Cedar couldn't do ends on the card that offers what to do about it:
+  // that is brought into view, wherever the person had scrolled to while it was written.
+  const card = watched && view.limitCards?.at(-1);
+  if (card) card.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  else scrollToBottom(false);
 }
 
 // -- workspace files ---------------------------------------------------------------------------
@@ -1267,6 +1282,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarAgents.init({ api, toast, renderMarkdown });
+  cedarActions.init({ api, toast });
   cedarFollowUp.init({ api, toast });
   cedarStar.init({ api, toast, onOpen: () => toggleSidebar(false) });
   cedarSearch.init({ api, onOpen: () => toggleSidebar(false), reveal: () => toggleSidebar(true) });
@@ -1301,6 +1317,7 @@ async function init() {
   await loadModels();
   cedarSettings.start();
   cedarAgents.start();
+  cedarActions.start();
   cedarStar.start();
   await loadConversations();
   route();

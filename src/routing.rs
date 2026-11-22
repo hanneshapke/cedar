@@ -6,11 +6,12 @@
 //! the run moves between the smallest and the biggest (see [`Tiers`]):
 //!
 //! - planning (the planning call, and a run that follows a plan), reviewing a conversation
-//!   (`POST /v1/compact`), complex tool calls (see [`complex_tool`]) and long tasks (more than
-//!   [`SMALL_TURNS`] turns) go to the biggest model;
+//!   (`POST /v1/compact`), complex tool calls (see [`complex_tool`]), long tasks (more than
+//!   [`SMALL_TURNS`] turns) and requests to do something for the user out in the world (buy,
+//!   book, pay, cancel: see [`asks_to_act`]) go to the biggest model;
 //! - everything else, the everyday questions and the simple lookups, goes to the smallest.
 //!
-//! A run starts on the smallest model unless it plans. When that model reaches for a complex
+//! A run starts on the smallest model unless it plans or is asked to act. When that model reaches for a complex
 //! tool, its reply is dropped and the turn is asked again of the biggest, which then keeps the
 //! run: a run never goes back to the smaller model.
 
@@ -174,8 +175,9 @@ impl Tiers {
 /// The tools whose calls are for the biggest model: the ones that run the model's own code or
 /// write files in the sandbox, drive the browser, or ask a model themselves (`search_products`,
 /// `plan_trip`), and proposing a plan. So is every call that changes something outside the
-/// sandbox (see [`crate::tools::writes`]). Reading, searching and the cards (weather, maps,
-/// stocks) stay with the smallest.
+/// sandbox (see [`crate::tools::writes`]), and so is giving up: before the user is told that
+/// something can't be done (`report_limitation`), the biggest model has a look at it. Reading,
+/// searching and the cards (weather, maps, stocks) stay with the smallest.
 pub fn complex_tool(name: &str) -> bool {
     matches!(
         name,
@@ -188,13 +190,81 @@ pub fn complex_tool(name: &str) -> bool {
             | "search_products"
             | "plan_trip"
     ) || name == crate::plan::TOOL
+        || name == crate::tools::REPORT_LIMITATION
         || crate::tools::writes(name)
+}
+
+/// Verbs that ask for something to be done for the user out in the world, wherever they stand
+/// in a request, in the four languages the clients speak. Nouns that read the same ("a
+/// reservation") are a price worth paying: a wrong guess only means the bigger model answers.
+const ACT_WORDS: &[&str] = &[
+    // English
+    "buy", "purchase", "reserve", "pay", "subscribe", "unsubscribe", "cancel", "renew", "checkout",
+    // German
+    "kaufe", "kauf", "kaufen", "bestelle", "bestell", "bestellen", "buche", "buch", "buchen", "reserviere",
+    "reservieren", "bezahle", "bezahlen", "kündige", "kündigen", "abonniere", "abonnieren", "storniere", "stornieren",
+    // French
+    "achète", "achetez", "acheter", "commandez", "commander", "réservez", "réserver", "payez", "payer",
+    "abonnez", "annulez", "annuler", "résiliez", "résilier",
+    // Spanish
+    "compra", "comprar", "cómprame", "pide", "pedir", "reservar", "resérvame", "paga", "pagar", "suscríbeme",
+    "cancela", "cancelar",
+];
+
+/// Verbs that ask for the same only as the first word of a request ("Book a table", "Order
+/// more filters"): elsewhere they are mostly nouns ("the latest book", "in order to").
+const ACT_OPENERS: &[&str] = &["book", "order", "sign", "register", "apply", "submit", "file", "return", "réserve", "commande", "reserva"];
+
+/// Whether `prompt` asks the agent to do something for the user out in the world: to buy,
+/// book, pay for or cancel something. Such a request is costly to get wrong and often ends
+/// with the agent finding it has no tool for the last step, which it has to notice and say (see
+/// `report_limitation`): both are for the biggest model, from the first turn.
+pub fn asks_to_act(prompt: &str) -> bool {
+    let lower = prompt.to_lowercase();
+    let mut words = lower
+        .split(|c: char| !(c.is_alphanumeric() || c == '\''))
+        .filter(|w| !w.is_empty());
+    let Some(first) = words.next() else {
+        return false;
+    };
+    ACT_OPENERS.contains(&first) || std::iter::once(first).chain(words).any(|w| ACT_WORDS.contains(&w))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
+
+    #[test]
+    fn requests_to_act_are_told_from_questions() {
+        for acts in [
+            "Buy the latest Mike Heron book from Powells",
+            "please cancel my gym membership",
+            "Book a table for two at ENSO on Friday",
+            "Order more coffee filters",
+            "Kannst du mir Karten für Samstag kaufen?",
+            "Réservez une table pour ce soir",
+            "Cómprame el último libro de Mick Herron",
+        ] {
+            assert!(asks_to_act(acts), "{acts}");
+        }
+        for asks in [
+            "What's the latest Mick Herron book?",
+            "Summarise this book in order of its chapters",
+            "what's in notes.txt?",
+            "How do refunds work at Powell's?",
+            "",
+        ] {
+            assert!(!asks_to_act(asks), "{asks}");
+        }
+    }
+
+    #[test]
+    fn giving_up_is_for_the_biggest_model() {
+        assert!(complex_tool("report_limitation"));
+        assert!(!complex_tool("saved_actions"));
+        assert!(!complex_tool("web_search"));
+    }
 
     fn entry(id: &str, model: &str) -> ModelEntry {
         ModelEntry {
@@ -205,6 +275,7 @@ mod tests {
             reasoning_levels: vec![],
             default_reasoning: None,
             multimodal: false,
+            video: false,
             max_tokens: 1024,
             context_window: None,
             is_default: false,

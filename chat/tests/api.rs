@@ -62,6 +62,11 @@ struct FakeCedar {
     /// The record sets cedar keeps (`/v1/records`), each `{set, records}`; unset, the routes are
     /// unknown, as on a cedar from before records.
     records: Mutex<Option<Vec<Value>>>,
+    /// The actions cedar keeps (`/v1/actions`); unset, the routes are unknown, as on a cedar
+    /// from before actions. `action_calls` is every request that reached them: (method, path
+    /// or what it was, whose it was, body).
+    actions: Mutex<Option<Vec<Value>>>,
+    action_calls: Mutex<Vec<(String, String, Value)>>,
     /// The fake corpus: every bundle it took, the chat version header each came with, and
     /// every withdrawal (receipt id, Authorization header).
     ingested: Mutex<Vec<Value>>,
@@ -626,6 +631,62 @@ async fn forget_all_memory(State(s): State<Shared>, headers: HeaderMap) -> axum:
     }
 }
 
+async fn list_actions(State(s): State<Shared>) -> axum::response::Response {
+    match &*s.actions.lock().unwrap() {
+        Some(actions) => Json(json!({ "actions": actions, "limits": { "frames": 40 }, "recording": { "video": false, "frames": true },
+                                      "secrets": true, "enabled": true, "browser": true })).into_response(),
+        None => no_route(),
+    }
+}
+
+/// Keeps what was sent as the action, without a secret's value, as cedar would.
+async fn save_action(State(s): State<Shared>, headers: HeaderMap, Json(mut body): Json<Value>) -> axum::response::Response {
+    let mut actions = s.actions.lock().unwrap();
+    let Some(actions) = actions.as_mut() else { return no_route() };
+    s.action_calls.lock().unwrap().push(("save".into(), user_of(&headers).unwrap_or_default(), body.clone()));
+    if body["steps"].as_array().is_none_or(|steps| steps.is_empty()) {
+        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "give at least one step");
+    }
+    for secret in body["secrets"].as_array_mut().into_iter().flatten() {
+        let saved = secret["value"].is_string();
+        secret.as_object_mut().unwrap().remove("value");
+        secret["saved"] = json!(saved);
+    }
+    body["id"] = json!(Uuid::new_v4());
+    body["name"] = json!("an_action");
+    actions.push(body.clone());
+    (StatusCode::CREATED, Json(body)).into_response()
+}
+
+async fn draft_action(State(s): State<Shared>, headers: HeaderMap, Json(body): Json<Value>) -> axum::response::Response {
+    if s.actions.lock().unwrap().is_none() {
+        return no_route();
+    }
+    s.action_calls.lock().unwrap().push(("draft".into(), user_of(&headers).unwrap_or_default(), body));
+    Json(json!({ "draft": { "title": "Get the invoice", "summary": "", "site": "portal.example.com", "steps": ["Open the portal"], "secrets": [], "notes": "" },
+                 "model": "watcher", "model_id": "watcher", "watched": "frames", "usage": {} })).into_response()
+}
+
+async fn one_action(State(s): State<Shared>, method: Method, headers: HeaderMap, Path(id): Path<String>, body: Option<Json<Value>>) -> axum::response::Response {
+    let mut actions = s.actions.lock().unwrap();
+    let Some(actions) = actions.as_mut() else { return no_route() };
+    let Some(at) = actions.iter().position(|a| a["id"] == id.as_str()) else {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "action not found");
+    };
+    s.action_calls.lock().unwrap().push((method.to_string(), user_of(&headers).unwrap_or_default(), body.as_ref().map(|b| b.0.clone()).unwrap_or(Value::Null)));
+    match (method, body) {
+        (Method::DELETE, _) => {
+            actions.remove(at);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        (Method::PUT, Some(Json(body))) => {
+            actions[at]["title"] = body["title"].clone();
+            Json(actions[at].clone()).into_response()
+        }
+        _ => Json(actions[at].clone()).into_response(),
+    }
+}
+
 async fn list_records(State(s): State<Shared>) -> axum::response::Response {
     match &*s.records.lock().unwrap() {
         Some(sets) => {
@@ -808,6 +869,9 @@ impl Harness {
             .route("/v1/memory", get(list_memory).post(add_memory).delete(forget_all_memory))
             .route("/v1/memory/graph", get(memory_graph))
             .route("/v1/memory/{id}", axum::routing::delete(forget_memory))
+            .route("/v1/actions", get(list_actions).post(save_action))
+            .route("/v1/actions/draft", post(draft_action))
+            .route("/v1/actions/{id}", get(one_action).put(one_action).delete(one_action))
             .route("/v1/records", get(list_records).delete(drop_all_records))
             .route("/v1/records/{name}", get(get_record_set).delete(drop_record_set))
             .route("/v1/defaults", get(|| async { Json(json!({ "model": "org/model-a", "model_id": "model-a", "system": "You are helpful.", "max_turns_cap": 25 })) }))
@@ -3708,6 +3772,60 @@ async fn memory_is_relayed_with_the_conversation_it_came_from() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (_, body) = h.json(Method::GET, "/api/memory", None).await;
     assert_eq!(body["items"], json!([]));
+}
+
+#[tokio::test]
+async fn actions_are_relayed_to_cedar_and_a_recording_gets_room() {
+    let h = Harness::new(&[]).await;
+    // A cedar from before actions: the page says so instead of failing.
+    let (status, body) = h.json(Method::GET, "/api/actions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "supported": false, "actions": [] }));
+
+    *h.cedar.actions.lock().unwrap() = Some(vec![]);
+    let (status, body) = h.json(Method::GET, "/api/actions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["supported"], true);
+    assert_eq!(body["recording"], json!({ "video": false, "frames": true }));
+    assert_eq!(body["secrets"], true);
+
+    // A recording is far larger than any other body this server takes, and goes on as it is.
+    let frame = "A".repeat(600 * 1024);
+    let recording = json!({ "goal": "Getting my invoice", "frames": [{ "at_ms": 0, "media_type": "image/jpeg", "data": frame }] });
+    let (status, drafted) = h.json(Method::POST, "/api/actions/draft", Some(recording.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{drafted}");
+    assert_eq!(drafted["draft"]["steps"], json!(["Open the portal"]));
+    assert_eq!(drafted["watched"], "frames");
+    assert_eq!(h.cedar.action_calls.lock().unwrap()[0].2, recording);
+    assert!(h.cedar.actions.lock().unwrap().as_ref().unwrap().is_empty(), "a draft saves nothing");
+
+    let action = json!({ "title": "Get the invoice", "summary": "", "site": "portal.example.com", "steps": ["Open the portal"],
+                         "secrets": [{ "name": "password", "label": "Portal", "value": "hunter22" }] });
+    let (status, saved) = h.json(Method::POST, "/api/actions", Some(action.clone())).await;
+    assert_eq!(status, StatusCode::CREATED, "{saved}");
+    assert_eq!(saved["secrets"], json!([{ "name": "password", "label": "Portal", "saved": true }]));
+    let id = saved["id"].as_str().unwrap().to_string();
+
+    let (status, got) = h.json(Method::GET, &format!("/api/actions/{id}"), None).await;
+    assert_eq!((status, &got["title"]), (StatusCode::OK, &json!("Get the invoice")));
+    let mut edit = action.clone();
+    edit["title"] = json!("Fetch the invoice");
+    let (status, edited) = h.json(Method::PUT, &format!("/api/actions/{id}"), Some(edit)).await;
+    assert_eq!((status, &edited["title"]), (StatusCode::OK, &json!("Fetch the invoice")));
+
+    // cedar's refusals come back as they are; an id that is none never reaches it.
+    let (status, err) = h.json(Method::POST, "/api/actions", Some(json!({ "title": "x", "steps": [] }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"]["message"], "give at least one step");
+    let calls = h.cedar.action_calls.lock().unwrap().len();
+    let (status, _) = h.call(Method::DELETE, "/api/actions/not-an-id", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(h.cedar.action_calls.lock().unwrap().len(), calls);
+
+    let (status, _) = h.call(Method::DELETE, &format!("/api/actions/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = h.call(Method::DELETE, &format!("/api/actions/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

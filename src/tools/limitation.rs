@@ -13,9 +13,10 @@ const MAX_NEEDED_CHARS: usize = 200;
 pub const CATEGORIES: &[&str] = &["missing_tool", "not_connected", "blocked", "limit", "other"];
 
 /// What the model reads back.
-const NOTE: &str = "The user is shown this as a card with a button to send it as feedback. \
-    Nothing is recorded unless they press it. Tell them plainly what you couldn't do and what \
-    you did instead; don't say feedback was sent.";
+const NOTE: &str = "The user is shown this as a card with a button to send it as feedback. In the \
+    web app they can also show you how it is done by recording their screen, which saves an \
+    action you can follow next time. Nothing is recorded unless they press a button. Tell them plainly what you \
+    couldn't do and what you did instead; don't say feedback was sent.";
 
 /// Notes something the run could not do ("I can't book the table: there is no tool for it").
 ///
@@ -35,7 +36,8 @@ impl Tool for ReportLimitation {
     fn description(&self) -> &str {
         "Report something the user asked for that you could not do with what you have here: no \
          tool for it, an account that isn't connected, a site or host you were kept from, or a \
-         limit you ran into. Use it once you have tried what you can, at most once per gap, and \
+         limit you ran into. Use it once you have tried what you can (the user's saved actions \
+         included, if you have saved_actions), at most once per gap, and \
          not for things you simply don't know or for a request you declined. Give a one-sentence \
          summary without names, addresses or other personal details (\"Could not book a \
          restaurant table: no booking tool\"), a category, and, if you know, what would make it \

@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="/product-view.css">
   <link rel="stylesheet" href="/image-view.css">
   <link rel="stylesheet" href="/agents.css">
+  <link rel="stylesheet" href="/actions.css">
   <link rel="stylesheet" href="/star.css">
   <link rel="stylesheet" href="/private.css">
   <link rel="stylesheet" href="/search.css">
@@ -137,6 +138,7 @@
         <div class="home-recents-head"><span class="label" data-i18n="v3.recent">Recent</span><button class="linkish" id="all-chats" type="button" data-i18n="v3.allConversations">All conversations</button></div>
         <div id="home-recents"></div>
         <a class="cedar-ag-nav" href="#/agents" data-agents-nav><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg><span class="cedar-ag-nav-name" data-i18n="agents.title">Agents</span><span class="cedar-ag-dot" hidden></span><span class="cedar-ag-count"></span></a>
+        <a class="cedar-ag-nav" href="#/actions" data-actions-nav><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/></svg><span class="cedar-ag-nav-name" data-i18n="actions.title">Actions</span><span class="cedar-ag-count"></span></a>
       </aside>
     </section>
 
@@ -169,6 +171,7 @@
     </div>
     <nav class="recents" id="recents" data-search-hides></nav>
     <a class="cedar-ag-nav" id="agents-nav" href="#/agents" data-agents-nav data-search-hides><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg><span class="cedar-ag-nav-name" data-i18n="agents.title">Agents</span><span class="cedar-ag-dot" hidden></span><span class="cedar-ag-count"></span></a>
+    <a class="cedar-ag-nav" id="actions-nav" href="#/actions" data-actions-nav data-search-hides><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/></svg><span class="cedar-ag-nav-name" data-i18n="actions.title">Actions</span><span class="cedar-ag-count"></span></a>
   </aside>
 
   <div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
@@ -252,6 +255,7 @@
   <script src="/i18n/settings.js"></script>
   <script src="/i18n/cards.js"></script>
   <script src="/i18n/agents.js"></script>
+  <script src="/i18n/actions.js"></script>
   <script src="/i18n/v3.js"></script>
   <script>cedarI18n.apply(document);</script>
   <script src="/ui-pref.js"></script>
@@ -279,6 +283,7 @@
   <script src="/trust-view.js"></script>
   <script src="/models.js"></script>
   <script src="/agents.js"></script>
+  <script src="/actions.js"></script>
   <script src="/more-menu.js"></script>
   <script src="/star.js"></script>
   <script src="/private.js"></script>

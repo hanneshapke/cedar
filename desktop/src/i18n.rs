@@ -117,6 +117,8 @@ const STRINGS: &[(&str, [&str; 4])] = &[
     ("tray.installing_update", ["Installing the Update…", "Update wird installiert…", "Installation de la mise à jour…", "Instalando la actualización…"]),
     ("tray.update_to", ["Update to Cedar {version}…", "Auf Cedar {version} aktualisieren…", "Mettre à jour vers Cedar {version}…", "Actualizar a Cedar {version}…"]),
     ("tray.quit", ["Quit Cedar", "Cedar beenden", "Quitter Cedar", "Salir de Cedar"]),
+    // The item that is in the menu bar while the screen is recorded for the chat's Actions page.
+    ("tray.stop_recording", ["Stop Recording", "Aufnahme stoppen", "Arrêter l’enregistrement", "Detener la grabación"]),
     // Commands the setup page calls.
     ("cmd.docker_busy", ["Docker is already being set up", "Docker wird bereits eingerichtet", "Docker est déjà en cours de configuration", "Docker ya se está configurando"]),
     ("cmd.tailscale_busy", ["Tailscale is already being installed", "Tailscale wird bereits installiert", "Tailscale est déjà en cours d’installation", "Tailscale ya se está instalando"]),

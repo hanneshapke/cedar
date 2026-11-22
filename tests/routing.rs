@@ -89,6 +89,38 @@ async fn a_complex_tool_call_is_asked_again_of_the_biggest_model() {
 }
 
 #[tokio::test]
+async fn a_request_to_act_starts_on_the_biggest_model() {
+    let app = TestApp::new(vec![
+        Step::Reply(tool_use("t1", "report_limitation", json!({ "summary": "Could not buy a book: no checkout tool", "category": "missing_tool" }))),
+        Step::Reply(text("I couldn't buy it.")),
+    ])
+    .await;
+    app.register("small", SMALL, &[]).await;
+    let run = app.create_run(KEY_A, "Buy the latest Mick Herron book from Powells").await;
+    let done = app.wait_status(KEY_A, &id_of(&run), "completed").await;
+    assert_eq!(asked(&app), [TEST_MODEL, TEST_MODEL], "buying is not for the smallest model");
+    assert_eq!(done["model_id"], TEST_MODEL);
+}
+
+#[tokio::test]
+async fn giving_up_is_asked_again_of_the_biggest_model() {
+    let app = TestApp::new(vec![
+        // The smallest model wants to say it can't: dropped, and the biggest looks at it.
+        Step::Reply(tool_use("t0", "report_limitation", json!({ "summary": "Could not read the file", "category": "other" }))),
+        Step::Reply(tool_use("t1", "read_file", json!({ "path": "notes.txt" }))),
+        Step::Reply(text("it says hi")),
+    ])
+    .await;
+    app.register("small", SMALL, &[]).await;
+    let run = app.create_run(KEY_A, "what's in notes.txt?").await;
+    let done = app.wait_status(KEY_A, &id_of(&run), "completed").await;
+    assert_eq!(asked(&app), [SMALL, TEST_MODEL, TEST_MODEL]);
+    assert_eq!(done["model_id"], TEST_MODEL);
+    let (_, messages) = app.get(&format!("/v1/runs/{}/messages", id_of(&run)), KEY_A).await;
+    assert!(!messages.to_string().contains("Could not read the file"), "the dropped report is not in the conversation");
+}
+
+#[tokio::test]
 async fn a_task_that_takes_many_turns_goes_on_with_the_biggest_model() {
     let turns = cedar::routing::SMALL_TURNS as usize;
     let mut script: Vec<Step> = (0..=turns)

@@ -5,6 +5,7 @@
 //! the LLM, the sandbox, and the browser, and so a downstream build can add its own routes,
 //! middleware, migrations and background tasks through [`server::Extensions`].
 
+pub mod actions;
 pub mod agent;
 pub mod api;
 pub mod approvals;

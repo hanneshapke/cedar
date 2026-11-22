@@ -800,7 +800,7 @@ function addTurn(turn) {
   state.views.set(turn.id, view);
   state.order.push(turn.id);
   const user = note('user', escapeHtml(tr('v3.you', { time: fmtTime(turn.created_at) })));
-  user.firstChild.append(cedarTrace.button(turn.id));
+  user.firstChild.append(cedarTrace.button(turn.id), cedarActions.button(turn));
   if (turn.attachments?.length) user.lastChild.append(cedarAttach.chips(turn.attachments));
   user.lastChild.append(document.createTextNode(turn.prompt));
   cedarClarify.settle(els.notes); // this message answers any question still open above it
@@ -1126,6 +1126,8 @@ function applyEvent(view, event) {
           const n = note('clarify', escapeHtml(tr(limitation ? 'handover.limitation.heading' : 'handover.held.heading')), '');
           n.lastChild.append(limitation ? cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: tool.id }) : cedarHandover.held.element(held));
           placeNote(view, n);
+          // Once the reply is written this goes below it (see finishTurn), where it is seen.
+          if (limitation) (view.limitNotes ||= []).push(n);
           view.stepsEl = null;
         }
         // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
@@ -1182,6 +1184,9 @@ function finishTurn(view, event) {
   for (const tool of view.tools) {
     if (tool.output === undefined) { Object.assign(tool, { output: '', is_error: true }); fillStep(tool); fillCard(tool); }
   }
+  // What Cedar couldn't do, with its buttons, belongs after what it says about it: left where
+  // the call was made, the answer written afterwards pushes it out of sight.
+  for (const n of view.limitNotes || []) put(n);
   if (view.usage.input || view.usage.output) {
     put(note('usage', '', cedarTrust.cost.text(view.usage)));
   }
@@ -1485,7 +1490,8 @@ document.addEventListener('cedar-models-changed', loadModels);
 function route() {
   closeDrawer();
   // The Agents page has the hash to itself (agents.js); everything else is a conversation.
-  if (cedarAgents.route()) return;
+  // (So has the Actions page, actions.js; both are asked, so each can close when it isn't its turn.)
+  if ([cedarAgents.route(), cedarActions.route()].some(Boolean)) return;
   const m = location.hash.match(/^#\/c\/([0-9a-f-]{36})$/i);
   if (m) { if (state.current?.id !== m[1]) openConversation(m[1]); } else showNewChat();
 }
@@ -1742,6 +1748,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarAgents.init({ api, toast, renderMarkdown });
+  cedarActions.init({ api, toast });
   cedarFollowUp.init({ api, toast });
   cedarStar.init({ api, toast, onOpen: closeDrawer });
   cedarSearch.init({ api, onOpen: closeDrawer, reveal: openDrawer });
@@ -1774,6 +1781,7 @@ async function init() {
   await loadModels();
   cedarSettings.start();
   cedarAgents.start();
+  cedarActions.start();
   cedarStar.start();
   await loadConversations();
   route();

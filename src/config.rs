@@ -328,6 +328,10 @@ pub struct Config {
     /// Offer the `records_*` tools and show runs which record sets they keep for the user (on by
     /// default; see [`crate::records`]).
     pub records: bool,
+    /// Offer the `saved_actions` tool, tell runs which actions their owner saved, and let the
+    /// browser type the secrets kept with them (`ACTIONS`, on by default; see
+    /// [`crate::actions`]).
+    pub actions: bool,
     /// How many record sets one API key's owner may keep (`RECORDS_MAX_SETS`, 50 by default).
     pub records_max_sets: usize,
     /// How many records one set may hold (`RECORDS_MAX_ITEMS`, 10,000 by default).
@@ -684,6 +688,7 @@ impl Config {
             memory_consolidate_after: parse("MEMORY_CONSOLIDATE_AFTER", get("MEMORY_CONSOLIDATE_AFTER"), 5u32)?,
             memory_recall_tokens: parse("MEMORY_RECALL_TOKENS", get("MEMORY_RECALL_TOKENS"), 600usize)?,
             records: flag("RECORDS", true)?,
+            actions: flag("ACTIONS", true)?,
             records_import_attachments: flag("RECORDS_IMPORT_ATTACHMENTS", true)?,
             records_max_sets: parse(
                 "RECORDS_MAX_SETS",

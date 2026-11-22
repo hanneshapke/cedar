@@ -118,6 +118,19 @@ const cedarHandover = (() => {
     for (const f of limitations || []) if (f.turn_id) decided.set(`${f.turn_id}/${f.call_id}`, f);
   }
 
+  /**
+   * "Show Cedar how": the other answer to something it couldn't do. It opens the screen recorder
+   * of the Actions page (actions.js) with the report as what is about to be shown; the steps a
+   * model reads from the recording are saved as an action that later runs follow. Null where
+   * the page isn't loaded. Reporting and showing are apart: this decides nothing about the card.
+   */
+  function showHow(spec) {
+    if (typeof cedarActions === 'undefined') return null;
+    const b = button(tr('actions.showHow'), 'copy-btn cedar-handover-show', () => cedarActions.record(spec.summary));
+    b.title = tr('actions.showHowNote');
+    return b;
+  }
+
   function limitationElement(spec, { turnId, callId }) {
     const key = `${turnId}/${callId}`;
     const card = el('div', 'cedar-handover cedar-limitation');
@@ -143,6 +156,8 @@ const cedarHandover = (() => {
         // What stays on this server reaches whoever runs it; the project hears of it only if
         // the person files it there themselves.
         if (done.status === 'sent') issueLink({ ...spec, comment: done.comment }).then((a) => { if (a && decided.get(key) === done) foot.append(a); });
+        const show = showHow(spec);
+        if (show) foot.append(show);
         return;
       }
       const act = (label, cls, body) => button(label, cls, async () => {
@@ -159,6 +174,8 @@ const cedarHandover = (() => {
         act(tr('handover.limitation.send'), 'primary', () => ({ decision: 'send', summary: spec.summary, category: spec.category, needed: spec.needed || undefined, comment: comment.value.trim() || undefined })),
         act(tr('handover.dismiss'), 'copy-btn', () => ({ decision: 'dismiss' })),
       );
+      const show = showHow(spec);
+      if (show) foot.append(show);
     };
     draw();
     return card;

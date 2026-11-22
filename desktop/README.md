@@ -553,6 +553,37 @@ For push notifications on the phone, set up **iPhone push** or **Android push** 
 Settings → Notifications (see [iOS/README.md](../iOS/README.md#push-notifications) and
 [chat/README.md](../chat/README.md#out-of-the-app)) and choose it as the default method; the app chooses *Desktop notification* on its first start.
 
+## Recording the screen for Actions
+
+The chat's [Actions](../chat/README.md#actions) page turns a screen recording into steps Cedar
+can follow. A browser records the screen itself; the app's window on a Mac (WKWebView) can't, so
+there the app records for the page (`src/recorder.rs`):
+
+- With more than one display connected, the page lists them by the names System Settings
+  shows and you pick the one to record; with one, it records that.
+- It records with macOS's ScreenCaptureKit (`src/recorder/capture.rs`): a stream of that
+  display, with the pointer and your clicks shown, that the system writes into a movie file as
+  it goes, until the app stops it or the time limit. It is recorded at five frames a second and
+  at most 1600 pixels a side, without sound, so the file stays small. Writing the file this way
+  takes macOS 15; on an older macOS the page offers to take a video file instead, as it does
+  in a browser that can't record.
+- While it records, Cedar's window hides, so the recording shows what you do and not Cedar (the
+  recording starts 200 ms after the window is gone), and a red light appears in the menu bar. A click on the light (or **Stop Recording** in its menu)
+  stops the recording, as the page's **Stop** does; the window then comes back and shows the
+  recording being finished.
+- macOS asks once whether Cedar may record the screen. Until Cedar is switched on under **System
+  Settings → Privacy & Security → Screen & System Audio Recording**, and has been quit and opened
+  again, the page says so instead of recording. The permission belongs to the app's signature:
+  an ad-hoc signed build (`APPLE_SIGNING_IDENTITY=-`) loses it with every rebuild, so sign test
+  builds with a real identity (`security find-identity -v -p codesigning`).
+- A recording of the whole screen is megabytes a second, so the file stays with the app, which
+  serves it at `cedarrec://localhost/<random token>` in ranges, like a web server; the page
+  plays it from there to pick out its key frames, and only those go to cedar. The file is deleted
+  when the page is done with it, or when the next recording starts.
+- When no file comes of a recording, the page shows how the recorder ended and what it printed.
+
+On Windows the window (WebView2) records like a browser, so the app does nothing there.
+
 ## Where things are
 
 Tauri derives both folders from the bundle identifier, `io.github.hanneshapke.cedar`.

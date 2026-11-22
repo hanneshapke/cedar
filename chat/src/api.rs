@@ -36,6 +36,7 @@ use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
+mod actions;
 mod agents;
 mod handover;
 mod slack;
@@ -149,6 +150,7 @@ const I18N_CATALOGS: &[(&str, &str)] = &[
     ("settings.js", include_str!("../static/i18n/settings.js")),
     ("cards.js", include_str!("../static/i18n/cards.js")),
     ("agents.js", include_str!("../static/i18n/agents.js")),
+    ("actions.js", include_str!("../static/i18n/actions.js")),
     ("v1.js", include_str!("../static/i18n/v1.js")),
     ("v2.js", include_str!("../static/i18n/v2.js")),
     ("v3.js", include_str!("../static/i18n/v3.js")),
@@ -160,6 +162,10 @@ const ATTACH_CSS: &str = include_str!("../static/attach.css");
 /// to it in the sidebar and the badge on a run's conversation; every UI loads it.
 const AGENTS_JS: &str = include_str!("../static/agents.js");
 const AGENTS_CSS: &str = include_str!("../static/agents.css");
+/// The Actions page: what the person showed Cedar how to do, the screen recorder that makes a
+/// new one, and the link to it in the sidebar; every UI loads it.
+const ACTIONS_JS: &str = include_str!("../static/actions.js");
+const ACTIONS_CSS: &str = include_str!("../static/actions.css");
 /// The search box of the conversations sidebar and its results; every UI loads it.
 const SEARCH_JS: &str = include_str!("../static/search.js");
 const SEARCH_CSS: &str = include_str!("../static/search.css");
@@ -394,6 +400,9 @@ pub fn router(state: AppState) -> Router {
         .route("/feedback/{id}", axum::routing::delete(handover::delete_feedback))
         .route("/outbox", get(handover::list_outbox))
         .route("/outbox/{id}", get(handover::get_outbox).post(handover::decide_outbox))
+        .route("/actions", get(actions::list).post(actions::create))
+        .route("/actions/draft", post(actions::draft).layer(DefaultBodyLimit::max(actions::MAX_RECORDING_BODY_BYTES)))
+        .route("/actions/{id}", get(actions::get).put(actions::update).delete(actions::delete))
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
@@ -510,6 +519,8 @@ pub fn router(state: AppState) -> Router {
         .route("/attach.css", get(|| async { asset(CSS, ATTACH_CSS) }))
         .route("/agents.js", get(|| async { asset(JS, AGENTS_JS) }))
         .route("/agents.css", get(|| async { asset(CSS, AGENTS_CSS) }))
+        .route("/actions.js", get(|| async { asset(JS, ACTIONS_JS) }))
+        .route("/actions.css", get(|| async { asset(CSS, ACTIONS_CSS) }))
         .route("/star.js", get(|| async { asset(JS, STAR_JS) }))
         .route("/private.js", get(|| async { asset(JS, PRIVATE_JS) }))
         .route("/private.css", get(|| async { asset(CSS, PRIVATE_CSS) }))

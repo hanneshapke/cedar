@@ -46,6 +46,11 @@ libc = "0.2"
 mac-notification-sys = "0.6"
 # Lets those banners show while Cedar is the frontmost app (see `present_while_frontmost`).
 objc2 = "0.6"
+# Recording the screen for the chat's Actions page (src/recorder/capture.rs).
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSEnumerator", "NSError", "NSGeometry", "NSString", "NSURL", "NSValue", "objc2-core-foundation"] }
+objc2-core-media = { version = "0.3", default-features = false, features = ["std", "CMTime"] }
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-core-media", "SCRecordingOutput", "SCShareableContent", "SCStream"] }
 
 [target.'cfg(windows)'.dependencies]
 # Toast notifications, with the click that opens the conversation (see src/notify.rs).

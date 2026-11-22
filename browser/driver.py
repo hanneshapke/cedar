@@ -12,6 +12,10 @@ A request is a JSON object with an `action`:
     {"action": "click", "ref": 12}                  click element [12] of the last snapshot
     {"action": "type", "ref": 3, "text": "...", "submit": true}
                                                     replace the text in a field; submit presses Enter
+    {"action": "type", "ref": 3, "text_env": "NAME"}
+                                                    the same, with the text taken from the caller's
+                                                    environment variable NAME (`docker exec -e NAME`),
+                                                    so a saved password is in no command line
     {"action": "scroll", "direction": "down"}       scroll the open dialog, or the page (also "up");
                                                     with a ref, the area around that element
     {"action": "back"}                              go back to the previous page
@@ -144,7 +148,10 @@ SNAPSHOT_JS = r"""
           || clean(el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("alt") || "");
         let desc = `[${ref}] ${role}` + (name ? ` "${name}"` : "");
         if (role === "link" && href(el)) desc += ` -> ${href(el)}`;
-        if (["textbox", "searchbox", "combobox", "slider"].includes(role) && "value" in el && el.value) {
+        // What a password field holds is never described: the page hides it, and so does this.
+        const hidden = el.tagName === "INPUT" && (el.getAttribute("type") || "").toLowerCase() === "password";
+        if (hidden && el.value) desc += " (filled in)";
+        if (!hidden && ["textbox", "searchbox", "combobox", "slider"].includes(role) && "value" in el && el.value) {
           desc += ` value="${clean(String(el.value)).slice(0, MAX_NAME)}"`;
         }
         if ((role === "checkbox" || role === "radio") && "checked" in el) desc += el.checked ? " (checked)" : "";
@@ -443,6 +450,12 @@ def main():
             request = json.loads(sys.argv[2])
         except ValueError as e:
             fail(f"the request is not valid JSON: {e}")
+        # A secret to type comes in this process's environment, not in its arguments.
+        if isinstance(request, dict) and "text_env" in request:
+            name = request.pop("text_env")
+            if not isinstance(name, str) or name not in os.environ:
+                fail("the text to type was not handed over")
+            request["text"] = os.environ[name]
         asyncio.run(call(json.dumps(request)))  # one line, whatever the caller's formatting
     else:
         fail("usage: cedar-browser serve | cedar-browser call JSON")

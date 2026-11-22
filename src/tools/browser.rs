@@ -54,6 +54,8 @@ impl Tool for BrowserTool {
                     "url": { "type": "string", "description": "navigate: the http or https URL." },
                     "ref": { "type": "integer", "description": "click, type, scroll: an element number from the latest result." },
                     "text": { "type": "string", "description": "type: the text to enter." },
+                    "secret": { "type": "string",
+                                "description": "type, in place of `text`: a secret saved with one of the user's actions, as saved_actions names it (\"sign_in/password\"). You never see its value, and it is only typed on that action's site." },
                     "submit": { "type": "boolean", "description": "type: press Enter afterwards (default false)." },
                     "direction": { "type": "string", "enum": ["down", "up"], "description": "scroll: default down." },
                     "start": { "type": "integer", "minimum": 0,
@@ -72,9 +74,56 @@ impl Tool for BrowserTool {
             let url = request["url"].as_str().unwrap_or_default();
             check_public_url(url, self.allow_private).await?;
         }
-        let reply = session.call(&request, CALL_TIMEOUT).await?;
-        Ok(format_reply(&reply, start, ctx.max_output))
+        let Some(reference) = secret_of(input)? else {
+            let reply = session.call(&request, CALL_TIMEOUT).await?;
+            return Ok(format_reply(&reply, start, ctx.max_output));
+        };
+        // A saved secret is typed only on its action's site, so where the browser is comes
+        // first. Its value goes to the browser apart from the request and is taken out of what
+        // comes back, should the page show it.
+        let actions = ctx
+            .actions
+            .as_ref()
+            .ok_or_else(|| anyhow!("saved secrets are not available in this run; ask the user"))?;
+        let page = session.call(&json!({ "action": "snapshot" }), CALL_TIMEOUT).await?;
+        let url = page["url"].as_str().unwrap_or_default();
+        let value = actions.actions.secret_for(&actions.owner, reference, url).await?;
+        let reply = session
+            .call_with_text(&request, &value, CALL_TIMEOUT)
+            .await
+            .map_err(|e| anyhow!("{}", redact(&e.to_string(), &value)))?;
+        Ok(redact(&format_reply(&reply, start, ctx.max_output), &value))
     }
+}
+
+/// What stands in for a saved secret wherever a page shows it.
+const REDACTED: &str = "[saved secret]";
+
+/// `text` without `secret` in it.
+fn redact(text: &str, secret: &str) -> String {
+    if secret.is_empty() {
+        return text.to_string();
+    }
+    text.replace(secret, REDACTED)
+}
+
+/// The saved secret a `type` call names in place of its text, if it names one.
+fn secret_of(input: &Value) -> Result<Option<&str>> {
+    let reference = match &input["secret"] {
+        Value::Null => return Ok(None),
+        v => v
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| anyhow!("secret must name a saved secret, like \"sign_in/password\""))?,
+    };
+    if input["action"] != "type" {
+        bail!("secret only goes with action \"type\"");
+    }
+    if input["text"].as_str().is_some_and(|t| !t.is_empty()) {
+        bail!("give either text or secret, not both");
+    }
+    Ok(Some(reference))
 }
 
 /// The request for the driver, holding only what `input`'s action takes, and the `start` offset.
@@ -103,10 +152,13 @@ fn request(input: &Value) -> Result<(Value, usize)> {
         "click" => element(&mut req)?,
         "type" => {
             element(&mut req)?;
-            let text = input["text"]
-                .as_str()
-                .ok_or_else(|| anyhow!("type needs `text`"))?;
-            req.insert("text".into(), text.into());
+            // With `secret`, the text is filled in where the call is made (see `secret_of`).
+            if input["secret"].is_null() {
+                let text = input["text"]
+                    .as_str()
+                    .ok_or_else(|| anyhow!("type needs `text`"))?;
+                req.insert("text".into(), text.into());
+            }
             req.insert(
                 "submit".into(),
                 input["submit"].as_bool().unwrap_or(false).into(),
