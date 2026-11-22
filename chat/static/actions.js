@@ -544,6 +544,15 @@ const cedarActions = (() => {
   }
 
   /**
+   * How full the bar is `ms` into a wait expected to take `expectedMs`: in step with the time
+   * up to four fifths, then ever slower towards full, which it never reaches.
+   */
+  function writeProgress(ms, expectedMs) {
+    const t = Math.max(0, ms) / Math.max(1, expectedMs);
+    return t <= 0.8 ? t : 1 - 0.2 * Math.exp(-(t - 0.8) / 0.2);
+  }
+
+  /**
    * At most one frame per `everyMs` of the recording: of frames closer together than that, the
    * one that differs more from what came before stays. The last frame always stays, since it
    * is what the screen ended on.
@@ -782,20 +791,41 @@ const cedarActions = (() => {
 
     // 5. Cedar's model writes the steps.
     async function write(asVideo) {
+      const { blob, durationMs, frames } = recording;
       const busy = el('div', 'cedar-ag-review');
       busy.append(el('span', 'spinner'), el('span', '', tr('actions.write.busy')));
-      stage.replaceChildren(busy);
+      // The model answers in one piece, so how far it is can't be known: the bar shows the
+      // time gone against the time such a recording usually takes, and slows down towards
+      // its end instead of ever standing full before the answer is there.
+      const bar = el('progress', 'cedar-act-progress');
+      bar.max = 1;
+      const gone = el('span', 'cedar-act-elapsed', clock(0));
+      const waited = el('div', 'cedar-act-wait');
+      waited.append(bar, gone);
+      const box = el('div', 'cedar-act-writing');
+      box.append(busy, waited);
+      stage.replaceChildren(box);
+      const expectedMs = asVideo ? 20000 + durationMs / 4 : 8000 + frames.length * 2500;
+      const began = Date.now();
+      const tick = () => {
+        const ms = Date.now() - began;
+        bar.value = writeProgress(ms, expectedMs);
+        gone.textContent = clock(ms);
+      };
+      tick();
+      const timer = setInterval(() => (box.isConnected ? tick() : clearInterval(timer)), 500);
       try {
-        const { blob, durationMs, frames } = recording;
         const body = { goal: goal.trim(), duration_ms: Math.round(durationMs), locale: cedarI18n.locale };
         if (asVideo) body.video = { media_type: blob.type, data: await base64Of(blob) };
         else body.frames = frames;
         const result = await deps.api('POST', '/actions/draft', body);
+        clearInterval(timer);
         if (!alive()) return;
         const draft = result.draft || {};
         const source = { kind: 'recording', seconds: Math.round(durationMs / 1000), frames: frames.length, watched: result.watched, model: result.model_id };
         edit({ title: draft.title, summary: draft.summary, site: draft.site, steps: draft.steps || [], secrets: draft.secrets || [] }, { source, notes: draft.notes, model: result.model });
       } catch (e) {
+        clearInterval(timer);
         if (alive()) fail(e?.message || tr('actions.write.failed'), () => write(asVideo));
       }
     }
