@@ -990,9 +990,14 @@ you open an action again; leave it so to keep what is stored. Without `CEDAR_SEC
 cedar, the page says passwords can't be stored, and Cedar asks you instead. See
 [cedar's README](../README.md#actions) for how the typing is kept away from the model.
 
-A browser that can't record the screen (the desktop app's window on some systems, a phone) offers
-**Use a video file** instead: record with the system's own screen recorder and choose the file;
-the same reduction runs on it. Steps on a website need cedar's browser tool (`BROWSER=on`); the
+In the Cedar app for the Mac, whose window can't share the screen as a browser does, the app
+records for the page: **Entire screen** uses macOS's own recorder, with your clicks shown, and
+hands the recording to the page, which reduces it the same way. The first time, macOS asks
+whether Cedar may record the screen (System Settings → Privacy & Security → Screen & System Audio
+Recording); Cedar has to be quit and opened again after you allow it. On Windows the app's window
+records like a browser. A browser that can't record at all (a phone) offers **Use a video file**
+instead: record with the system's own screen recorder and choose the file; the same reduction
+runs on it. Steps on a website need cedar's browser tool (`BROWSER=on`); the
 form says so when it is off. Actions are the `actions` tool group. Close what you don't want
 the model to see before you record: the frames go to the model server cedar is set up with.
 

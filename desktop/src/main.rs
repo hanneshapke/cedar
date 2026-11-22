@@ -20,6 +20,7 @@ mod notify;
 mod paths;
 mod proc;
 mod pull;
+mod recorder;
 mod remote;
 mod supervisor;
 mod tailscale;
@@ -45,6 +46,10 @@ fn main() {
     }));
     builder
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Where the chat's Actions page fetches a screen recording the app made for it.
+        .register_uri_scheme_protocol(recorder::SCHEME, |ctx, request| {
+            recorder::serve(ctx.app_handle(), &request)
+        })
         .setup(|app| {
             // A menu bar app until its window is shown: window::present switches to a regular
             // app (Dock icon, Command-Tab) and closing the window switches back.

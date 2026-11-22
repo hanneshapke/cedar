@@ -44,7 +44,7 @@ const cedarActions = (() => {
    * frame kept mean something small happened: text typed into a field, the pointer on a button.
    * A change that never comes to rest (a video on the page) is kept after `restlessMs`.
    */
-  const FRAME = { maxSide: 1280, quality: 0.72, sigW: 96, sigH: 54, cell: 14, changed: 12, settled: 2, settleMs: 400, gapMs: 100, restlessMs: 1500 };
+  const FRAME = { maxSide: 1568, quality: 0.72, sigW: 96, sigH: 54, cell: 14, changed: 12, settled: 2, settleMs: 400, gapMs: 100, restlessMs: 1500 };
   const PLAYBACK_RATES = [8, 4, 2];
   const MIME_TYPES = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
   const ICONS = {
@@ -113,6 +113,12 @@ const cedarActions = (() => {
   /** The decoded size of a base64 string. */
   const base64Bytes = (data) => Math.floor(data.length * 3 / 4);
   const canRecord = () => !!(navigator.mediaDevices?.getDisplayMedia && window.MediaRecorder);
+  /**
+   * Whether the Cedar app records for this page: its window on a Mac can't share the screen as
+   * a browser does, so the app does it with the system's own recorder and says so (see
+   * `captureInApp`).
+   */
+  const appRecords = () => !canRecord() && window.__CEDAR_DESKTOP_RECORDER__ === true;
 
   // -- the page ----------------------------------------------------------------------------------
 
@@ -264,6 +270,7 @@ const cedarActions = (() => {
     const s = session;
     session = null;
     clearInterval(s.timer);
+    if (s.native) { window.location.href = '/__cedar-app/record/cancel'; return; }
     try { if (s.recorder?.state !== 'inactive') s.recorder.stop(); } catch { /* already stopped */ }
     for (const track of s.stream?.getTracks() || []) track.stop();
   }
@@ -310,6 +317,56 @@ const cedarActions = (() => {
       }, 500);
       recorder.start(1000);
       onTick(0, maxMs);
+    });
+  }
+
+  /**
+   * Have the Cedar app record the entire screen (desktop/src/recorder.rs), with the same result
+   * as `capture`. The page asks by sending the window to /__cedar-app/record/…, which the app
+   * catches, and hears back as `cedar-recorder` events: `recording`, then after a stop `done`
+   * with an address to fetch the recording from, once; or `failed` with a reason, of which
+   * `permission` means macOS hasn't allowed Cedar to record the screen yet.
+   */
+  function captureInApp(onTick, stopped) {
+    const maxMs = (info.limits.recording_seconds || 600) * 1000;
+    const mine = { native: true, timer: null };
+    session = mine;
+    return new Promise((resolve, reject) => {
+      let startedAt = 0;
+      let noAnswer = null;
+      const settle = (how, value) => {
+        window.removeEventListener('cedar-recorder', on);
+        clearInterval(mine.timer);
+        clearTimeout(noAnswer);
+        if (session === mine) session = null;
+        how(value);
+      };
+      const on = async (e) => {
+        const d = e.detail || {};
+        if (d.state === 'recording') {
+          clearTimeout(noAnswer);
+          startedAt = Date.now();
+          onTick(0, maxMs);
+          mine.timer = setInterval(() => onTick(Date.now() - startedAt, maxMs), 500);
+        } else if (d.state === 'done') {
+          clearInterval(mine.timer);
+          try {
+            const res = await fetch(d.url);
+            if (!res.ok) throw new Error(String(res.status));
+            const blob = new Blob([await res.arrayBuffer()], { type: d.media_type || 'video/quicktime' });
+            settle(resolve, { blob, durationMs: (d.seconds || 0) * 1000 || Date.now() - startedAt });
+          } catch { settle(reject, new Error(tr('actions.rec.handover'))); }
+        } else if (d.state === 'failed') {
+          settle(reject, Object.assign(new Error(d.message || tr('actions.rec.failed')), { reason: d.reason }));
+        } else if (d.state === 'cancelled') {
+          settle(reject, Object.assign(new Error('cancelled'), { cancelled: true }));
+        }
+      };
+      window.addEventListener('cedar-recorder', on);
+      // An app that never answers is one from before it could record.
+      noAnswer = setTimeout(() => settle(reject, new Error(tr('actions.rec.failed'))), 10000);
+      stopped.then(() => { if (session === mine) window.location.href = '/__cedar-app/record/stop'; });
+      window.location.href = `/__cedar-app/record/start?max=${Math.round(maxMs / 1000)}`;
     });
   }
 
@@ -552,7 +609,17 @@ const cedarActions = (() => {
       if (blocked) form.append(el('div', 'cedar-ag-box warn cedar-act-notice', blocked));
       if (typeof notice === 'string') form.append(el('div', 'cedar-ag-box warn cedar-act-notice', notice));
       if (canRecord()) form.append(el('div', 'cedar-ag-legend', tr('actions.new.share')), picks);
-      else { start.hidden = true; upload.className = 'primary'; form.append(el('div', 'cedar-ag-box cedar-act-notice', tr('actions.new.cannotRecord'))); }
+      else if (appRecords()) {
+        // The app records the whole screen; one window is for a browser to offer.
+        surface = 'app';
+        const pick = el('label', 'cedar-ag-pick');
+        const radio = el('input');
+        radio.type = 'radio';
+        radio.checked = true;
+        pick.append(radio, icon('screen'), el('b', '', tr('actions.new.surface.monitor')), el('small', '', tr('actions.new.surfaceHelp.app')));
+        picks.replaceChildren(pick);
+        form.append(el('div', 'cedar-ag-legend', tr('actions.new.share')), picks);
+      } else { start.hidden = true; upload.className = 'primary'; form.append(el('div', 'cedar-ag-box cedar-act-notice', tr('actions.new.cannotRecord'))); }
       const notes = el('ul', 'cedar-act-notes');
       for (const key of ['small', 'once', 'passwords']) notes.append(el('li', '', tr(`actions.new.note.${key}`)));
       form.append(notes, file, actions);
@@ -572,16 +639,20 @@ const cedarActions = (() => {
       box.append(live, el('div', 'cedar-ag-note', tr('actions.rec.hint')), actions);
       let got;
       try {
-        got = await capture(surface, (elapsed, max) => {
+        const tick = (elapsed, max) => {
           if (!alive()) return;
           if (!box.isConnected) stage.replaceChildren(box);
           time.textContent = tr('actions.rec.time', { elapsed: clock(elapsed), max: clock(max) });
-        }, stopped);
+        };
+        got = await (surface === 'app' ? captureInApp(tick, stopped) : capture(surface, tick, stopped));
       } catch (e) {
         if (!alive() || e?.cancelled) return;
         // The person closed the browser's dialog without choosing, or the browser (an app's
         // embedded one, say) shares no screen and never asked: back to the start, with a way on.
         if (e?.name === 'NotAllowedError' || e?.name === 'AbortError') { setup(tr('actions.rec.notShared')); return; }
+        // macOS keeps the app from the screen until the person allows it, or let it run and
+        // recorded nothing.
+        if (e?.reason === 'permission' || e?.reason === 'empty') { setup(tr('actions.rec.permission')); return; }
         fail(e?.message || tr('actions.rec.failed'));
         return;
       }

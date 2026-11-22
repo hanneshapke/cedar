@@ -1004,7 +1004,10 @@ impl<'a> ToolView<'a> {
                 " When you can't do something the user asked for because of what you have here \
                  (no tool for it, an account that isn't connected, a site that refuses you, a \
                  limit you hit), say so plainly, do the part you can, and note the gap with \
-                 report_limitation; the user decides whether it is sent as feedback. Never \
+                 report_limitation; the user decides whether it is sent as feedback. Call it \
+                 before you write that answer, every time: saying \"I can't\" in the text alone \
+                 leaves the user without the card it shows, which is also where they can show \
+                 you how it is done so that you can do it next time. Never \
                  describe something as done that wasn't, and don't report a request you \
                  declined or a fact you don't know.",
             );

@@ -12,8 +12,9 @@ pub const MAIN: &str = "main";
 
 /// Where the chat's pages send the window to ask the app for something: the update banner's
 /// Update and Dismiss (update.js), the Phone page's button that turns sharing with the phone
-/// apps on (pairing.js), and Settings' "Connect Google", whose sign-in page opens in the default
-/// browser (settings.js). Never loaded, the window catches it (see [`create`]). The chat page has
+/// apps on (pairing.js), Settings' "Connect Google", whose sign-in page opens in the default
+/// browser (settings.js), and the Actions page's screen recorder (actions.js, see recorder.rs).
+/// Never loaded, the window catches it (see [`create`]). The chat page has
 /// no other way to reach the app.
 const APP_PATH: &str = "/__cedar-app/";
 
@@ -87,7 +88,8 @@ pub fn open_web_link(url: &Url) -> Result<()> {
 /// sends with changes to cedar's models and integrations, and tells it that it runs in the app
 /// (whose web view can't take browser push; it offers desktop notifications instead); anywhere
 /// else it does nothing. Without an admin token (a chat on another computer) the page keeps the
-/// one its Settings asked for.
+/// one its Settings asked for. Where the app can record the screen for the page (see
+/// recorder.rs) it says that too, since the page can't find it out.
 fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
     let origin = serde_json::to_string(chat_url).unwrap_or_default();
     let token = serde_json::to_string(token).unwrap_or_default();
@@ -97,10 +99,15 @@ fn token_script(chat_url: &str, token: &str, admin_token: &str) -> String {
         let admin = serde_json::to_string(admin_token).unwrap_or_default();
         format!("window.sessionStorage.setItem('cedar-chat-admin', {admin});\n      ")
     };
+    let recorder = if crate::recorder::Recorder::available() {
+        "\n      window.__CEDAR_DESKTOP_RECORDER__ = true;"
+    } else {
+        ""
+    };
     format!(
         "(function () {{\n  try {{\n    if (window.location.origin === {origin}) {{\n      \
          window.localStorage.setItem('cedar-chat-token', {token});\n      \
-         {admin}window.__CEDAR_DESKTOP_APP__ = true;\n    }}\n  }} catch (e) {{}}\n}})();"
+         {admin}window.__CEDAR_DESKTOP_APP__ = true;{recorder}\n    }}\n  }} catch (e) {{}}\n}})();"
     )
 }
 
@@ -120,6 +127,12 @@ enum PageAction {
     /// "Connect Google", which a web view can't do every way of (passkeys, Sign in with Apple).
     /// Only https.
     OpenInBrowser(Url),
+    /// The Actions page's recorder: record the entire screen, for at most so many seconds.
+    RecordStart(Option<u64>),
+    /// Stop recording and hand the recording to the page.
+    RecordStop,
+    /// Stop recording, or forget the finished recording, without handing anything over.
+    RecordCancel,
     /// A request caught but not acted on.
     Ignore,
 }
@@ -139,6 +152,12 @@ fn page_action(url: &Url, chat: &str, remote: bool) -> Option<PageAction> {
         "setup/model" => Some(PageAction::SetupModel),
         "share/on" if remote => Some(PageAction::Ignore),
         "share/on" => Some(PageAction::ShareOn),
+        // This computer's screen, whichever computer the chat is on.
+        "record/start" => Some(PageAction::RecordStart(
+            url.query_pairs().find(|(k, _)| k == "max").and_then(|(_, v)| v.parse().ok()),
+        )),
+        "record/stop" => Some(PageAction::RecordStop),
+        "record/cancel" => Some(PageAction::RecordCancel),
         "open" => url
             .query_pairs()
             .find(|(k, _)| k == "url")
@@ -169,6 +188,9 @@ fn run_page_action(app: &AppHandle, action: PageAction) {
         PageAction::ShareOn => {
             tauri::async_runtime::spawn(crate::app::share_from_chat(app.clone()));
         }
+        PageAction::RecordStart(max_secs) => crate::recorder::start(app, max_secs),
+        PageAction::RecordStop => crate::recorder::stop(app),
+        PageAction::RecordCancel => crate::recorder::cancel(app),
         // Handled in `create`, which needs no app handle for it.
         PageAction::OpenInBrowser(_) => {}
         PageAction::Ignore => {}
@@ -374,6 +396,12 @@ mod tests {
         assert_eq!(at("https://spark.t.ts.net/__cedar-app/share/on"), Some(PageAction::Ignore));
         assert_eq!(at("https://spark.t.ts.net/__cedar-app/setup/model"), Some(PageAction::Ignore));
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/install"), None);
+        // The screen that is recorded is this computer's, wherever the chat is.
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/start?max=600"), Some(PageAction::RecordStart(Some(600))));
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/start"), Some(PageAction::RecordStart(None)));
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/stop"), Some(PageAction::RecordStop));
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/cancel"), Some(PageAction::RecordCancel));
+        assert_eq!(at("https://elsewhere.example/__cedar-app/record/start"), None);
     }
 
     fn urlencoding(s: &str) -> String {

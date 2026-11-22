@@ -553,6 +553,24 @@ For push notifications on the phone, set up **iPhone push** or **Android push** 
 Settings → Notifications (see [iOS/README.md](../iOS/README.md#push-notifications) and
 [chat/README.md](../chat/README.md#out-of-the-app)) and choose it as the default method; the app chooses *Desktop notification* on its first start.
 
+## Recording the screen for Actions
+
+The chat's [Actions](../chat/README.md#actions) page turns a screen recording into steps Cedar
+can follow. A browser records the screen itself; the app's window on a Mac (WKWebView) can't, so
+there the app records for the page (`src/recorder.rs`):
+
+- It runs macOS's own recorder, `/usr/sbin/screencapture -v -k -x -V <seconds>`, as a child
+  process: the entire main screen, with clicks shown, until the page's **Stop** or the time limit.
+  Stopping gives it a key, as at a terminal, then an interrupt if it doesn't react.
+- macOS asks once whether Cedar may record the screen. Until Cedar is switched on under **System
+  Settings → Privacy & Security → Screen & System Audio Recording**, and has been quit and opened
+  again, the page says so instead of recording.
+- The finished file goes to the page through the app's own address,
+  `cedarrec://localhost/<random token>`, which answers once and then deletes the file. The page
+  reduces the recording to its key frames, and only those go to cedar.
+
+On Windows the window (WebView2) records like a browser, so the app does nothing there.
+
 ## Where things are
 
 Tauri derives both folders from the bundle identifier, `io.github.hanneshapke.cedar`.
