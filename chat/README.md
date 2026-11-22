@@ -969,7 +969,8 @@ the card of [something it couldn't do](#feedback):
 2. Do the task yourself, at your usual pace, then come back and press **Stop** (or end the share
    from the browser's own bar). A recording can be ten minutes long.
 3. The page makes the recording small, without sending anything: it was captured at a few frames
-   a second and at most 1600 pixels a side, and is now played through once, fast, to keep the
+   a second and at most 1600 pixels a side, and is now played through once, fast (or stepped through, where the browser doesn't show
+   the frames of a video played fast), to keep the
    frames in which the screen changed, and the one before each change, which shows what you had
    typed and where the pointer was. Of those it keeps at most one a second, at most 1200 pixels
    a side, which is what a model that reads images is sent. You see the video, its size, and

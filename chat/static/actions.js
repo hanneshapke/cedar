@@ -46,7 +46,7 @@ const cedarActions = (() => {
    * kept is at most `maxSide` pixels a side, and at most one frame per `everyMs` of the recording
    * (see `spaced`).
    */
-  const FRAME = { maxSide: 1200, everyMs: 1000, quality: 0.72, sigW: 96, sigH: 54, cell: 14, changed: 12, settled: 2, settleMs: 400, gapMs: 100, restlessMs: 1500 };
+  const FRAME = { maxSide: 1200, everyMs: 1000, quality: 0.72, sigW: 96, sigH: 54, cell: 14, changed: 12, settled: 2, settleMs: 400, gapMs: 100, restlessMs: 1500, seekStepMs: 250, maxSeeks: 480 };
   const PLAYBACK_RATES = [8, 4, 2];
   const MIME_TYPES = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
   const ICONS = {
@@ -431,7 +431,7 @@ const cedarActions = (() => {
    * small had happened in it (what was typed, where the pointer was when it clicked). Rejects if
    * the video can't be played.
    */
-  async function keyFrames(blob, { maxFrames, maxBytes, onProgress, durationMs }) {
+  async function keyFrames(blob, { maxFrames, maxBytes, onProgress, durationMs, sweep = false }) {
     await visible();
     const video = el('video');
     video.muted = true;
@@ -462,6 +462,14 @@ const cedarActions = (() => {
       let before = false;   // the frame before the change under way has been kept
       let changing = null;  // when the change under way began
       let lastAt = -Infinity;
+      let samples = 0;      // how many pictures were looked at
+      let distinct = 0;     // how many of them differed from the one before
+      const reset = () => {
+        frames.length = 0;
+        kept = null; since = 0; before = false; changing = null; lastAt = -Infinity;
+        samples = 0; distinct = 0;
+        cur.sig = prev.sig = null;
+      };
       const keep = (frame, score) => {
         const data = frame.canvas.toDataURL('image/jpeg', FRAME.quality).split(',')[1] || '';
         if (data) frames.push({ at_ms: Math.round(frame.at), media_type: 'image/jpeg', data, score });
@@ -473,6 +481,8 @@ const cedarActions = (() => {
         cur.canvas.getContext('2d').drawImage(video, 0, 0, size[0], size[1]);
         smallCtx.drawImage(cur.canvas, 0, 0, FRAME.sigW, FRAME.sigH);
         const sig = smallCtx.getImageData(0, 0, FRAME.sigW, FRAME.sigH).data;
+        samples += 1;
+        if (!prev.sig || difference(sig, prev.sig) > 0) distinct += 1;
         cur.sig = sig;
         cur.at = at;
         if (!kept) {
@@ -516,40 +526,73 @@ const cedarActions = (() => {
         [cur, prev] = [prev, cur];
         if (durationMs) onProgress?.(Math.min(1, at / durationMs));
       };
-      await new Promise((resolve, reject) => {
-        let done = false;
-        let watchdog = null;
-        let stalledAt = -1;
-        let stalledFor = 0;
-        const tick = video.requestVideoFrameCallback ? 500 : 40;
-        const finish = () => {
-          if (done) return;
-          done = true;
-          clearInterval(watchdog);
-          video.pause();
-          resolve();
-        };
-        video.addEventListener('ended', finish, { once: true });
-        video.addEventListener('error', () => (frames.length ? finish() : reject(new Error(tr('actions.rec.unplayable')))), { once: true });
-        const onFrame = (_now, frame) => { if (done) return; sample(frame?.mediaTime); video.requestVideoFrameCallback(onFrame); };
-        if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(onFrame);
-        // Without per-frame callbacks the timer samples; with them it only notices a stall.
-        watchdog = setInterval(() => {
-          if (!video.requestVideoFrameCallback) sample();
-          if (video.currentTime !== stalledAt) { stalledAt = video.currentTime; stalledFor = 0; return; }
-          // No progress: over, or stuck (a file that ends without saying so).
-          stalledFor += tick;
-          if (video.ended || video.paused || stalledFor >= 3000) finish();
-        }, tick);
-        for (const rate of PLAYBACK_RATES) {
-          try { video.playbackRate = rate; break; } catch { /* this browser plays slower */ }
-        }
-        video.play().catch(reject);
-      });
+      const total = Number.isFinite(video.duration) && video.duration > 0 ? video.duration * 1000 : durationMs || 0;
+      if (!sweep) await play();
+      // Playing fast is quick, but not every browser shows the frames of a video it plays fast:
+      // in the Mac app's window (WebKit) an eleven-second recording gave one picture. When
+      // playing gave fewer than two pictures a second, or only one picture in all, the video is
+      // gone through again by seeking, which shows each moment for sure.
+      if (sweep || (total > 2000 && (samples < total / 500 || distinct <= 1))) {
+        reset();
+        await seekThrough(total);
+      }
       // What the screen ended on.
       if (kept && prev.sig && difference(prev.sig, kept) > FRAME.settled) keep(prev, Infinity);
       onProgress?.(1);
       return thin(spaced(frames, FRAME.everyMs), maxFrames, maxBytes);
+
+      function play() {
+        return new Promise((resolve, reject) => {
+          let done = false;
+          let watchdog = null;
+          let stalledAt = -1;
+          let stalledFor = 0;
+          const tick = video.requestVideoFrameCallback ? 500 : 40;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            clearInterval(watchdog);
+            video.pause();
+            resolve();
+          };
+          video.addEventListener('ended', finish, { once: true });
+          video.addEventListener('error', () => (frames.length ? finish() : reject(new Error(tr('actions.rec.unplayable')))), { once: true });
+          const onFrame = (_now, frame) => { if (done) return; sample(frame?.mediaTime); video.requestVideoFrameCallback(onFrame); };
+          if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(onFrame);
+          // Without per-frame callbacks the timer samples; with them it only notices a stall.
+          watchdog = setInterval(() => {
+            if (!video.requestVideoFrameCallback) sample();
+            if (video.currentTime !== stalledAt) { stalledAt = video.currentTime; stalledFor = 0; return; }
+            // No progress: over, or stuck (a file that ends without saying so).
+            stalledFor += tick;
+            if (video.ended || video.paused || stalledFor >= 3000) finish();
+          }, tick);
+          for (const rate of PLAYBACK_RATES) {
+            try { video.playbackRate = rate; break; } catch { /* this browser plays slower */ }
+          }
+          video.play().catch(reject);
+        });
+      }
+
+      // Each moment `seekStepMs` apart (further apart in a long video), from start to end.
+      async function seekThrough(totalMs) {
+        if (!totalMs) return;
+        video.pause();
+        const step = Math.max(FRAME.seekStepMs, totalMs / FRAME.maxSeeks);
+        const seek = (ms) => new Promise((resolve) => {
+          const done = () => { clearTimeout(timer); video.removeEventListener('seeked', done); resolve(); };
+          const timer = setTimeout(done, 3000);
+          video.addEventListener('seeked', done);
+          video.currentTime = ms / 1000;
+        });
+        for (let at = 0; ; at += step) {
+          const ms = Math.min(at, Math.max(0, totalMs - 50));
+          await seek(ms);
+          sample(ms / 1000);
+          onProgress?.(Math.min(1, ms / totalMs));
+          if (at >= totalMs - 50) break;
+        }
+      }
     } finally {
       video.removeAttribute('src');
       video.load();
