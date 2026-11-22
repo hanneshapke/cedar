@@ -137,6 +137,7 @@ pub async fn run_agent(
             ))
         }),
         locale: run.locale.clone(),
+        timezone: run.timezone.clone(),
         memory: env.memories.as_ref().filter(|_| !run.private).map(|memories| MemoryContext {
             memories: memories.clone(),
             owner: run.owner.clone(),
@@ -264,13 +265,9 @@ pub async fn run_agent(
     // At the head of cedar's note, where the model can't miss it: so it needs no call to learn
     // the date, and searches for this year's news rather than the year its training ended. The
     // client's own prompt stays first, so the start of every request stays the same.
-    let now = Utc::now();
-    let date = format!(
-        "Today is {} and the time is {} UTC. Use this date, and this year, for anything \
-         recent: searches, date filters, \"the last 24 hours\".",
-        now.format("%A, %Y-%m-%d"),
-        now.format("%H:%M")
-    );
+    // It is the user's clock when the run knows their time zone: by UTC's alone, "tomorrow"
+    // asked on a Saturday evening in Portland is Monday (see [`crate::timezone`]).
+    let date = crate::timezone::date_note(Utc::now(), run.timezone.as_deref());
     let mut system = with_note(&run.system, &with_note(&date, &note));
     let workspace_lost = !messages.is_empty() && !run.workspace_reused;
     let opening = opening_message(&messages, &run.prompt, workspace_lost);
@@ -689,7 +686,15 @@ async fn note_memory(
     if call && !transcript.text.trim().is_empty() {
         if let Some(llm) = env.llm.client_for(&run.model_id) {
             let (system, call_messages) =
-                memory::extract::call(&remembered, sets.as_deref(), &transcript, facts, experience, told);
+                memory::extract::call(
+                &remembered,
+                sets.as_deref(),
+                &transcript,
+                facts,
+                experience,
+                told,
+                crate::timezone::today(Utc::now(), run.timezone.as_deref()),
+            );
             let reasoning = quiet_reasoning(env, run);
             let req = MessageRequest {
                 model: &run.model,

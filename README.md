@@ -59,7 +59,7 @@ All `/v1` routes need `Authorization: Bearer <key>`. Errors are `{"error": {"cod
 
 | Route | What it does |
 | --- | --- |
-| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "hold_writes"?, "locale"?, "import_attachments"?, "private"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and `import_attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [The outbox](#the-outbox) for `hold_writes`, [Languages](#languages) for `locale`, [Private runs](#private-runs) for `private`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
+| `POST /v1/runs` | Start a run. Body: `{"prompt", "model"?, "reasoning"?, "system"?, "max_turns"?, "parent_id"?, "tools"?, "attachments"?, "plan"?, "interactive"?, "hold_writes"?, "locale"?, "timezone"?, "import_attachments"?, "private"?, "callback_url"?, "callback_secret"?}`. Returns `202` with the run. `429` if the key already has `MAX_ACTIVE_RUNS_PER_KEY` queued or running. See [Models](#models) for `model` and `reasoning`, [Choosing tools](#choosing-tools) for `tools`, [Attachments](#attachments) for `attachments` and `import_attachments`, [Plans and approvals](#plans-and-approvals) for `plan` and `interactive`, [The outbox](#the-outbox) for `hold_writes`, [Languages](#languages) for `locale`, [Time zones](#time-zones) for `timezone`, [Private runs](#private-runs) for `private`, and [Being told when a run ends](#being-told-when-a-run-ends) for the callback. |
 | `GET /v1/runs` | Your runs, newest first. Query: `status`, `limit` (max 100), `before` (a run id; use `next_before` from the previous page). |
 | `GET /v1/runs/{id}` | Status, `model_id`, `model`, `reasoning`, `turns`, `final_text`, `stop_reason`, `error`, token `usage`, `callback_url`, timestamps. |
 | `GET /v1/runs/{id}/messages` | The stored conversation, as content blocks (`text`, `tool_use`, `tool_result`, and `image` / `document` for [attachments](#attachments), base64 included). |
@@ -555,6 +555,26 @@ It sends the locale with every message, and saves it on its server too, so agent
 notifications use it. Translators: see [docs/i18n-glossary.md](docs/i18n-glossary.md) for the terms
 and tone.
 
+### Time zones
+
+Every run is told the date and time at the head of its system prompt, so it searches for this
+year's news and resolves "today" and "tomorrow" without a tool call. cedar's clock is UTC, though,
+and in Portland at 7:45 PM on a Saturday it is already Sunday in UTC: told only that, a model answers
+"tomorrow" with Monday. So a run can name the user's time zone, an IANA name, as
+`"timezone": "America/Los_Angeles"` on `POST /v1/runs`. The run is then told the user's local date
+and time with the zone and its offset (`Today is Saturday, 2026-11-21 and the user's local time is
+19:43 (America/Los_Angeles, UTC-08:00); it is 03:43 UTC.`), and that "today", "tomorrow" and weekdays
+are relative to it. A continuation keeps its parent's zone, and a run without one takes
+`DEFAULT_TIMEZONE`. A run with no zone at all is told the UTC date, that the user's may differ by a
+day, and to work theirs out from where they are or ask. The notes cedar writes to memory after a run
+make relative dates absolute in the user's zone too, the `flights` tool checks "in the past"
+against the user's date, and [personal tools](#personal-tools-in-python) see the zone as
+`CEDAR_TIMEZONE` when it is known.
+
+The chat sends the browser's or phone's zone with every message and keeps the last one in its
+settings, so agents' runs and Slack conversations get it too. An agent with a time zone of its own
+other than `UTC` uses that one.
+
 ## Memory
 
 A new conversation starts from the system prompt alone, so without memory the user repeats their
@@ -761,6 +781,7 @@ Settings come from environment variables. The important ones:
 | `DATABASE_URL` | `sqlite://cedar.db` |
 | `MAX_TURNS_CAP` | 25 |
 | `DEFAULT_LOCALE` | `en` (the language and region of a run that doesn't name one, such as `de-CH`; see [Languages](#languages)) |
+| `DEFAULT_TIMEZONE` | unset (the time zone of a run that doesn't name one, an IANA name such as `Europe/Zurich`; unset, such a run is told the UTC date and that the user's may differ; see [Time zones](#time-zones)) |
 | `MAX_CONCURRENT_RUNS` | 4 |
 | `MAX_ACTIVE_RUNS_PER_KEY` | 2 |
 | `RUN_TIMEOUT_SECS` / `TOOL_TIMEOUT_SECS` | 600 / 60 (an admin can replace the run time limit with `run_timeout_secs` in `PUT /v1/admin/settings`, or Settings → Advanced settings → *Run time limit*) |
@@ -1418,7 +1439,7 @@ A manifest also says what the tool needs, which cedar enforces and shows to admi
 | --- | --- |
 | `version`, `author`, `homepage`, `license` | Shown in the settings; `version` names a release |
 | `network` | The hosts the tool reaches (`api.example.com`, or `*.example.com`). With any, its calls get `TOOLS_NETWORK` (`bridge` by default), and on Docker `host.docker.internal` names the Docker host, as on Docker Desktop, so a tool can reach a service running there (the host's `localhost` is not the container's); without, no network at all |
-| `secrets` | The environment variables it reads credentials from: names (`"API_TOKEN"`) or `{"name", "description"?, "optional"?}`. Admins save them in the settings (encrypted, see [Integrations](#integrations)); a call gets only its own tool's declared, saved ones, plus `CEDAR_LOCALE` and `CEDAR_LANGUAGE` (the run's [language](#languages)). `PATH`, `HOME`, `PYTHON*`, `PIP_*`, `LD_*`, `CEDAR_*` and similar are reserved |
+| `secrets` | The environment variables it reads credentials from: names (`"API_TOKEN"`) or `{"name", "description"?, "optional"?}`. Admins save them in the settings (encrypted, see [Integrations](#integrations)); a call gets only its own tool's declared, saved ones, plus `CEDAR_LOCALE` and `CEDAR_LANGUAGE` (the run's [language](#languages)) and, when it is known, `CEDAR_TIMEZONE` (its [time zone](#time-zones)). `PATH`, `HOME`, `PYTHON*`, `PIP_*`, `LD_*`, `CEDAR_*` and similar are reserved |
 | `pip` | Plain requirements (`"requests>=2"`; no options, URLs or paths), installed into the tool's own environment when it is installed from the marketplace, or with `POST /v1/admin/tools/{name}/setup` |
 | `health_data` | It reads or returns personal health data. Runs that have such a tool get health rules in their system prompt (informational only, safety first, never dosing or device-setting advice, see the care team), and installing one asks for consent |
 

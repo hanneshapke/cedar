@@ -375,7 +375,10 @@ pub async fn fire(state: &AppState, schedule: &Schedule, firing: Firing) -> Resu
 
     let conversation = state.store.create_scheduled_conversation(schedule.id, &title).await?;
     // Nobody reads along: what the run would send or change waits in the outbox, if the agent says so.
-    let options = crate::cedar::RunOptions { hold_writes: schedule.hold_writes, ..settings.options(None) };
+    // The agent's own zone, unless it was left at the UTC default: then the one the user's
+    // device last sent, so the run's "today" is theirs.
+    let zone = Some(schedule.timezone.as_str()).filter(|z| *z != "UTC").or(settings.timezone.as_deref());
+    let options = crate::cedar::RunOptions { hold_writes: schedule.hold_writes, timezone: zone, ..settings.options(None) };
     let run = match state.cedar.create_run(&unattended(&schedule.prompt, event.as_ref(), data.as_deref()), &options).await {
         Ok(run) => run,
         Err(e) => {

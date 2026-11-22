@@ -59,8 +59,8 @@ class ChatClientTest {
     fun postsTheLocaleWithAMessage() = runBlocking {
         server.enqueue(json("""{"id":"t1","conversation_id":"c1","seq":1,"run_id":"r1","prompt":"hallo","status":"queued"}"""))
         val locale = AppLocales.effective(null, java.util.Locale.forLanguageTag("de-CH"))
-        client.send("c1", ChatClient.SendMessage("hallo", locale = locale))
-        assertEquals(j("""{"content":"hallo","locale":"de-CH"}"""), j(server.takeRequest().body.readUtf8()))
+        client.send("c1", ChatClient.SendMessage("hallo", locale = locale, timezone = "Europe/Zurich"))
+        assertEquals(j("""{"content":"hallo","locale":"de-CH","timezone":"Europe/Zurich"}"""), j(server.takeRequest().body.readUtf8()))
     }
 
     @Test

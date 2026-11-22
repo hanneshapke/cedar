@@ -1373,6 +1373,9 @@ struct MessageBody {
     plan: Option<String>,
     /// The language the page or app is shown in (a BCP 47 tag). Absent: the one from Settings.
     locale: Option<String>,
+    /// The device's time zone (an IANA name such as `America/Los_Angeles`). Absent: the one a
+    /// message last sent.
+    timezone: Option<String>,
 }
 
 /// The files sent with a message: checked the way cedar checks them (count, name, type, base64,
@@ -1513,9 +1516,10 @@ async fn send_message(
     let reasoning = blank_is_none(body.reasoning.as_deref());
     let plan = clean_plan(body.plan)?;
     let locale = i18n::clean_locale(body.locale.as_deref()).map_err(AppError::BadRequest)?;
+    let timezone = agents::clean_zone(body.timezone.as_deref())?;
     // Whether the model takes them is cedar's call (its registry says), relayed as it answers.
     let (attachments, infos) = clean_attachments(body.attachments.unwrap_or_default())?;
-    let message = NewMessage { content: &content, model: requested, reasoning, plan, locale, attachments, infos };
+    let message = NewMessage { content: &content, model: requested, reasoning, plan, locale, timezone, attachments, infos };
     let turn = post_message(&state, ConversationRef::Id(&id), message).await?;
     // Should the response wait for an OK while nobody looks at the page, they are told. Not
     // about a private conversation, though: nothing of it leaves the app.
@@ -1534,6 +1538,7 @@ pub(crate) struct NewMessage<'a> {
     pub reasoning: Option<String>,
     pub plan: Option<String>,
     pub locale: Option<String>,
+    pub timezone: Option<String>,
     pub attachments: Vec<Attachment>,
     pub infos: Vec<AttachmentInfo>,
 }
@@ -1549,8 +1554,14 @@ pub(crate) enum ConversationRef<'a> {
 /// plan to be agreed to and risky calls to be approved). The page and Slack (`slack`) both send
 /// messages this way. `409` while the conversation's last response is still going.
 pub(crate) async fn post_message(state: &AppState, conversation: ConversationRef<'_>, message: NewMessage<'_>) -> Result<Turn, AppError> {
-    let NewMessage { content, model: requested, reasoning, plan, locale, attachments, infos } = message;
-    let prefs = state.store.preferences().await?;
+    let NewMessage { content, model: requested, reasoning, plan, locale, timezone, attachments, infos } = message;
+    let mut prefs = state.store.preferences().await?;
+    // The device's zone is kept for the runs nobody sends a message for (agents, Slack), so
+    // their "today" is the user's too.
+    if timezone.is_some() && timezone != prefs.timezone {
+        prefs.timezone = timezone.clone();
+        state.store.set_preferences(&prefs).await?;
+    }
 
     let _guard = state.send_lock.lock().await;
     let conversation = match conversation {
@@ -1568,6 +1579,7 @@ pub(crate) async fn post_message(state: &AppState, conversation: ConversationRef
         // No memory, no records and no trace for a private conversation's runs.
         private: conversation.private,
         locale: locale.as_deref().or(settings.locale.as_deref()),
+        timezone: timezone.as_deref().or(settings.timezone.as_deref()),
         ..settings.options(parent)
     };
 
@@ -1610,6 +1622,8 @@ pub struct RunSettings {
     pub plan: Option<String>,
     /// The language from Settings; a message may name its own (the page's or app's language).
     pub locale: Option<String>,
+    /// The time zone a message last sent; a message may name its own (the device's).
+    pub timezone: Option<String>,
 }
 
 /// What a message's run does about a plan when Settings doesn't say.
@@ -1657,6 +1671,7 @@ impl RunSettings {
             tools,
             plan: prefs.plan.clone(),
             locale: prefs.locale.clone(),
+            timezone: prefs.timezone.clone(),
         }
     }
 
@@ -1674,6 +1689,7 @@ impl RunSettings {
             hold_writes: false,
             private: false,
             locale: self.locale.as_deref(),
+            timezone: self.timezone.as_deref(),
         }
     }
 }
@@ -1730,8 +1746,10 @@ async fn put_settings(Scoped(state): Scoped, ApiJson(body): ApiJson<SettingsBody
     }
     let (model, _) = clean_model_choice(&state, body.model.as_deref(), None).await?;
     let plan = clean_plan(body.plan)?;
-    // The language is saved on its own (`PUT /api/settings/locale`), so it is kept here.
-    let locale = state.store.preferences().await?.locale;
+    // The language is saved on its own (`PUT /api/settings/locale`) and the time zone comes with
+    // messages, so both are kept here.
+    let saved = state.store.preferences().await?;
+    let (locale, timezone) = (saved.locale, saved.timezone);
     let prefs = Preferences {
         tools: clean_tools(&state, body.tools).await?,
         model,
@@ -1739,6 +1757,7 @@ async fn put_settings(Scoped(state): Scoped, ApiJson(body): ApiJson<SettingsBody
         max_turns: body.max_turns,
         plan,
         locale,
+        timezone,
     };
     state.store.set_preferences(&prefs).await?;
     Ok(Json(prefs))

@@ -1616,7 +1616,7 @@ async function sendMessage(answer) {
       await cedarSettings.beforeSend(conversation);
       history.pushState(null, '', `#/c/${conversation.id}`);
     }
-    const body = { content, locale: cedarI18n.locale };
+    const body = { content, locale: cedarI18n.locale, timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch { return undefined; } })() };
     if (els.model.value) body.model = els.model.value;
     if (els.reasoning.value) body.reasoning = els.reasoning.value;
     const attachments = typed ? cedarAttach.payload() : [];

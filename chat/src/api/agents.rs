@@ -179,7 +179,7 @@ async fn careful_tools(state: &AppState) -> Result<Vec<String>, AppError> {
     Ok(out)
 }
 
-fn clean_zone(zone: Option<&str>) -> Result<Option<String>, AppError> {
+pub(crate) fn clean_zone(zone: Option<&str>) -> Result<Option<String>, AppError> {
     let Some(zone) = zone.map(str::trim).filter(|z| !z.is_empty()) else { return Ok(None) };
     let tz: chrono_tz::Tz = zone.parse().map_err(|_| AppError::BadRequest(format!("unknown time zone {zone:?}")))?;
     Ok(Some(tz.name().to_string()))

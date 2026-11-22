@@ -197,6 +197,7 @@ async fn call_tool(
         max_output: MAX_OUTPUT_BYTES,
         model: None,
         locale: cfg.default_locale.clone(),
+        timezone: cfg.default_timezone.clone(),
         memory: None,
         records: None,
     };
@@ -227,6 +228,7 @@ pub async fn call_without_run(cfg: &Config, tool: &dyn Tool, input: &Value) -> R
         max_output: MAX_OUTPUT_BYTES,
         model: None,
         locale: cfg.default_locale.clone(),
+        timezone: cfg.default_timezone.clone(),
         memory: None,
         records: None,
     };

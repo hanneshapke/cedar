@@ -531,6 +531,7 @@ async fn generate_pdf_renders_markdown_in_the_sandbox() {
         max_output: 32_768,
         model: None,
         locale: "en".into(),
+        timezone: None,
         memory: None,
         records: None,
     };
@@ -583,6 +584,7 @@ fn tool_ctx(sb: &Arc<dyn Sandbox>) -> cedar::tools::ToolContext {
         max_output: 32_768,
         model: None,
         locale: "en".into(),
+        timezone: None,
         memory: None,
         records: None,
     }
