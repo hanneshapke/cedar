@@ -1120,8 +1120,11 @@ function applyEvent(view, event) {
         const limitation = tool.name === 'report_limitation' && !tool.is_error && cedarHandover.limitation.parse(tool.output);
         const held = !limitation && !tool.is_error && cedarHandover.held.parse(tool.output);
         if (limitation || held) {
-          view.resultBody.append(limitation ? cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: tool.id }) : cedarHandover.held.element(held));
+          const card = limitation ? cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: tool.id }) : cedarHandover.held.element(held);
+          view.resultBody.append(card);
           view.blocks.result.hidden = false;
+          // Brought into view when the reply is done (see finishTurn).
+          if (limitation) (view.limitCards ||= []).push(card);
         }
         // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
         // A chart drawn as a card isn't shown again.
@@ -1202,9 +1205,12 @@ function finishTurn(view, event) {
     state.activeTurn = null;
     // Watched to the end: not news. Hidden tabs leave it unread, for the inbox and the title.
     markSeen();
-    // Once the turn is over, the page rests on the top of its Result.
+    // Once the turn is over, the page rests on the top of its Result; unless the reply says what
+    // Cedar couldn't do, which ends on the card that offers what to do about it: then on that.
+    const card = view.limitCards?.at(-1);
     const target = view.blocks.result.hidden ? view.blocks.work : view.blocks.result;
-    els.scroll.scrollTo({ top: target.offsetTop - 16, behavior: 'smooth' });
+    if (card) card.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    else els.scroll.scrollTo({ top: target.offsetTop - 16, behavior: 'smooth' });
   }
   view.lastEvent = event.type;
   updateChrome();

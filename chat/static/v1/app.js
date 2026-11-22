@@ -978,7 +978,8 @@ function finishTurn(view, event) {
   if (footer.childElementCount) view.body.append(footer);
   view.lastEvent = event.type;
 
-  if (state.activeTurn === view) {
+  const watched = state.activeTurn === view;
+  if (watched) {
     state.activeTurn = null;
     renderSidebar();
     // Watched to the end: not news. Hidden tabs leave it unread, for the inbox and the title.
@@ -986,7 +987,11 @@ function finishTurn(view, event) {
   }
   updateComposer();
   if (els.filesDialog.open) loadFiles(); // the response may have added or changed files
-  scrollToBottom(false);
+  // A reply that says what Cedar couldn't do ends on the card that offers what to do about it:
+  // that is brought into view, wherever the person had scrolled to while it was written.
+  const card = watched && view.limitCards?.at(-1);
+  if (card) card.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  else scrollToBottom(false);
 }
 
 // -- workspace files ---------------------------------------------------------------------------
