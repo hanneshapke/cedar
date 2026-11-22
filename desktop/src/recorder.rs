@@ -47,6 +47,8 @@ const LIMIT_MAX_SECS: u64 = 1800;
 /// How long the recorder gets to finish its file after each way of telling it to stop.
 const AFTER_KEY: Duration = Duration::from_secs(3);
 const AFTER_SIGNAL: Duration = Duration::from_secs(15);
+/// How long the file may take to appear once the recorder has exited.
+const FILE_WAIT: Duration = Duration::from_secs(if cfg!(test) { 1 } else { 5 });
 
 /// How a recording under way is to end.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -209,8 +211,12 @@ pub fn start(app: &AppHandle, max_secs: Option<u64>) {
                 );
             }
             Outcome::Discarded => push(&app, json!({ "state": "cancelled" })),
-            // Nothing was written although the recorder ran: the system kept it from the screen.
-            Outcome::Empty => failed(&app, "empty", None),
+            // Nothing was written although the recorder ran; what it said goes to the page, and
+            // to the app's own output for whoever looks there.
+            Outcome::Empty(why) => {
+                eprintln!("screen recording: no file. {why}");
+                failed(&app, "empty", Some(why));
+            }
         }
     });
 }
@@ -236,8 +242,8 @@ async fn spawn(program: &Path, args: &[String]) -> Result<(Child, ChildStdin)> {
         .args(args)
         // The recorder stops at a key on its input, so it gets a pipe to be told through.
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
         .with_context(|| format!("starting {}", program.display()))?;
@@ -249,7 +255,22 @@ async fn spawn(program: &Path, args: &[String]) -> Result<(Child, ChildStdin)> {
 enum Outcome {
     Recorded,
     Discarded,
-    Empty,
+    /// No file came of it; with how the recorder ended and what it printed.
+    Empty(String),
+}
+
+/// What the recorder printed, read to its end without holding the recorder up.
+fn collect(stream: Option<impl tokio::io::AsyncRead + Unpin + Send + 'static>) -> tokio::task::JoinHandle<String> {
+    tokio::spawn(async move {
+        let mut text = String::new();
+        if let Some(mut stream) = stream {
+            use tokio::io::AsyncReadExt;
+            let mut bytes = Vec::new();
+            let _ = stream.read_to_end(&mut bytes).await;
+            text = String::from_utf8_lossy(&bytes).trim().chars().take(600).collect();
+        }
+        text
+    })
 }
 
 /// Wait for the recording to end, by itself (its time limit) or because it was told to, and say
@@ -258,6 +279,10 @@ enum Outcome {
 /// answers neither.
 async fn run((mut child, stdin): (Child, ChildStdin), stopped: oneshot::Receiver<End>, file: &Path) -> Outcome {
     let mut stdin = Some(stdin);
+    let started = Instant::now();
+    let (out, err) = (collect(child.stdout.take()), collect(child.stderr.take()));
+    // How it came to end, for the report when no file comes of it.
+    let mut ended = "it ended by itself";
     let how = tokio::select! {
         _ = child.wait() => End::Keep,
         how = stopped => {
@@ -267,28 +292,45 @@ async fn run((mut child, stdin): (Child, ChildStdin), stopped: oneshot::Receiver
                 let _ = input.write_all(b"q\n").await;
                 let _ = input.flush().await;
             }
+            ended = "it stopped at a key";
             if tokio::time::timeout(AFTER_KEY, child.wait()).await.is_err() {
                 interrupt(&child);
+                ended = "it stopped at an interrupt";
                 if tokio::time::timeout(AFTER_SIGNAL, child.wait()).await.is_err() {
                     let _ = child.kill().await;
+                    ended = "it had to be killed";
                 }
             }
             how
         }
     };
     drop(stdin);
-    let written = std::fs::metadata(file).map(|m| m.len() > 0).unwrap_or(false);
-    match (how, written) {
-        (End::Discard, _) => {
-            let _ = std::fs::remove_file(file);
-            Outcome::Discarded
-        }
-        (End::Keep, true) => Outcome::Recorded,
-        (End::Keep, false) => {
-            let _ = std::fs::remove_file(file);
-            Outcome::Empty
-        }
+    let status = child.wait().await.map(|s| s.to_string()).unwrap_or_else(|e| e.to_string());
+    let ran = started.elapsed();
+    let written = || std::fs::metadata(file).map(|m| m.len() > 0).unwrap_or(false);
+    if how == End::Discard {
+        let _ = std::fs::remove_file(file);
+        return Outcome::Discarded;
     }
+    // The recorder may hand the writing to a helper that finishes a moment after it exits.
+    let deadline = Instant::now() + FILE_WAIT;
+    while !written() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    if written() {
+        return Outcome::Recorded;
+    }
+    let _ = std::fs::remove_file(file);
+    let said = [out.await.unwrap_or_default(), err.await.unwrap_or_default()]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    Outcome::Empty(format!(
+        "screencapture ran {:.1}s, {ended} ({status}), and wrote no file{}",
+        ran.as_secs_f32(),
+        if said.is_empty() { "; it printed nothing".to_string() } else { format!("; it printed: {said}") }
+    ))
 }
 
 /// Control-C, as far as the recorder can tell.
@@ -418,9 +460,10 @@ mod tests {
         assert_eq!(run(child, stopped, &file).await, Outcome::Recorded, "its time limit ended it");
 
         // What the system does to a recorder it keeps from the screen: no file.
-        let (program, file) = fake_recorder("exit 1");
+        let (program, file) = fake_recorder("echo no screen for you >&2; exit 1");
         let (_stop, stopped) = oneshot::channel();
         let child = spawn(&program, &capture_args(&file, 60)).await.unwrap();
-        assert_eq!(run(child, stopped, &file).await, Outcome::Empty);
+        let Outcome::Empty(why) = run(child, stopped, &file).await else { panic!("a file?") };
+        assert!(why.contains("it ended by itself (exit status: 1)") && why.contains("it printed: no screen for you"), "{why}");
     }
 }

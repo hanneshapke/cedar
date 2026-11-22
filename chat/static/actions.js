@@ -360,7 +360,7 @@ const cedarActions = (() => {
             settle(resolve, { blob, durationMs: (d.seconds || 0) * 1000 || Date.now() - startedAt });
           } catch { settle(reject, new Error(tr('actions.rec.handover'))); }
         } else if (d.state === 'failed') {
-          settle(reject, Object.assign(new Error(d.message || tr('actions.rec.failed')), { reason: d.reason }));
+          settle(reject, Object.assign(new Error(d.message || tr('actions.rec.failed')), { reason: d.reason, detail: d.message || '' }));
         } else if (d.state === 'cancelled') {
           settle(reject, Object.assign(new Error('cancelled'), { cancelled: true }));
         }
@@ -637,7 +637,15 @@ const cedarActions = (() => {
       const live = el('div', 'cedar-act-live');
       live.append(el('span', 'cedar-act-dot'), el('b', '', tr('actions.rec.recording')), time);
       const actions = el('div', 'cedar-ag-form-actions');
-      actions.append(button(tr('actions.rec.stop'), () => release(), 'primary'));
+      // Stopping takes a moment (the recorder finishes its file, the app hands it over): the
+      // button says so and can't be pressed twice.
+      const stop = button(tr('actions.rec.stop'), () => {
+        stop.disabled = true;
+        stop.textContent = tr('actions.rec.stopping');
+        live.classList.add('stopping');
+        release();
+      }, 'primary');
+      actions.append(stop);
       const box = el('div', 'cedar-ag-box');
       box.append(live, el('div', 'cedar-ag-note', tr('actions.rec.hint')), actions);
       let got;
@@ -653,9 +661,11 @@ const cedarActions = (() => {
         // The person closed the browser's dialog without choosing, or the browser (an app's
         // embedded one, say) shares no screen and never asked: back to the start, with a way on.
         if (e?.name === 'NotAllowedError' || e?.name === 'AbortError') { setup(tr('actions.rec.notShared')); return; }
-        // macOS keeps the app from the screen until the person allows it, or let it run and
-        // recorded nothing.
-        if (e?.reason === 'permission' || e?.reason === 'empty') { setup(tr('actions.rec.permission')); return; }
+        // macOS keeps the app from the screen until the person allows it.
+        if (e?.reason === 'permission') { setup(tr('actions.rec.permission')); return; }
+        // It recorded, as far as the app could tell, and no video came of it: say what the
+        // system's recorder said, which is what tells why.
+        if (e?.reason === 'empty') { setup(`${tr('actions.rec.noFile')}${e.detail ? ` (${e.detail})` : ''}`); return; }
         fail(e?.message || tr('actions.rec.failed'));
         return;
       }

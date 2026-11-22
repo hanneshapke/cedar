@@ -61,3 +61,7 @@
 :root[data-actions] .cedar-act-how:hover, :root[data-actions] .cedar-act-how:focus-visible { border-color: var(--accent, #1f7a5c); color: var(--accent, #1f7a5c); opacity: 1; }
 :root[data-actions] .user-msg > .cedar-act-how { align-self: center; margin: 0 8px 0 0; }
 .cedar-act-how svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+/* Stop was pressed: the dot rests, and the button (disabled, see actions.js) says what goes on. */
+.cedar-act-live.stopping .cedar-act-dot { animation: none; opacity: .35; }
+.cedar-act-page .cedar-ag-form-actions button.primary:disabled { opacity: .6; cursor: progress; }
