@@ -298,6 +298,11 @@ impl CedarClient {
         self.json(self.http.get(self.url(&format!("/actions/{id}")))).await
     }
 
+    /// The pictures kept with an action (`GET /v1/actions/{id}/frames`).
+    pub async fn action_frames(&self, id: Uuid) -> Result<Value, AppError> {
+        self.json(self.http.get(self.url(&format!("/actions/{id}/frames")))).await
+    }
+
     /// The steps a model reads from a screen recording (`POST /v1/actions/draft`). One model
     /// call over a video or dozens of images, so it gets the time a tool call gets.
     pub async fn draft_action(&self, recording: &Value) -> Result<Value, AppError> {

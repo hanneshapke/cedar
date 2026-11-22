@@ -986,6 +986,19 @@ From then on Cedar is told which actions you saved and reads the steps of the on
 matches. An action's page shows how often that happened, and is where you correct the steps when
 a site changes, or delete it.
 
+**Applications, and your own computer.** An action isn't only a website. The form has an
+*Application* field and *Carried out with*: a website, an application on any desktop, or your own
+computer (your applications, your files, the sites you are signed in to). The model proposes
+both from the recording, and the page says when this server can't carry an action out yet: the
+computer tool is off, or it works a separate desktop and the action needs yours. With *Let Cedar
+use this computer* in the Cedar app, an action that needs your own computer is asked about once,
+with its steps on the card, instead of before every click.
+
+**Pictures.** When the model wrote the steps from frames, it also picks up to 6 of them that
+show what to look for (a button, a menu, a dialog). They appear under *Pictures from the
+recording*; remove any that shows something private before you save. The rest are kept with the
+action on cedar's server and shown to Cedar's model with the steps, when it reads images.
+
 **Passwords.** What you type into a password field shows as dots in a recording, and the steps
 never hold one. Under *Passwords* you can store it with the action, so Cedar can sign in on its
 own: it is encrypted on cedar's server, Cedar's model never sees it, and it is typed only on the
