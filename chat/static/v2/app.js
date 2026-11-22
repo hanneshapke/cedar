@@ -1057,6 +1057,8 @@ function applyEvent(view, event) {
           const n = note('clarify', escapeHtml(tr(limitation ? 'handover.limitation.heading' : 'handover.held.heading')), '');
           n.lastChild.append(limitation ? cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: tool.id }) : cedarHandover.held.element(held));
           placeNote(view, n);
+          // Once the reply is written this goes below it (see finishTurn), where it is seen.
+          if (limitation) (view.limitNotes ||= []).push(n);
           view.stepsEl = null;
         }
         // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
@@ -1120,6 +1122,9 @@ function finishTurn(view, event) {
   for (const tool of view.tools) {
     if (tool.output === undefined) { Object.assign(tool, { output: '', is_error: true }); fillStep(tool); fillCard(tool); }
   }
+  // What Cedar couldn't do, with its buttons, belongs after what it says about it: left where
+  // the call was made, the answer written afterwards pushes it out of sight.
+  for (const n of view.limitNotes || []) put(n);
   if (view.usage.input || view.usage.output) {
     // The sandbox line only from a cedar that says how the run was sandboxed.
     const sandbox = view.started?.sandbox ? ` · ${cedarTrust.sandbox.text(view.started, view.approvalsGranted)}` : '';

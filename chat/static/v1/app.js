@@ -896,7 +896,12 @@ function toolResult(view, d) {
   if (!d.is_error) {
     const limitation = details.dataset.tool === 'report_limitation' && cedarHandover.limitation.parse(text);
     const held = !limitation && cedarHandover.held.parse(text);
-    if (limitation) details.after(cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: d.id }));
+    if (limitation) {
+      const card = cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: d.id });
+      details.after(card);
+      // Once the reply is written this goes below it (see finishTurn), where it is seen.
+      (view.limitCards ||= []).push(card);
+    }
     if (held) details.after(cedarHandover.held.element(held));
     if (limitation || held) scrollToBottom(false);
   }
@@ -952,6 +957,10 @@ function finishTurn(view, event) {
     box.append(cedarTrust.sources.element(sources, { onOpen: (s) => s.path && downloadFile(workspacePath(s.path)) }));
     view.body.append(box);
   }
+
+  // What Cedar couldn't do, with its buttons, belongs after what it says about it: left where
+  // the call was made, the answer written afterwards pushes it out of sight.
+  for (const card of view.limitCards || []) view.body.append(card);
 
   const footer = h('div', 'turn-footer');
   if (view.texts.length) {

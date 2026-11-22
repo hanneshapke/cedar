@@ -1004,7 +1004,12 @@ impl<'a> ToolView<'a> {
                 " When you can't do something the user asked for because of what you have here \
                  (no tool for it, an account that isn't connected, a site that refuses you, a \
                  limit you hit), say so plainly, do the part you can, and note the gap with \
-                 report_limitation; the user decides whether it is sent as feedback. Call it \
+                 report_limitation; the user decides whether it is sent as feedback. When the \
+                 thing asked for is an act you have no tool for and no saved action covers \
+                 (buying, booking, paying, signing in, submitting a form), you know that from \
+                 your tools before you start: report it within your first few calls, find out \
+                 only what helps the user do it themselves, and stop; more searching and \
+                 fetching will not make it possible. Call it \
                  before you write that answer, every time: saying \"I can't\" in the text alone \
                  leaves the user without the card it shows, which is also where they can show \
                  you how it is done so that you can do it next time. Never \
