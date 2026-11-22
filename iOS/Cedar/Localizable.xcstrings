@@ -2639,6 +2639,28 @@
         }
       }
     },
+    "Add a note (optional)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notiz hinzufügen (optional)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agrega una nota (opcional)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter une note (facultatif)"
+          }
+        }
+      }
+    },
     "Add your cedar-chat server in Settings." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3347,6 +3369,52 @@
         }
       }
     },
+    "Approve" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freigeben"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approuver"
+          }
+        }
+      }
+    },
+    "Approved and sent · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freigegeben und gesendet · %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobado y enviado · %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approuvé et envoyé · %@"
+          }
+        }
+      }
+    },
     "Archive" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3909,6 +3977,29 @@
         }
       }
     },
+    "Blocked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blockiert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloqueado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloqué"
+          }
+        }
+      }
+    },
     "Book on Google Flights" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4223,6 +4314,28 @@
         }
       }
     },
+    "Cedar Couldn't Do This" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das konnte Cedar nicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar no pudo hacer esto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar n’a pas pu faire ceci"
+          }
+        }
+      }
+    },
     "Cedar asks" : {
       "localizations" : {
         "de" : {
@@ -4332,6 +4445,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cedar regarde la valeur à chaque vérification, sans modèle d’IA, et lance une exécution quand elle passe le test. Un chemin comme price.eur ou /items/0/name extrait une valeur d’un résultat JSON ; sans chemin, la valeur est le résultat entier. Un test autre que « change » lance une exécution quand il commence à être vrai, puis de nouveau seulement après avoir cessé de l’être."
+          }
+        }
+      }
+    },
+    "Cedar picks the AI model for each message: a bigger one for planning and complex tasks, a smaller one for everyday requests. To choose yourself, turn on “Choose the model yourself” under Advanced settings in the web chat." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar wählt das KI-Modell für jede Nachricht: ein leistungsstärkeres zum Planen und für komplexe Aufgaben, ein kleineres für alltägliche Anfragen. Um selbst zu wählen, aktiviere im Web-Chat unter „Erweiterte Einstellungen“ die Option „Modell selbst auswählen“."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar elige el modelo de IA para cada mensaje: uno más grande para planificar y para las tareas complejas, uno más pequeño para las consultas cotidianas. Para elegir tú mismo, activa «Elegir el modelo tú mismo» en Configuración avanzada del chat web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar choisit le modèle d’IA pour chaque message : un plus grand pour planifier et pour les tâches complexes, un plus petit pour les demandes courantes. Pour choisir vous-même, activez « Choisir le modèle soi-même » dans les Réglages avancés du chat web."
           }
         }
       }
@@ -6126,6 +6262,28 @@
         }
       }
     },
+    "Discard" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwerfen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abandonner"
+          }
+        }
+      }
+    },
     "Discard Changes" : {
       "localizations" : {
         "de" : {
@@ -6170,6 +6328,29 @@
         }
       }
     },
+    "Discarded · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verworfen · %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartado · %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abandonné · %@"
+          }
+        }
+      }
+    },
     "Dismiss" : {
       "localizations" : {
         "de" : {
@@ -6194,6 +6375,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fermer"
+          }
+        }
+      }
+    },
+    "Dismiss Report" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwerfen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignorer"
           }
         }
       }
@@ -6456,6 +6659,29 @@
         }
       }
     },
+    "Edited, approved and sent · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bearbeitet, freigegeben und gesendet · %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editado, aprobado y enviado · %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifié, approuvé et envoyé · %@"
+          }
+        }
+      }
+    },
     "Email" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6475,6 +6701,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "E-mail"
+          }
+        }
+      }
+    },
+    "End Chat" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat beenden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminar chat"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminer"
           }
         }
       }
@@ -8066,6 +8314,29 @@
         }
       }
     },
+    "Hit a limit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grenze erreicht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Límite alcanzado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limite atteinte"
+          }
+        }
+      }
+    },
     "Hold" : {
       "localizations" : {
         "de" : {
@@ -8084,6 +8355,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Conserver"
+          }
+        }
+      }
+    },
+    "Hold What It Sends Until I Approve" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurückhalten, was er sendet, bis ich es freigebe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retener lo que envía hasta que yo lo apruebe"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retenir ce qu’il envoie jusqu’à mon approbation"
           }
         }
       }
@@ -8420,6 +8713,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Il peut faire des recherches sur le web, écrire des fichiers et exécuter du code dans son propre bac à sable. Les messages suivants conservent ses fichiers."
+          }
+        }
+      }
+    },
+    "It could not be sent: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Senden hat nicht geklappt: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo enviar: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’envoi a échoué : %@"
           }
         }
       }
@@ -9119,6 +9435,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "E-mail, calendrier et fichiers"
+          }
+        }
+      }
+    },
+    "Mail, calendar events, files and Slack messages it would write wait under Agents and go out only when you approve them. Reading is never held. Turn this off for an agent you trust to act on its own." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E-Mails, Kalendereinträge, Dateien und Slack-Nachrichten, die er schreiben würde, warten unter „Agenten“ und gehen erst hinaus, wenn du sie freigibst. Lesen wird nie zurückgehalten. Schalte das für einen Agenten aus, dem du zutraust, selbstständig zu handeln."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los correos, eventos de calendario, archivos y mensajes de Slack que escribiría esperan en «Agentes» y solo salen cuando los apruebas. Leer nunca se retiene. Desactívalo para un agente en el que confíes para actuar por su cuenta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les messages, événements d’agenda, fichiers et messages Slack qu’il écrirait attendent sous « Agents » et ne partent que lorsque vous les approuvez. La lecture n’est jamais retenue. Désactivez ceci pour un agent en qui vous avez confiance pour agir seul."
           }
         }
       }
@@ -10511,6 +10849,75 @@
         }
       }
     },
+    "No tool for it" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Werkzeug dafür"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin herramienta para ello"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun outil pour cela"
+          }
+        }
+      }
+    },
+    "Nobody answered in time, so this was not done. It goes out exactly as shown when you approve it. To change it first, open Cedar in a browser." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niemand hat rechtzeitig geantwortet, also ist das nicht passiert. Es geht genau so hinaus, wie hier gezeigt, sobald du es freigibst. Um es vorher zu ändern, öffne Cedar im Browser."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nadie respondió a tiempo, así que no se hizo. Saldrá exactamente como se muestra cuando lo apruebes. Para cambiarlo antes, abre Cedar en un navegador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personne n’a répondu à temps, donc cela n’a pas été fait. Cela partira exactement comme affiché dès que vous l’approuverez. Pour le modifier d’abord, ouvrez Cedar dans un navigateur."
+          }
+        }
+      }
+    },
+    "Nobody was there to approve this, so it was not done. It goes out exactly as shown when you approve it. To change it first, open Cedar in a browser." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niemand war da, um das freizugeben, also ist es nicht passiert. Es geht genau so hinaus, wie hier gezeigt, sobald du es freigibst. Um es vorher zu ändern, öffne Cedar im Browser."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nadie estaba ahí para aprobarlo, así que no se hizo. Saldrá exactamente como se muestra cuando lo apruebes. Para cambiarlo antes, abre Cedar en un navegador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personne n’était là pour l’approuver, donc cela n’a pas été fait. Cela partira exactement comme affiché dès que vous l’approuverez. Pour le modifier d’abord, ouvrez Cedar dans un navigateur."
+          }
+        }
+      }
+    },
     "Nonstop" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10530,6 +10937,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sans escale"
+          }
+        }
+      }
+    },
+    "Not connected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht verbunden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin conectar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non connecté"
           }
         }
       }
@@ -10686,6 +11116,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Aucun résultat pour « %@ ». La recherche porte sur les titres et les messages."
+          }
+        }
+      }
+    },
+    "Nothing is recorded unless you send it. Feedback stays on your server, for whoever runs it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nichts wird festgehalten, solange du es nicht sendest. Feedback bleibt auf deinem Server, für die Person, die ihn betreibt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se guarda nada hasta que lo envíes. Los comentarios se quedan en tu servidor, para quien lo administra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien n’est enregistré tant que vous ne l’envoyez pas. Les retours restent sur votre serveur, pour la personne qui le gère."
           }
         }
       }
@@ -11735,6 +12187,29 @@
         }
       }
     },
+    "Outbox" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Postausgang"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bandeja de salida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Boîte d’envoi"
+          }
+        }
+      }
+    },
     "Outcome" : {
       "localizations" : {
         "de" : {
@@ -12727,6 +13202,72 @@
         }
       }
     },
+    "Private Chat" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privater Chat"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat privado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation privée"
+          }
+        }
+      }
+    },
+    "Private chat. It stays out of your conversations and search, nothing from it is remembered, no records or trace of it are kept, and no notifications are sent. It is deleted when you leave it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privater Chat. Er erscheint weder in deinen Unterhaltungen noch in der Suche, nichts daraus wird gemerkt, es werden weder Datensätze noch ein Trace dazu angelegt und keine Benachrichtigungen gesendet. Er wird gelöscht, sobald du ihn verlässt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat privado. No aparece en tus conversaciones ni en la búsqueda, no se recuerda nada de él, no se guardan registros ni una traza, y no se envían notificaciones. Se elimina cuando lo dejas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation privée. Elle n'apparaît ni dans vos conversations ni dans la recherche, rien n'en est mémorisé, ni données ni trace n'en sont gardées, et aucune notification n'est envoyée. Elle est supprimée dès que vous la quittez."
+          }
+        }
+      }
+    },
+    "Private chat: nothing of it is kept or remembered, and it is deleted when you leave it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privater Chat: Nichts davon wird aufbewahrt oder gemerkt, und er wird gelöscht, sobald du ihn verlässt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat privado: no se guarda ni se recuerda nada de él, y se elimina cuando lo dejas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conversation privée : rien n'en est conservé ni mémorisé, et elle est supprimée dès que vous la quittez."
+          }
+        }
+      }
+    },
     "Products" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13300,6 +13841,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Les réponses arrivent au fil de l’eau pendant que Cedar réfléchit, cherche sur le web, exécute du code dans son bac à sable et lit vos courriels et vos fichiers. Chaque étape peut être ouverte."
+          }
+        }
+      }
+    },
+    "Report Dismissed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verworfen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descartado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignoré"
           }
         }
       }
@@ -14154,6 +14717,28 @@
         }
       }
     },
+    "Send Feedback" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feedback senden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar comentario"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer le retour"
+          }
+        }
+      }
+    },
     "Send a POST request to the address with the secret as a bearer token. What it sends in the body is handed to the run as data. The sender has to be able to reach your server: an address on a private network or a tailnet only works from inside it." : {
       "localizations" : {
         "de" : {
@@ -14216,6 +14801,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Envoyé"
+          }
+        }
+      }
+    },
+    "Sent as feedback" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als Feedback gesendet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviado como comentario"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyé comme retour"
           }
         }
       }
@@ -16475,6 +17082,28 @@
         }
       }
     },
+    "This is no longer in the outbox." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das liegt nicht mehr im Postausgang."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto ya no está en la bandeja de salida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ceci n’est plus dans la boîte d’envoi."
+          }
+        }
+      }
+    },
     "This response no longer exists on the server." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17721,6 +18350,28 @@
         }
       }
     },
+    "Waiting for Your Approval" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wartet auf deine Freigabe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espera tu aprobación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de votre approbation"
+          }
+        }
+      }
+    },
     "Waiting for calls" : {
       "localizations" : {
         "de" : {
@@ -18337,6 +18988,29 @@
         }
       }
     },
+    "What it was" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Worum es ging"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De qué se trataba"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De quoi il s’agissait"
+          }
+        }
+      }
+    },
     "What should the agent do each time it runs?" : {
       "localizations" : {
         "de" : {
@@ -18425,6 +19099,29 @@
         }
       }
     },
+    "What will go out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was hinausgeht"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que saldrá"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce qui partira"
+          }
+        }
+      }
+    },
     "What would change the view" : {
       "localizations" : {
         "de" : {
@@ -18443,6 +19140,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce qui changerait l'avis"
+          }
+        }
+      }
+    },
+    "What your agents would have sent or changed. Nothing here happens until you approve it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was deine Agenten gesendet oder geändert hätten. Nichts davon passiert, bevor du es freigibst."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que tus agentes habrían enviado o cambiado. Nada de esto ocurre hasta que lo apruebes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que vos agents auraient envoyé ou modifié. Rien de tout cela n’a lieu tant que vous ne l’approuvez pas."
           }
         }
       }
@@ -19094,6 +19813,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Travaille sur l’app cedar"
+          }
+        }
+      }
+    },
+    "Would need: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dafür nötig: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haría falta: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il faudrait : %@"
           }
         }
       }

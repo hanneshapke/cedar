@@ -788,7 +788,7 @@ function addTurn(turn) {
   brief.dataset.screenLabel = `Turn ${state.order.length}`;
   const prompt = h('div', 'prompt');
   prompt.append(t('div', 'who', tr('v4.you', { day: new Date(turn.created_at || Date.now()).toLocaleDateString(cedarI18n.locale, { weekday: 'long' }), time: fmtTime(turn.created_at) })));
-  prompt.lastChild.append(cedarTrace.button(turn.id));
+  prompt.lastChild.append(cedarTrace.button(turn.id), cedarActions.button(turn));
   const text = h('p', 'text');
   if (turn.attachments?.length) text.append(cedarAttach.chips(turn.attachments));
   text.append(document.createTextNode(turn.prompt));
@@ -1115,6 +1115,17 @@ function applyEvent(view, event) {
           view.resultBody.append(cedarFollowUp.element(followUp, { turnId: view.turn.id, callId: tool.id }));
           view.blocks.result.hidden = false;
         }
+        // Something Cedar could not do offers to be sent as feedback; a call held for approval
+        // instead of made shows what would go out. Both wait for a decision, so in the Result.
+        const limitation = tool.name === 'report_limitation' && !tool.is_error && cedarHandover.limitation.parse(tool.output);
+        const held = !limitation && !tool.is_error && cedarHandover.held.parse(tool.output);
+        if (limitation || held) {
+          const card = limitation ? cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: tool.id }) : cedarHandover.held.element(held);
+          view.resultBody.append(card);
+          view.blocks.result.hidden = false;
+          // Brought into view when the reply is done (see finishTurn).
+          if (limitation) (view.limitCards ||= []).push(card);
+        }
         // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
         // A chart drawn as a card isn't shown again.
         if (!tool.is_error && !(tool.name === 'generate_chart' && cedarChart.parse(tool.output, tool.input))) {
@@ -1194,9 +1205,12 @@ function finishTurn(view, event) {
     state.activeTurn = null;
     // Watched to the end: not news. Hidden tabs leave it unread, for the inbox and the title.
     markSeen();
-    // Once the turn is over, the page rests on the top of its Result.
+    // Once the turn is over, the page rests on the top of its Result; unless the reply says what
+    // Cedar couldn't do, which ends on the card that offers what to do about it: then on that.
+    const card = view.limitCards?.at(-1);
     const target = view.blocks.result.hidden ? view.blocks.work : view.blocks.result;
-    els.scroll.scrollTo({ top: target.offsetTop - 16, behavior: 'smooth' });
+    if (card) card.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    else els.scroll.scrollTo({ top: target.offsetTop - 16, behavior: 'smooth' });
   }
   view.lastEvent = event.type;
   updateChrome();
@@ -1225,6 +1239,7 @@ function updateChrome() {
   els.filesBtn.hidden = !c;
   cedarAgents.badge(els.agentBadge, c, c?.agent);
   cedarStar.setCurrent(c);
+  cedarPrivate.setCurrent(c);
   els.agentBtn.hidden = Boolean(!c || c.schedule_id || busy || state.sending || !hasCompletedTurn());
   els.stop.hidden = !busy;
   els.when.textContent = c?.created_at ? new Date(c.created_at).toLocaleDateString(cedarI18n.locale, { weekday: 'long', day: 'numeric', month: 'long' }) : '';
@@ -1246,7 +1261,8 @@ function updateChrome() {
   }
   els.cost.textContent = c && (total.input || total.output) ? cedarTrust.cost.text(total) : '';
   if (!c) renderOutline();
-  cedarNotify.setTitle(c?.title ? `${c.title} – Cedar` : 'Cedar');
+  // A private chat's title stays out of the tab and the browser's history.
+  cedarNotify.setTitle(c?.private ? `${tr('private.title')} – Cedar` : c?.title ? `${c.title} – Cedar` : 'Cedar');
 }
 
 /** The open conversation has been looked at: nothing in it is unread any more. */
@@ -1347,6 +1363,7 @@ async function openConversation(id) {
   state.current.agent = detail.agent;
   // What was already decided about the follow-ups suggested in it: their cards say so.
   cedarFollowUp.known(detail.followups);
+  cedarHandover.known(detail.limitations);
   cedarSettings.conversationChanged();
   cedarAttach.clear();
   restorePickers(detail.conversation);
@@ -1396,7 +1413,8 @@ document.addEventListener('cedar-models-changed', loadModels);
 function route() {
   closeDrawer();
   // The Agents page has the hash to itself (agents.js); everything else is a conversation.
-  if (cedarAgents.route()) return;
+  // (So has the Actions page, actions.js; both are asked, so each can close when it isn't its turn.)
+  if ([cedarAgents.route(), cedarActions.route()].some(Boolean)) return;
   const m = location.hash.match(/^#\/c\/([0-9a-f-]{36})$/i);
   if (m) { if (state.current?.id !== m[1]) openConversation(m[1]); } else showNewChat();
 }
@@ -1520,13 +1538,14 @@ async function sendMessage(answer) {
   try {
     let conversation = state.current;
     if (!conversation) {
-      conversation = await api('POST', '/conversations', {});
+      // A private chat (private.js) is in no list, here as on the server.
+      conversation = await api('POST', '/conversations', cedarPrivate.wanted() ? { private: true } : {});
       state.current = conversation;
-      state.conversations.unshift(conversation);
+      if (!conversation.private) state.conversations.unshift(conversation);
       await cedarSettings.beforeSend(conversation);
       history.pushState(null, '', `#/c/${conversation.id}`);
     }
-    const body = { content, locale: cedarI18n.locale };
+    const body = { content, locale: cedarI18n.locale, timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch { return undefined; } })() };
     if (els.model.value) body.model = els.model.value;
     if (els.reasoning.value) body.reasoning = els.reasoning.value;
     const attachments = typed ? cedarAttach.payload() : [];
@@ -1539,7 +1558,7 @@ async function sendMessage(answer) {
     }
     if (token !== state.loadToken) return true;
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
-    state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
+    if (!conversation.private) state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
     addTurn(turn);
     renderRecents();
     loadConversations();
@@ -1646,6 +1665,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarAgents.init({ api, toast, renderMarkdown });
+  cedarActions.init({ api, toast });
   cedarFollowUp.init({ api, toast });
   cedarStar.init({ api, toast, onOpen: closeDrawer });
   cedarSearch.init({ api, onOpen: closeDrawer, reveal: openDrawer });
@@ -1665,14 +1685,18 @@ async function init() {
     before: els.input,
     toast,
   });
+  // The Private button goes after the paperclip; its note sits above the message box.
+  cedarPrivate.init({ api, toast, form: els.composer, anchor: els.reasoning, before: els.input });
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast(tr('v4.unreachable')); }
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: () => { loadConversations(); cedarAgents.refresh(); } });
   cedarPairing.init({ api, toast });
+  cedarSlack.init({ api, toast, authHeaders });
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();
   cedarAgents.start();
+  cedarActions.start();
   cedarStar.start();
   await loadConversations();
   route();

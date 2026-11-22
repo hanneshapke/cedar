@@ -28,6 +28,8 @@ data class ServerConfig(
     val records: Boolean = false,
     /** The server can send a conversation to a training corpus (`CHAT_CONTRIBUTIONS_URL`). */
     val contributions: Boolean = false,
+    /** The server has private chats; an older one leaves it out, so the app doesn't offer them. */
+    @SerialName("private_chats") val privateChats: Boolean = false,
 )
 
 // -- contributing a conversation (chat/README.md, "Contributing a conversation") --------------
@@ -300,8 +302,14 @@ data class ModelInfo(
     val label: String get() = rawLabel ?: model
 }
 
+/**
+ * `GET /api/models`. `selection` is whether people choose the model themselves (the server's
+ * "Choose the model yourself" setting). Off, cedar picks the model of every message by the
+ * models' sizes, ignores a model or reasoning level sent to it, and the pickers stay hidden. A
+ * server from before the setting doesn't say, and has people choose.
+ */
 @Serializable
-data class ModelList(val models: List<ModelInfo> = emptyList())
+data class ModelList(val models: List<ModelInfo> = emptyList(), val selection: Boolean = true)
 
 /**
  * A conversation as cedar-chat keeps it: its title, the model it last used, and whether a finished
@@ -320,6 +328,8 @@ data class Conversation(
     @SerialName("needs_answer") val needsAnswer: Boolean = false,
     /** When it was starred, on any device; `null` when it isn't. */
     @SerialName("starred_at") val starredAt: Instant? = null,
+    /** A private chat: in no list, not remembered, deleted when it is left. An older server doesn't say. */
+    @SerialName("private") val isPrivate: Boolean = false,
     /** The title of the agent a run belongs to; only the Starred list and a search send it. */
     @SerialName("schedule_title") val scheduleTitle: String? = null,
     /** The passage of a message a search matched; only search results carry it. */
@@ -350,7 +360,8 @@ data class ConversationList(val conversations: List<Conversation> = emptyList())
 
 /**
  * `GET /api/conversations/{id}`; `agent` is there when the conversation is an agent's run, and
- * `followups` holds what was decided about the follow-ups its turns suggested.
+ * `followups` holds what was decided about the follow-ups its turns suggested, and `limitations`
+ * about what they reported they could not do.
  */
 @Serializable
 data class ConversationDetail(
@@ -358,6 +369,7 @@ data class ConversationDetail(
     val turns: List<Turn> = emptyList(),
     val agent: AgentRef? = null,
     val followups: List<Followup> = emptyList(),
+    val limitations: List<Feedback> = emptyList(),
 )
 
 @Serializable

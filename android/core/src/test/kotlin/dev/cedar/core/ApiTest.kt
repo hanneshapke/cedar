@@ -14,6 +14,18 @@ import kotlin.test.assertTrue
 // Ported from iOS/CedarTests/APITests.swift.
 class ApiTest {
     @Test
+    fun decodesPrivateChatsAndTheConfigFlag() {
+        val chat = CedarJson.decodeFromString(Conversation.serializer(), """{"id":"c1","title":"My secret trip","private":true,
+            "created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:40:00Z"}""")
+        assertTrue(chat.isPrivate)
+        // A server from before private chats says nothing, in a conversation or in its config.
+        val plain = CedarJson.decodeFromString(Conversation.serializer(), """{"id":"c2","created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:40:00Z"}""")
+        assertFalse(plain.isPrivate)
+        assertFalse(CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":false,"admin_enabled":false}""").privateChats)
+        assertTrue(CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":false,"admin_enabled":false,"private_chats":true}""").privateChats)
+    }
+
+    @Test
     fun configSaysWhetherTheServerHasMemory() {
         // A server from before memory leaves the field out.
         val old = CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":true,"admin_enabled":false}""")
@@ -157,6 +169,9 @@ class ApiTest {
         assertEquals(listOf("low", "high"), models.models[0].reasoningLevels)
         assertTrue(models.models[0].isDefault)
         assertEquals("bare", models.models[1].label)
+        // A server from before the setting has people choose the model; a newer one says.
+        assertTrue(models.selection)
+        assertTrue(!CedarJson.decodeFromString(ModelList.serializer(), """{"models":[],"selection":false}""").selection)
     }
 
     @Test
@@ -864,5 +879,66 @@ class ApiTest {
         assertNull(list.contributions[0].withdrawnAt)
         val cfg = CedarJson.decodeFromString(ServerConfig.serializer(), """{"auth_required":false,"admin_enabled":false,"memory":true,"contributions":true}""")
         assertTrue(cfg.contributions)
+    }
+
+    @Test
+    fun parsesAReportAndAHeldNote() {
+        val report = LimitationReport.parse("""{"limitation":{"summary":" Ran out of turns ","category":"limit"},"note":"x"}""")!!
+        assertEquals("Ran out of turns", report.summary)
+        assertEquals("limit", report.category)
+        assertNull(report.needed)
+        assertEquals("other", LimitationReport.parse("""{"limitation":{"summary":"x","category":"made_up"}}""")?.category)
+        assertNull(LimitationReport.parse("""{"limitation":{"summary":" "}}"""))
+        assertNull(LimitationReport.parse("""{"follow_up":{}}"""))
+        assertNull(LimitationReport.parse("give summary"))
+
+        val held = HeldNote.parse("""{"held":{"id":"h-1","tool":"slack_send_message","reason":"Send message in Slack to #launch.","why":"timeout"},"note":"x"}""")!!
+        assertEquals("h-1", held.id)
+        assertTrue(held.timedOut)
+        assertNull(HeldNote.parse("""{"held":{"tool":"slack_send_message"}}"""), "no id, nothing to decide about")
+        assertNull(HeldNote.parse("""A page that says {"held":{"id":"h-1"}} somewhere"""))
+        assertNull(HeldNote.parse("ok"))
+    }
+
+    @Test
+    fun decodesTheOutboxAndFeedback() {
+        val outbox = CedarJson.decodeFromString(Outbox.serializer(), """
+        {"items":[{"id":"h-1","run_id":"r1","call_id":"t1","tool":"gmail_send_message",
+                   "input":{"to":"ana@example.com","subject":"Digest","cc":["bo@example.com"]},
+                   "reason":"Send message in your Gmail to ana@example.com.","why":"unattended","status":"pending","edited":false,"output":null,
+                   "created_at":"2026-11-19T09:30:00Z","decided_at":null,"turn_id":"t9","conversation_id":"c1","title":"Digest · Thu",
+                   "agent":{"id":"a1","title":"Morning digest"}},
+                  {"id":"h-2","tool":"slack_send_message","status":"failed","output":"channel_not_found","why":"timeout"}]}""")
+        val first = outbox.items[0]
+        assertTrue(first.isOpen && !first.isFailed && !first.timedOut)
+        assertEquals("Morning digest", first.origin)
+        assertEquals(listOf("to" to "ana@example.com", "subject" to "Digest", "cc" to """["bo@example.com"]"""), first.fields)
+        assertEquals(CedarDate.parse("2026-11-19T09:30:00Z"), first.createdAt)
+        val second = outbox.items[1]
+        assertTrue(second.isOpen && second.isFailed && second.timedOut, "a refused call can be approved again")
+        assertNull(second.origin)
+        val sent = CedarJson.decodeFromString(OutboxItem.serializer(), """{"id":"h-1","status":"sent","edited":true,"decided_at":"2026-11-19T10:00:00Z"}""")
+        assertTrue(sent.isSent && !sent.isOpen && sent.edited)
+
+        val detail = CedarJson.decodeFromString(ConversationDetail.serializer(), """
+        {"conversation":{"id":"c1","created_at":"2026-11-12T09:00:00Z","updated_at":"2026-11-12T09:05:00Z"},"turns":[],
+         "limitations":[{"id":"f1","turn_id":"t1","call_id":"call_1","status":"sent","summary":"No booking tool","category":"missing_tool","needed":null,"comment":"weekly","created_at":"2026-11-12T10:00:00Z"},
+                        {"id":"f2","turn_id":"t1","call_id":"call_2","status":"dismissed","summary":null,"category":null,"needed":null,"comment":null,"created_at":"2026-11-12T10:01:00Z"}]}""")
+        assertEquals(listOf("call_1" to true, "call_2" to false), detail.limitations.map { it.callId to it.isSent })
+        assertTrue(detail.limitations[1].isDismissed)
+        assertEquals(emptyList(), CedarJson.decodeFromString(ConversationDetail.serializer(), """{"conversation":{"id":"c1","created_at":"2026-11-12T09:00:00Z","updated_at":"2026-11-12T09:05:00Z"}}""").limitations)
+
+        assertEquals(j("""{"decision":"dismiss"}"""), FeedbackChoice.Dismiss.toJson())
+        assertEquals(
+            j("""{"decision":"send","summary":"No booking tool","category":"missing_tool","needed":"a booking tool","comment":"weekly"}"""),
+            FeedbackChoice.Send(LimitationReport("No booking tool", "missing_tool", "a booking tool"), " weekly ").toJson(),
+        )
+        assertEquals(j("""{"decision":"send","summary":"x","category":"other"}"""), FeedbackChoice.Send(LimitationReport("x", "other"), "  ").toJson())
+
+        // An agent says whether it holds what it would send; one from an older server doesn't.
+        val agent = CedarJson.decodeFromString(Agent.serializer(), """{"id":"a1","title":"Digest","hold_writes":true}""")
+        assertTrue(agent.holdWrites)
+        assertEquals(false, CedarJson.decodeFromString(Agent.serializer(), """{"id":"a1","title":"Digest"}""").holdWrites)
+        assertEquals(j("""{"hold_writes":false}"""), AgentBody(holdWrites = false).toJson())
     }
 }

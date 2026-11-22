@@ -66,8 +66,12 @@ struct ChatClient: Sendable {
     }
 
     func models() async throws -> [ModelInfo] {
-        let list: ModelList = try await decode(makeRequest("api/models"))
-        return list.models
+        try await modelList().models
+    }
+
+    /// The models, and whether people choose among them (see `ModelList`).
+    func modelList() async throws -> ModelList {
+        try await decode(makeRequest("api/models"))
     }
 
     // MARK: Memory
@@ -165,9 +169,20 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/conversations/\(id)"))
     }
 
-    func createConversation(title: String? = nil) async throws -> Conversation {
-        var body: [String: String] = [:]
-        if let title { body["title"] = title }
+    /// `isPrivate` makes it a private chat: in no list, not remembered, and deleted when it is
+    /// left. The field is sent only then, so a server from before private chats refuses it
+    /// rather than keep the conversation.
+    func createConversation(title: String? = nil, isPrivate: Bool = false) async throws -> Conversation {
+        struct Body: Encodable {
+            var title: String?
+            var isPrivate: Bool?
+
+            enum CodingKeys: String, CodingKey {
+                case title
+                case isPrivate = "private"
+            }
+        }
+        let body = Body(title: title, isPrivate: isPrivate ? true : nil)
         return try await decode(makeRequest("api/conversations", method: "POST", json: body))
     }
 
@@ -175,7 +190,8 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/conversations/\(conversationId)", method: "PATCH", json: ["title": title]))
     }
 
-    /// Deletes the conversation and its cedar runs. 409 while a response is running.
+    /// Deletes the conversation and its cedar runs. 409 while a response is running, except for
+    /// a private chat, whose response is stopped.
     func delete(conversationId: String) async throws {
         _ = try await send(makeRequest("api/conversations/\(conversationId)", method: "DELETE"))
     }
@@ -325,6 +341,32 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/turns/\(turnId)/followups/\(callId)", method: "PUT", json: body))
     }
 
+    /// Sends as feedback, or dismisses, something the model reported it could not do in a turn;
+    /// `callId` is the id of the `report_limitation` call. Sent feedback stays on the server.
+    /// The first decision stands: deciding again answers the earlier one.
+    func decideLimitation(turnId: String, callId: String, _ body: FeedbackBody) async throws -> FeedbackAnswer {
+        try await decode(makeRequest("api/turns/\(turnId)/limitations/\(callId)", method: "PUT", json: body))
+    }
+
+    /// What waits for the person's approval, newest first.
+    func outbox() async throws -> [OutboxItem] {
+        let outbox: Outbox = try await decode(makeRequest("api/outbox"))
+        return outbox.items
+    }
+
+    /// One held call, whatever became of it. 404 once its run is deleted.
+    func outboxItem(id: String) async throws -> OutboxItem {
+        try await decode(makeRequest("api/outbox/\(id)"))
+    }
+
+    /// Approves a held call, which makes it now, exactly as it was written and with no model
+    /// involved, or discards it. The answer is the call as it is afterwards: `sent`, `failed`
+    /// (the service refused; it can be approved again) or `discarded`. 409 once it was decided.
+    /// The server waits for the call itself, so this can take as long as a tool does.
+    func decideOutbox(id: String, approve: Bool) async throws -> OutboxItem {
+        try await decode(makeRequest("api/outbox/\(id)", method: "POST", json: approve ? OutboxDecisionBody.approve : OutboxDecisionBody.discard))
+    }
+
     /// The latest runs of every agent, newest first. `before` is the last page's `nextBefore`.
     func activity(before: String? = nil, limit: Int? = nil) async throws -> ActivityPage {
         var query: [URLQueryItem] = []
@@ -363,6 +405,9 @@ struct ChatClient: Sendable {
         var plan: String?
         /// The interface language (`de-CH`), which the reply is written in.
         var locale: String?
+        /// The device's time zone (`America/Los_Angeles`), so "today" and "tomorrow" are the
+        /// user's, not the server's.
+        var timezone: String? = nil
 
         struct Upload: Encodable {
             var name: String

@@ -27,6 +27,13 @@ pub struct Config {
     /// How much earlier conversation is inlined into the prompt when the previous cedar run is gone
     /// and can't be continued.
     pub history_max_bytes: usize,
+    /// How long a private conversation may sit idle before it is deleted for the person who
+    /// didn't end it (`CHAT_PRIVATE_TTL_SECS`, a day).
+    pub private_ttl: std::time::Duration,
+    /// How long a response may wait for the person (an approval, a plan to agree to) before they
+    /// are told out of the app (`CHAT_ATTENTION_DELAY_SECS`, 20): long enough that whoever is
+    /// looking at the page answers first.
+    pub attention_delay: std::time::Duration,
     /// Where Pushover messages are POSTed; overridable so tests can point at a mock.
     pub pushover_url: String,
     /// Where iPhone pushes are POSTed, when set: overrides the production and sandbox APNs
@@ -52,12 +59,39 @@ pub struct Config {
     /// of a cedar-contrib ingest; see `contrib`): `DEFAULT_CONTRIBUTIONS_URL` unless another is
     /// named. `off`, and nothing can be sent; the review dialog still exports a bundle to a file.
     pub contributions_url: Option<String>,
+    /// Where a person can report, as an issue they file themselves, something Cedar could not do
+    /// (`CHAT_FEEDBACK_ISSUES_URL`): the "new issue" address of a repository, which the page
+    /// opens with the report filled in. The project's own unless another is named; `off`, and
+    /// the link isn't offered. This server sends nothing there itself.
+    pub feedback_issues_url: Option<String>,
+    /// The Slack app people talk to Cedar through (see `slack`): its app-level token
+    /// (`CHAT_SLACK_APP_TOKEN`, `xapp-...`), which opens the Socket Mode connection events come
+    /// over, and its bot token (`CHAT_SLACK_BOT_TOKEN`, `xoxb-...`), which answers. Both or neither.
+    pub slack: Option<SlackConfig>,
+    /// The root of Slack's Web API (`CHAT_SLACK_API_URL`), for an app set in the environment or
+    /// in Settings -> Slack; overridable so tests can point at a mock.
+    pub slack_api_url: String,
 }
+
+#[derive(Debug, Clone)]
+pub struct SlackConfig {
+    pub app_token: String,
+    pub bot_token: String,
+    /// The root of Slack's Web API (`CHAT_SLACK_API_URL`); overridable so tests can point at a mock.
+    pub api_url: String,
+}
+
+/// Where Slack's Web API is unless `CHAT_SLACK_API_URL` says.
+pub const DEFAULT_SLACK_API_URL: &str = "https://slack.com/api";
 
 /// The corpus a chat contributes to unless `CHAT_CONTRIBUTIONS_URL` names another or is `off`:
 /// the project's own cedar-contrib ingest. Nothing goes there until a person turns contributing
 /// on in Settings and sends a conversation.
 pub const DEFAULT_CONTRIBUTIONS_URL: &str = "https://contrib-api-7fdw4asdra-uw.a.run.app";
+
+/// Where "Report it to the project" opens an issue unless `CHAT_FEEDBACK_ISSUES_URL` names another
+/// repository's or is `off`.
+pub const DEFAULT_FEEDBACK_ISSUES_URL: &str = "https://github.com/hanneshapke/cedar/issues/new";
 
 /// Who may add, change and remove models in Settings -> Server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +129,9 @@ impl Config {
             }
         }
 
+        let slack_api_url = get("CHAT_SLACK_API_URL")
+            .map(|u| u.trim().trim_end_matches('/').to_string())
+            .unwrap_or_else(|| DEFAULT_SLACK_API_URL.into());
         let bind_addr: SocketAddr = parse("CHAT_BIND_ADDR", get("CHAT_BIND_ADDR"), "127.0.0.1:3000".parse().unwrap())?;
         let cfg = Config {
             cedar_url: get("CEDAR_URL").unwrap_or_else(|| "http://127.0.0.1:8080".into()),
@@ -112,6 +149,8 @@ impl Config {
                 .map(|u| u.trim().trim_end_matches('/').to_string())
                 .unwrap_or_else(|| format!("http://{bind_addr}")),
             history_max_bytes: parse("CHAT_HISTORY_MAX_BYTES", get("CHAT_HISTORY_MAX_BYTES"), 40_000)?,
+            private_ttl: std::time::Duration::from_secs(parse("CHAT_PRIVATE_TTL_SECS", get("CHAT_PRIVATE_TTL_SECS"), 86_400)?),
+            attention_delay: std::time::Duration::from_secs(parse("CHAT_ATTENTION_DELAY_SECS", get("CHAT_ATTENTION_DELAY_SECS"), 20)?),
             pushover_url: get("CHAT_PUSHOVER_URL").unwrap_or_else(|| crate::channels::PUSHOVER_URL.into()),
             apns_url: get("CHAT_APNS_URL").map(|u| u.trim().trim_end_matches('/').to_string()),
             fcm_url: get("CHAT_FCM_URL")
@@ -133,7 +172,39 @@ impl Config {
                 Some(v) if matches!(v.to_ascii_lowercase().as_str(), "off" | "none" | "no" | "false" | "0") => None,
                 Some(v) => Some(v),
             },
+            feedback_issues_url: match get("CHAT_FEEDBACK_ISSUES_URL").map(|u| u.trim().to_string()) {
+                None => Some(DEFAULT_FEEDBACK_ISSUES_URL.into()),
+                Some(v) if matches!(v.to_ascii_lowercase().as_str(), "off" | "none" | "no" | "false" | "0") => None,
+                Some(v) => Some(v),
+            },
+            slack: match (get("CHAT_SLACK_APP_TOKEN"), get("CHAT_SLACK_BOT_TOKEN")) {
+                (None, None) => None,
+                (Some(app), Some(bot)) => Some(SlackConfig {
+                    app_token: app.trim().to_string(),
+                    bot_token: bot.trim().to_string(),
+                    api_url: slack_api_url.clone(),
+                }),
+                _ => bail!("set both CHAT_SLACK_APP_TOKEN and CHAT_SLACK_BOT_TOKEN for Slack, or neither"),
+            },
+            slack_api_url,
         };
+        if let Some(slack) = &cfg.slack {
+            if !slack.app_token.starts_with("xapp-") {
+                bail!("CHAT_SLACK_APP_TOKEN must be a Slack app-level token (xapp-...)");
+            }
+            if !slack.bot_token.starts_with("xoxb-") {
+                bail!("CHAT_SLACK_BOT_TOKEN must be a Slack bot token (xoxb-...)");
+            }
+        }
+        if !(cfg.slack_api_url.starts_with("http://") || cfg.slack_api_url.starts_with("https://")) {
+            bail!("CHAT_SLACK_API_URL must start with http:// or https://");
+        }
+        if let Some(u) = &cfg.feedback_issues_url {
+            // The page opens it as a link, so nothing but a plain https address without a query.
+            if !u.starts_with("https://") || u.contains(['?', '#', '"', '<', '>', ' ']) {
+                bail!("CHAT_FEEDBACK_ISSUES_URL must be an https:// address without a query, such as https://github.com/owner/repo/issues/new");
+            }
+        }
         if let Some(u) = &cfg.contributions_url {
             if !(u.starts_with("http://") || u.starts_with("https://")) {
                 bail!("CHAT_CONTRIBUTIONS_URL must start with http:// or https://");
@@ -212,6 +283,23 @@ mod tests {
     }
 
     #[test]
+    fn feedback_issues_url() {
+        let cfg = |v: Option<&str>| {
+            Config::from_lookup(|k| match k {
+                "CEDAR_API_KEY" => Some("k".to_string()),
+                "CHAT_FEEDBACK_ISSUES_URL" => v.map(String::from),
+                _ => None,
+            })
+        };
+        assert_eq!(cfg(None).unwrap().feedback_issues_url.as_deref(), Some(DEFAULT_FEEDBACK_ISSUES_URL));
+        assert!(cfg(Some("off")).unwrap().feedback_issues_url.is_none());
+        assert_eq!(cfg(Some("https://git.example/acme/cedar/issues/new")).unwrap().feedback_issues_url.as_deref(), Some("https://git.example/acme/cedar/issues/new"));
+        for bad in ["http://git.example/issues/new", "javascript:alert(1)", "https://git.example/issues/new?title=x"] {
+            assert!(cfg(Some(bad)).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn contributions_url() {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k")])).unwrap();
         assert_eq!(cfg.contributions_url.as_deref(), Some(DEFAULT_CONTRIBUTIONS_URL));
@@ -220,6 +308,18 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_CONTRIBUTIONS_URL", "http://127.0.0.1:8090/")])).unwrap();
         assert_eq!(cfg.contributions_url.as_deref(), Some("http://127.0.0.1:8090"));
         assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_CONTRIBUTIONS_URL", "contrib.example")])).is_err());
+    }
+
+    #[test]
+    fn slack_needs_both_tokens() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k")])).unwrap();
+        assert!(cfg.slack.is_none());
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_SLACK_APP_TOKEN", "xapp-1"), ("CHAT_SLACK_BOT_TOKEN", " xoxb-2 ")])).unwrap();
+        let slack = cfg.slack.unwrap();
+        assert_eq!((slack.app_token.as_str(), slack.bot_token.as_str(), slack.api_url.as_str()), ("xapp-1", "xoxb-2", DEFAULT_SLACK_API_URL));
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_SLACK_APP_TOKEN", "xapp-1")])).is_err());
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_SLACK_APP_TOKEN", "xoxb-1"), ("CHAT_SLACK_BOT_TOKEN", "xoxb-2")])).is_err());
+        assert!(Config::from_lookup(lookup(&[("CEDAR_API_KEY", "k"), ("CHAT_SLACK_APP_TOKEN", "xapp-1"), ("CHAT_SLACK_BOT_TOKEN", "xapp-2")])).is_err());
     }
 
     #[test]

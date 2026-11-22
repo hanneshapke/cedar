@@ -200,7 +200,7 @@ impl Tool for SearchFlights {
     }
 
     async fn call(&self, ctx: &ToolContext, input: &Value) -> Result<String> {
-        let req = parse_input(input, &ctx.locale, Utc::now().date_naive())?;
+        let req = parse_input(input, &ctx.locale, crate::timezone::today(Utc::now(), ctx.timezone.as_deref()))?;
         let mut params = req.params();
         let result = if let Some(token) = &req.booking_token {
             params.push(("booking_token", token.clone()));

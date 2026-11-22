@@ -339,6 +339,33 @@ pub fn check_computer(rules: &Rules, input: &Value) -> Option<Gate> {
     })
 }
 
+/// One line on what a call that sends or changes something in a connected account does, for the
+/// outbox (see [`crate::models::HeldCall`]): the line an approval would show for mail and Slack,
+/// and the like of it for the calendar, Drive and Sheets, which no rule asks about.
+pub fn describe(name: &str, input: &Value) -> String {
+    if let Some(gate) = check(&Rules::default(), name, input, &Reach::Nothing) {
+        return gate.reason;
+    }
+    let service = match group_of(name) {
+        "calendar" => "your calendar",
+        "drive" => "your Google Drive",
+        "sheets" => "your Google Sheets",
+        "slides" => "your Google Slides",
+        "gmail" => "your Gmail",
+        "slack" => "Slack",
+        _ => "your account",
+    };
+    let mut reason = format!("{} in {service}", humanize(name));
+    let what = ["summary", "title", "name", "subject", "range"]
+        .iter()
+        .find_map(|k| input[k].as_str().filter(|s| !s.trim().is_empty()));
+    if let Some(what) = what {
+        reason.push_str(&format!(": \"{}\"", one_line(what)));
+    }
+    reason.push('.');
+    reason
+}
+
 /// `gmail_send_message` -> "Send message".
 fn humanize(name: &str) -> String {
     let words: Vec<&str> = name.split('_').skip(1).collect();
@@ -549,6 +576,23 @@ mod tests {
         let email_only = Rules::parse("email").unwrap();
         assert!(check(&email_only, "slack_send_message", &json!({}), &Reach::Nothing).is_none());
         assert!(check(&all(), "calendar_create_event", &json!({}), &Reach::Nothing).is_none());
+    }
+
+    #[test]
+    fn a_held_call_is_described_in_a_line() {
+        assert_eq!(
+            describe("gmail_send_message", &json!({ "to": "a@x.org", "subject": "Q3" })),
+            "Send message in your Gmail to a@x.org: \"Q3\"."
+        );
+        assert_eq!(
+            describe("calendar_create_event", &json!({ "summary": "Dentist" })),
+            "Create event in your calendar: \"Dentist\"."
+        );
+        assert_eq!(describe("sheets_append_values", &json!({})), "Append values in your Google Sheets.");
+        assert_eq!(
+            describe("slides_create_presentation", &json!({ "title": "Q3 review", "slides": [] })),
+            "Create presentation in your Google Slides: \"Q3 review\"."
+        );
     }
 
     #[test]

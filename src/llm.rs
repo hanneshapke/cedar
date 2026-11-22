@@ -90,7 +90,7 @@ impl ChatCompletionsClient {
 #[async_trait]
 impl LlmClient for ChatCompletionsClient {
     async fn create_message(&self, req: &MessageRequest<'_>) -> Result<LlmResponse> {
-        let body = build_request(req);
+        let body = build_request(req, token_limit_field(&self.base_url));
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
 
         let mut attempt = 0;
@@ -140,7 +140,22 @@ impl LlmClient for ChatCompletionsClient {
 
 // -- cedar blocks -> chat completions ----------------------------------------------------------
 
-fn build_request(req: &MessageRequest<'_>) -> Value {
+/// The name a server at `base_url` takes the reply's token limit under. OpenAI's own API refuses
+/// `max_tokens` for its reasoning models (GPT-5, o-series) and wants `max_completion_tokens`,
+/// which every model there accepts; other servers keep `max_tokens`, which not all of them know
+/// by the newer name.
+fn token_limit_field(base_url: &str) -> &'static str {
+    let host = reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase));
+    if host.as_deref() == Some("api.openai.com") {
+        "max_completion_tokens"
+    } else {
+        "max_tokens"
+    }
+}
+
+fn build_request(req: &MessageRequest<'_>, token_limit: &str) -> Value {
     let mut messages = Vec::with_capacity(req.messages.len() + 1);
     if !req.system.is_empty() {
         messages.push(json!({ "role": "system", "content": req.system }));
@@ -150,9 +165,9 @@ fn build_request(req: &MessageRequest<'_>) -> Value {
     }
     let mut body = json!({
         "model": req.model,
-        "max_tokens": req.max_tokens,
         "messages": messages,
     });
+    body[token_limit] = json!(req.max_tokens);
     if let Some(effort) = req.reasoning_effort {
         body["reasoning_effort"] = json!(effort);
     }
@@ -259,7 +274,7 @@ fn translate_message(msg: &Value, out: &mut Vec<Value>) {
 /// What introduces the images of a message's tool results, sent after them.
 const TOOL_IMAGES: &str = "The image returned with each tool result above, in the same order:";
 
-/// The content part for an `image` or `document` block with a base64 source, if it is one.
+/// The content part for an `image`, `video` or `document` block with a base64 source, if it is one.
 fn media_part(block: &Value) -> Option<Value> {
     let source = &block["source"];
     let media_type = source["media_type"].as_str()?;
@@ -267,6 +282,8 @@ fn media_part(block: &Value) -> Option<Value> {
     let url = format!("data:{media_type};base64,{data}");
     match block["type"].as_str()? {
         "image" => Some(json!({ "type": "image_url", "image_url": { "url": url } })),
+        // What vLLM and OpenRouter take a video as; only sent to a model registered with `video`.
+        "video" => Some(json!({ "type": "video_url", "video_url": { "url": url } })),
         "document" => Some(json!({
             "type": "file",
             "file": {
@@ -588,14 +605,15 @@ pub async fn accepts_images(
         return ImageProbe::Unknown;
     };
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-    let mut req = http.post(&url).json(&json!({
+    let mut body = json!({
         "model": model,
-        "max_tokens": 1,
         "messages": [{ "role": "user", "content": [
             { "type": "text", "text": "." },
             { "type": "image_url", "image_url": { "url": PROBE_IMAGE } },
         ] }],
-    }));
+    });
+    body[token_limit_field(base_url)] = json!(1);
+    let mut req = http.post(&url).json(&body);
     if let Some(key) = api_key {
         req = req.bearer_auth(key);
     }
@@ -678,6 +696,30 @@ mod tests {
         assert_eq!(model_ids(&json!("ok")), None);
     }
 
+    #[test]
+    fn openai_gets_max_completion_tokens_and_other_servers_max_tokens() {
+        assert_eq!(token_limit_field("https://api.openai.com/v1"), "max_completion_tokens");
+        assert_eq!(token_limit_field("https://API.OpenAI.com/v1/"), "max_completion_tokens");
+        assert_eq!(token_limit_field("http://localhost:8000/v1"), "max_tokens");
+        assert_eq!(token_limit_field("https://openrouter.ai/api/v1"), "max_tokens");
+        assert_eq!(token_limit_field("https://api.openai.com.example.net/v1"), "max_tokens");
+        assert_eq!(token_limit_field("not a url"), "max_tokens");
+
+        let messages = [json!({ "role": "user", "content": "hello" })];
+        let req = MessageRequest {
+            model: "gpt-5",
+            max_tokens: 50,
+            reasoning_effort: Some("low"),
+            system: "",
+            tools: &[],
+            messages: &messages,
+        };
+        let body = build_request(&req, token_limit_field("https://api.openai.com/v1"));
+        assert_eq!(body["max_completion_tokens"], 50);
+        assert!(body.get("max_tokens").is_none());
+        assert_eq!(body["reasoning_effort"], "low");
+    }
+
     fn request(messages: &[Value]) -> Value {
         build_request(&MessageRequest {
             model: "m",
@@ -686,7 +728,7 @@ mod tests {
             system: "be nice",
             tools: &[],
             messages,
-        })
+        }, "max_tokens")
     }
 
     #[test]
@@ -701,7 +743,7 @@ mod tests {
             system: "be nice",
             tools: &tools,
             messages: &messages,
-        });
+        }, "max_tokens");
         assert_eq!(
             body,
             json!({
@@ -728,7 +770,7 @@ mod tests {
             system: "",
             tools: &[],
             messages: &messages,
-        });
+        }, "max_tokens");
         assert_eq!(
             body,
             json!({

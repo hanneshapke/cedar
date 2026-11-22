@@ -70,7 +70,10 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
 
     suspend fun config(): ServerConfig = decode(request("api/config"), ServerConfig.serializer())
 
-    suspend fun models(): List<ModelInfo> = decode(request("api/models"), ModelList.serializer()).models
+    suspend fun models(): List<ModelInfo> = modelList().models
+
+    /** The models, and whether people choose among them (see [ModelList]). */
+    suspend fun modelList(): ModelList = decode(request("api/models"), ModelList.serializer())
 
     // Memory
 
@@ -154,15 +157,23 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     suspend fun conversation(id: String): ConversationDetail =
         decode(request("api/conversations/$id"), ConversationDetail.serializer())
 
-    suspend fun createConversation(title: String? = null): Conversation {
-        val body = buildJsonObject { if (title != null) put("title", title) }
+    /**
+     * `private` makes it a private chat: in no list, not remembered, and deleted when it is left.
+     * The field is sent only then, so a server from before private chats refuses it rather than
+     * keep the conversation.
+     */
+    suspend fun createConversation(title: String? = null, private: Boolean = false): Conversation {
+        val body = buildJsonObject {
+            if (title != null) put("title", title)
+            if (private) put("private", true)
+        }
         return decode(request("api/conversations", "POST", body), Conversation.serializer())
     }
 
     suspend fun rename(conversationId: String, title: String): Conversation =
         decode(request("api/conversations/$conversationId", "PATCH", buildJsonObject { put("title", title) }), Conversation.serializer())
 
-    /** Deletes the conversation and its cedar runs. 409 while a response is running. */
+    /** Deletes the conversation and its cedar runs. 409 while a response is running, except for a private chat, whose response is stopped. */
     suspend fun delete(conversationId: String) {
         send(request("api/conversations/$conversationId", "DELETE"))
     }
@@ -303,6 +314,8 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
         val plan: String? = null,
         /** The user's locale as a BCP 47 tag (`de-CH`), so the agent answers in it ([AppLocales.effective]). */
         val locale: String? = null,
+        /** The device's time zone (`America/Los_Angeles`), so "today" and "tomorrow" are the user's. */
+        val timezone: String? = null,
     ) {
         @Serializable
         data class Upload(
@@ -343,6 +356,31 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
      */
     suspend fun decideFollowup(turnId: String, callId: String, choice: FollowupChoice): FollowupDecision =
         decode(request("api/turns/$turnId/followups/$callId", "PUT", choice.toJson()), FollowupDecision.serializer())
+
+    /**
+     * Decides about something a turn reported it could not do (`callId` is its `report_limitation`
+     * tool call): sending keeps the report on the server as feedback, dismissing only records
+     * that it was seen. The first decision stands, so the answer may be an earlier one.
+     */
+    suspend fun decideLimitation(turnId: String, callId: String, choice: FeedbackChoice): FeedbackDecision =
+        decode(request("api/turns/$turnId/limitations/$callId", "PUT", choice.toJson()), FeedbackDecision.serializer())
+
+    // The outbox
+
+    /** What waits for the person's approval, newest first. */
+    suspend fun outbox(): List<OutboxItem> = decode(request("api/outbox"), Outbox.serializer()).items
+
+    /** One held call, whatever became of it. 404 once its run is deleted. */
+    suspend fun outboxItem(id: String): OutboxItem = decode(request("api/outbox/$id"), OutboxItem.serializer())
+
+    /**
+     * Approves a held call, which makes it now, exactly as it was written and with no model
+     * involved, or discards it. The answer is the call as it is afterwards: `sent`, `failed`
+     * (the service refused; it can be approved again) or `discarded`. 409 once it was decided.
+     * The server waits for the call itself, so this can take as long as a tool does.
+     */
+    suspend fun decideOutbox(id: String, approve: Boolean): OutboxItem =
+        decode(request("api/outbox/$id", "POST", buildJsonObject { put("decision", if (approve) "approve" else "discard") }), OutboxItem.serializer())
 
     /**
      * Streams a turn's events after `after`: a replay of the stored log, then live events. The flow

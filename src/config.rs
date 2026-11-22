@@ -40,13 +40,15 @@ pub const DEFAULT_GOOGLE_SCOPES: &str = "openid email \
     https://www.googleapis.com/auth/gmail.readonly \
     https://www.googleapis.com/auth/gmail.compose \
     https://www.googleapis.com/auth/calendar.readonly \
-    https://www.googleapis.com/auth/drive.readonly";
+    https://www.googleapis.com/auth/drive.readonly \
+    https://www.googleapis.com/auth/drive.file";
 pub const DEFAULT_GMAIL_MCP_URL: &str = "https://gmailmcp.googleapis.com/mcp/v1";
 pub const DEFAULT_CALENDAR_MCP_URL: &str = "https://calendarmcp.googleapis.com/mcp/v1";
 pub const DEFAULT_GMAIL_API_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
 pub const DEFAULT_CALENDAR_API_URL: &str = "https://www.googleapis.com/calendar/v3";
 pub const DEFAULT_DRIVE_API_URL: &str = "https://www.googleapis.com/drive/v3";
 pub const DEFAULT_SHEETS_API_URL: &str = "https://sheets.googleapis.com/v4/spreadsheets";
+pub const DEFAULT_SLIDES_API_URL: &str = "https://slides.googleapis.com/v1/presentations";
 /// The Gmail tools offered by default: reading mail and writing drafts, nothing that sends,
 /// deletes, or relabels.
 pub const DEFAULT_GMAIL_TOOLS: &str =
@@ -59,6 +61,9 @@ pub const DEFAULT_CALENDAR_TOOLS: &str =
 pub const DEFAULT_DRIVE_TOOLS: &str = "search_files,get_file,read_document,download_file";
 /// The Sheets tools: reading only.
 pub const DEFAULT_SHEETS_TOOLS: &str = "get_spreadsheet,read_range";
+/// The Slides tools: making a presentation, adding slides to one cedar made, and reading one's
+/// outline. With the `drive.file` scope they reach only the presentations cedar itself created.
+pub const DEFAULT_SLIDES_TOOLS: &str = "create_presentation,append_slides,get_presentation";
 pub const DEFAULT_SYSTEM_PROMPT: &str = "\
 You are Cedar, a personal AI assistant. You work for one person and help with whatever they bring \
 you: questions, research, writing, email and calendar, shopping, travel, money, code and files. \
@@ -81,6 +86,9 @@ about that choice, not about the plan. If a plan was already agreed with the use
 don't plan again.
 - Act carefully for the user. Before anything that sends, buys, deletes or can't be undone, check \
 with them unless they already told you to go ahead.
+- Be straight about what you did. Say what is done, what is waiting for the user's approval or \
+answer, and what you could not do and why. Never describe something as sent, booked, saved or \
+changed unless the tool's result says it was.
 - Keep their information private. Use what you know about them to help them, and never share it \
 anywhere they didn't ask for.";
 
@@ -370,6 +378,9 @@ pub struct Config {
     /// Offer the `suggest_follow_up` tool (on by default), which suggests running a prompt again
     /// later; a client turns an accepted suggestion into something that runs.
     pub follow_ups: bool,
+    /// Offer the `report_limitation` tool (on by default), with which the model notes what it
+    /// could not do; a client shows that as a card the user can send as feedback.
+    pub feedback: bool,
     /// Offer the `remember` and `forget` tools and show runs what they remember about the user
     /// (on by default; see [`crate::memory`]).
     pub memory: bool,
@@ -392,6 +403,10 @@ pub struct Config {
     /// Offer the `records_*` tools and show runs which record sets they keep for the user (on by
     /// default; see [`crate::records`]).
     pub records: bool,
+    /// Offer the `saved_actions` tool, tell runs which actions their owner saved, and let the
+    /// browser type the secrets kept with them (`ACTIONS`, on by default; see
+    /// [`crate::actions`]).
+    pub actions: bool,
     /// How many record sets one API key's owner may keep (`RECORDS_MAX_SETS`, 50 by default).
     pub records_max_sets: usize,
     /// How many records one set may hold (`RECORDS_MAX_ITEMS`, 10,000 by default).
@@ -408,7 +423,7 @@ pub struct Config {
     /// whichever client is used.
     pub google: GoogleEndpoints,
     /// Gmail and Calendar through Google's REST APIs (`GOOGLE_BACKEND=api`, the default), and
-    /// Drive and Sheets, which only have REST APIs.
+    /// Drive, Sheets and Slides, which only have REST APIs.
     pub google_apis: Vec<GoogleApiConfig>,
     /// Remote MCP servers (Gmail and Calendar with `GOOGLE_BACKEND=mcp`), in the order their
     /// tools are offered.
@@ -417,6 +432,9 @@ pub struct Config {
     pub api_keys: Vec<String>,
     /// The subset of `api_keys` that may use the admin routes (integrations).
     pub admin_keys: Vec<String>,
+    /// The subset of `api_keys` that may act for users (`X-Cedar-User`): a service with users of
+    /// its own in front of cedar, such as cedar-chat.
+    pub service_keys: Vec<String>,
     /// Encrypts integration secrets saved through the admin API. Without it they can't be saved.
     pub secret_key: Option<[u8; 32]>,
     pub database_url: String,
@@ -426,6 +444,9 @@ pub struct Config {
     /// The locale of a run that doesn't name one (`DEFAULT_LOCALE`, `en` by default); see
     /// [`crate::locale`].
     pub default_locale: String,
+    /// The time zone of a run that doesn't name one (`DEFAULT_TIMEZONE`, an IANA name; unset by
+    /// default, and such a run is told the date is UTC's); see [`crate::timezone`].
+    pub default_timezone: Option<String>,
     pub max_turns_cap: u32,
 
     pub max_concurrent_runs: usize,
@@ -455,6 +476,9 @@ pub struct Config {
     /// without (the plan as proposed; the call not made). The wait doesn't count toward
     /// `run_timeout`.
     pub approval_timeout: Duration,
+    /// After how many plain "allow" answers for the same thing (a host, a package) an approval
+    /// starts to offer "always allow" (`ALWAYS_ALLOW_AFTER`, 3). 0 offers it from the first time.
+    pub always_allow_after: u32,
 
     pub sandbox: SandboxConfig,
     pub browser: BrowserConfig,
@@ -541,7 +565,7 @@ impl Config {
         };
         let mut google_apis = Vec::new();
         let mut mcp_servers = Vec::new();
-        // Google has MCP servers for Gmail and Calendar; Drive and Sheets are REST only.
+        // Google has MCP servers for Gmail and Calendar; Drive, Sheets and Slides are REST only.
         for (prefix, flag_name, default_mcp_url, default_api_url, default_tools) in [
             (
                 "gmail",
@@ -570,6 +594,13 @@ impl Config {
                 None,
                 DEFAULT_SHEETS_API_URL,
                 DEFAULT_SHEETS_TOOLS,
+            ),
+            (
+                "slides",
+                "SLIDES",
+                None,
+                DEFAULT_SLIDES_API_URL,
+                DEFAULT_SLIDES_TOOLS,
             ),
         ] {
             // On unless turned off: the tools only appear once a Google OAuth client is there
@@ -652,6 +683,10 @@ impl Config {
         if admin_keys.iter().any(|k| !api_keys.contains(k)) {
             bail!("every key in CEDAR_ADMIN_KEYS must also be in CEDAR_API_KEYS");
         }
+        let service_keys = list("CEDAR_SERVICE_KEYS");
+        if service_keys.iter().any(|k| !api_keys.contains(k)) {
+            bail!("every key in CEDAR_SERVICE_KEYS must also be in CEDAR_API_KEYS");
+        }
 
         // A GUI launcher (the macOS app) runs without the user's PATH, so it names the CLI itself.
         let docker_bin = get("DOCKER_BIN").unwrap_or_else(|| "docker".into());
@@ -717,6 +752,7 @@ impl Config {
                 .unwrap_or_else(|| DEFAULT_PRODUCTS_API_URL.into()),
             ask_user: flag("ASK_USER", true)?,
             follow_ups: flag("FOLLOW_UPS", true)?,
+            feedback: flag("FEEDBACK", true)?,
             memory: flag("MEMORY", true)?,
             memory_max_items: parse(
                 "MEMORY_MAX_ITEMS",
@@ -729,6 +765,7 @@ impl Config {
             memory_consolidate_after: parse("MEMORY_CONSOLIDATE_AFTER", get("MEMORY_CONSOLIDATE_AFTER"), 5u32)?,
             memory_recall_tokens: parse("MEMORY_RECALL_TOKENS", get("MEMORY_RECALL_TOKENS"), 600usize)?,
             records: flag("RECORDS", true)?,
+            actions: flag("ACTIONS", true)?,
             records_import_attachments: flag("RECORDS_IMPORT_ATTACHMENTS", true)?,
             records_max_sets: parse(
                 "RECORDS_MAX_SETS",
@@ -746,6 +783,7 @@ impl Config {
             mcp_servers,
             api_keys,
             admin_keys,
+            service_keys,
             secret_key,
             database_url: get("DATABASE_URL").unwrap_or_else(|| "sqlite://cedar.db".into()),
             bind_addr: parse(
@@ -761,6 +799,14 @@ impl Config {
                 None => "en".into(),
                 Some(v) => crate::locale::normalize(&v)
                     .map_err(|e| anyhow!("invalid DEFAULT_LOCALE: {e}"))?,
+            },
+            default_timezone: match get("DEFAULT_TIMEZONE") {
+                None => None,
+                Some(v) if v.trim().is_empty() => None,
+                Some(v) => Some(
+                    crate::timezone::normalize(&v)
+                        .map_err(|e| anyhow!("invalid DEFAULT_TIMEZONE: {e}"))?,
+                ),
             },
             max_turns_cap: parse("MAX_TURNS_CAP", get("MAX_TURNS_CAP"), 25)?,
 
@@ -811,6 +857,7 @@ impl Config {
                 get("APPROVAL_TIMEOUT_SECS"),
                 300,
             )?),
+            always_allow_after: parse("ALWAYS_ALLOW_AFTER", get("ALWAYS_ALLOW_AFTER"), 3)?,
 
             sandbox: SandboxConfig {
                 openshell_bin: get("OPENSHELL_BIN").unwrap_or_else(|| "openshell".into()),
@@ -1309,7 +1356,7 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
         assert!(cfg.mcp_servers.is_empty());
         let prefixes: Vec<&str> = cfg.google_apis.iter().map(|a| a.prefix.as_str()).collect();
-        assert_eq!(prefixes, ["gmail", "calendar", "drive", "sheets"]);
+        assert_eq!(prefixes, ["gmail", "calendar", "drive", "sheets", "slides"]);
         assert!(cfg.google_oauth.is_none());
         assert_eq!(cfg.google.auth_url, DEFAULT_GOOGLE_AUTH_URL);
         assert!(cfg.google.scopes.iter().any(|s| s == "email"));
@@ -1320,6 +1367,7 @@ mod tests {
             ("CALENDAR", "off"),
             ("DRIVE", "off"),
             ("SHEETS", "off"),
+                    ("SLIDES", "off"),
         ]))
         .unwrap();
         assert!(cfg.google_apis.is_empty());
@@ -1383,6 +1431,20 @@ mod tests {
         ]))
         .unwrap_err();
         assert!(err.to_string().contains("CEDAR_ADMIN_KEYS"), "{err}");
+
+        assert!(cfg.service_keys.is_empty());
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a,b"),
+            ("CEDAR_SERVICE_KEYS", "a"),
+        ]))
+        .unwrap();
+        assert_eq!(cfg.service_keys, ["a"]);
+        let err = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("CEDAR_SERVICE_KEYS", "z"),
+        ]))
+        .unwrap_err();
+        assert!(err.to_string().contains("CEDAR_SERVICE_KEYS"), "{err}");
         for bad in ["abc", &"zz".repeat(32), &"ab".repeat(31)] {
             let err = Config::from_lookup(lookup(&[
                 ("CEDAR_API_KEYS", "a"),
@@ -1442,6 +1504,11 @@ mod tests {
                     url: DEFAULT_SHEETS_API_URL.into(),
                     tools: DEFAULT_SHEETS_TOOLS.split(',').map(String::from).collect(),
                 },
+                GoogleApiConfig {
+                    prefix: "slides".into(),
+                    url: DEFAULT_SLIDES_API_URL.into(),
+                    tools: DEFAULT_SLIDES_TOOLS.split(',').map(String::from).collect(),
+                },
             ]
         );
 
@@ -1455,6 +1522,7 @@ mod tests {
                     ("GOOGLE_BACKEND", "mcp"),
                     ("DRIVE_TOOLS", "search_files"),
                     ("SHEETS", "off"),
+                    ("SLIDES", "off"),
                 ],
             ]
             .concat(),
@@ -1495,6 +1563,7 @@ mod tests {
                     ("CALENDAR", "on"),
                     ("DRIVE", "off"),
                     ("SHEETS", "off"),
+                    ("SLIDES", "off"),
                     ("GOOGLE_BACKEND", "MCP"),
                     ("CALENDAR_MCP_URL", "http://localhost:9999/mcp"),
                     ("CALENDAR_TOOLS", "list_events, create_event"),

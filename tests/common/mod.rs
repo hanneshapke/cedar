@@ -721,6 +721,7 @@ pub async fn register_model(store: &Store, id: &str, name: &str, levels: &[&str]
             reasoning_levels: levels.iter().map(|l| l.to_string()).collect(),
             default_reasoning: None,
             multimodal: id == TEST_MODEL,
+            video: false,
             max_tokens: cedar::models::DEFAULT_MAX_TOKENS,
             context_window: None,
             is_default: false,

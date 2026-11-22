@@ -20,6 +20,9 @@ The same as the iOS app:
 - The conversation list as cedar-chat keeps it, with a dot and a bold title on an unread
   response and a **Needs answer** chip when the agent asked a question; pull to refresh, and
   star, rename, open on the web or delete from a long press
+- Private chats: the crossed-out eye in a new chat's top bar makes it a
+  [private chat](../chat/README.md#private-chats), which is in no list, is not remembered, sends
+  no notifications and is deleted when you leave it
 - A search field at the top that finds chats and agents' runs by their title and by what was
   said in them, each shown with the passage that matched.
 - A **Chats | Starred | Agents** switch under it. Starred lists chats and agents' runs,
@@ -46,6 +49,14 @@ The same as the iOS app:
   handed what you shared; the screen says whether a run started, with a way to open it, or why
   not. Other apps can start a device agent too, once you allow it: see
   [Starting an agent from another app](#starting-an-agent-from-another-app)
+- **Feedback**: when Cedar could not do something (`report_limitation`), a card under the reply
+  says what and offers **Send Feedback** (kept on your server, with a note if you add one) and
+  **Dismiss**; nothing is recorded until you send it
+- **The outbox**: what an agent's run would have sent or changed in your accounts and held
+  instead (see [The outbox](../chat/README.md#the-outbox)) is listed above the agents and shown
+  as a card in the run's conversation, with **Approve** and **Discard**. Approving sends it
+  exactly as shown; to change it first, use the web UI. The agent form has the switch that holds
+  an agent's writes
 - **Follow-ups**: when Cedar suggests checking something again later (`suggest_follow_up`), the
   suggestion is a card under the reply with its time in the phone's time zone and its prompt
   folded: **Set Up** makes a one-off agent of it, **Dismiss** drops it, and nothing is scheduled

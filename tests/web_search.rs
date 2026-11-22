@@ -134,6 +134,7 @@ async fn a_search_reaches_brave_and_the_results_reach_the_model() {
             "search_products",
             "suggest_follow_up",
             "ask_user",
+            "report_limitation",
             "remember",
             "forget",
             "recall",
@@ -141,7 +142,8 @@ async fn a_search_reaches_brave_and_the_results_reach_the_model() {
             "records_describe",
             "records_save",
             "records_lookup",
-            "records_drop"
+            "records_drop",
+            "saved_actions"
         ]
     );
 
@@ -313,6 +315,7 @@ async fn without_a_brave_key_the_tool_is_not_offered() {
             "compare_stocks",
             "suggest_follow_up",
             "ask_user",
+            "report_limitation",
             "remember",
             "forget",
             "recall",
@@ -320,7 +323,8 @@ async fn without_a_brave_key_the_tool_is_not_offered() {
             "records_describe",
             "records_save",
             "records_lookup",
-            "records_drop"
+            "records_drop",
+            "saved_actions"
         ]
     );
 }

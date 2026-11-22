@@ -26,7 +26,7 @@
 const cedarSettings = (() => {
   const ADMIN_KEY = 'cedar-chat-admin';
   /** The tool groups that act for a connected account (Google's or Slack's); their single tools can be chosen. */
-  const GOOGLE_GROUPS = ['gmail', 'calendar', 'drive', 'sheets', 'slack'];
+  const GOOGLE_GROUPS = ['gmail', 'calendar', 'drive', 'sheets', 'slides', 'slack'];
   // A model's reply limit when it is registered without one, and the highest cedar takes.
   const DEFAULT_MAX_TOKENS = 16384;
   const MAX_MAX_TOKENS = 1000000;
@@ -265,8 +265,57 @@ const cedarSettings = (() => {
     };
     for (const g of groups()) list.append(toolRow(g, changed));
     section.replaceChildren(list);
+    const own = await ownGoogleRow();
+    if (own && list.isConnected) list.before(own);
     const registry = await registryBlock();
     if (registry && list.isConnected) section.append(registry);
+  }
+
+  /** Above the tool list, for someone who is not the server's primary user: the Google account
+   *  their own messages act for, which they connect themselves (no admin token). `null` for the
+   *  primary user, whose account is the server's under Settings → Server, on a server without
+   *  Google, and on a chat server from before users had accounts of their own. */
+  async function ownGoogleRow() {
+    let g;
+    try { g = await deps.api('GET', '/google'); } catch { return null; }
+    if (g.server || !g.services?.length) return null;
+    const names = g.services.map((s) => s[0].toUpperCase() + s.slice(1));
+    const services = new Intl.ListFormat(cedarI18n.locale, { type: 'conjunction' }).format(names);
+    const { row, main, side } = integrationRow(tr('settings.google.own'), tr('settings.google.desc', { services }));
+    side.append(g.connected ? badge(g.account || tr('settings.google.connected'), 'ok') : badge(tr('settings.google.notConnected')));
+    if (g.missing_scopes?.length) {
+      const scopes = g.missing_scopes.map((s) => s.replace('https://www.googleapis.com/auth/', ''));
+      main.append(el('small', 'cedar-set-hint cedar-set-warn-text', tr('settings.google.missingScopes', { scopes: scopes.join(', ') })));
+    }
+    if (!g.available && !g.connected) {
+      main.append(el('small', 'cedar-set-hint', tr('settings.google.ownUnavailable')));
+      return row;
+    }
+    const again = () => { catalog = null; if (toolsSection) renderTools(toolsSection); };
+    if (g.connected) {
+      side.append(button(tr('settings.google.disconnect'), async () => {
+        if (!(await cedarConfirm(tr('settings.google.confirmDisconnect'), { ok: tr('settings.google.disconnect') }))) return;
+        try {
+          await deps.api('DELETE', '/google');
+          again();
+        } catch (err) { deps.toast(err.message); }
+      }));
+    }
+    if (g.available) {
+      side.append(button(g.connected ? tr('settings.google.reconnect') : tr('settings.google.connect'), async () => {
+        try {
+          if (window.__CEDAR_DESKTOP_APP__ === true) {
+            const { url } = await deps.api('POST', '/google/connect?browser=1');
+            location.assign(`/__cedar-app/open?url=${encodeURIComponent(url)}`);
+            deps.toast(tr('settings.google.continueInBrowser'));
+          } else {
+            const { url } = await deps.api('POST', '/google/connect');
+            location.assign(url);
+          }
+        } catch (err) { deps.toast(err.message); }
+      }, g.connected ? 'copy-btn' : 'primary'));
+    }
+    return row;
   }
 
   /** Under the tool list: the community registry's tools, with a link to it, to install from.
@@ -395,7 +444,8 @@ const cedarSettings = (() => {
     const parts = [await registryBlock()];
 
     const fields = el('div', 'cedar-set-fields');
-    if (cedarModels.all().length) {
+    // A default model is only chosen while users choose models (Settings -> Advanced).
+    if (cedarModels.all().length && cedarModels.selectable()) {
       const modelSelect = el('select');
       const def = cedarModels.byId(cedarModels.defaultId());
       modelSelect.append(new Option(def ? tr('settings.model.cedarDefaultIs', { model: modelLabel(def) }) : tr('settings.model.cedarDefault'), ''));
@@ -534,10 +584,12 @@ const cedarSettings = (() => {
   function modelSummary() {
     if (!prefs) return null;
     if (cedarModels.loaded() && !cedarModels.all().length) return { text: tr('settings.model.summaryNone'), kind: 'error' };
-    const m = cedarModels.byId(prefs.model) || cedarModels.byId(cedarModels.defaultId());
+    const auto = !cedarModels.selectable() && cedarModels.all().length > 1;
+    const m = cedarModels.byId(cedarModels.selectable() ? prefs.model : '') || cedarModels.byId(cedarModels.defaultId());
     const parts = [];
-    if (m) parts.push(m.label || m.model || m.id);
-    if (m?.default_reasoning) parts.push(m.default_reasoning);
+    if (auto) parts.push(tr('settings.model.summaryAuto'));
+    else if (m) parts.push(m.label || m.model || m.id);
+    if (!auto && m?.default_reasoning) parts.push(m.default_reasoning);
     parts.push(prefs.system ? tr('settings.model.customPrompt') : tr('settings.model.defaultPrompt'));
     return parts.join(' · ');
   }
@@ -632,13 +684,15 @@ const cedarSettings = (() => {
   /** cedar's server settings as last loaded for the Advanced page, for its nav line. */
   let advancedSettings = null;
 
-  /** Expert mode (trace-view.js), for this browser and so open to everyone, then the server-wide
-   *  options most setups leave alone, which need the admin token: how long a run may take, and
-   *  what runs the sandboxes. */
+  /** Expert mode (trace-view.js), for this browser and so open to everyone, and whether models
+   *  are chosen by hand, open to whoever may manage the models; then the server-wide options most
+   *  setups leave alone, which need the admin token: how long a run may take, and what runs the
+   *  sandboxes. */
   async function renderAdvanced(section = advancedSection) {
     if (!section) return;
     advancedSection = section;
     const expert = typeof cedarTrace === 'undefined' ? [] : [cedarTrace.settingsBlock()];
+    expert.push(advancedBlock(tr('settings.advanced.models'), modelSelectionRow()));
     const cfg = deps.config();
     if (!cfg.admin_enabled || !unlocked()) {
       advancedSettings = null;
@@ -679,6 +733,56 @@ const cedarSettings = (() => {
     head.append(el('span', 'settings-eyebrow', title));
     b.append(head, content);
     return b;
+  }
+
+  /** The switch that brings the model pickers back (cedar's `model_selection` setting). Off, the
+   *  default, cedar chooses the model of every message by the models' sizes. Whoever may manage
+   *  the models may flip it. */
+  function modelSelectionRow() {
+    const cfg = deps.config();
+    const allowed = modelsOpen() || (cfg.admin_enabled && unlocked());
+    const { row, main, side } = integrationRow(tr('settings.advanced.modelSelection.title'), tr('settings.advanced.modelSelection.desc'));
+    const sw = el('button', 'cedar-set-switch');
+    sw.type = 'button';
+    sw.setAttribute('role', 'switch');
+    sw.setAttribute('aria-label', tr('settings.advanced.modelSelection.title'));
+    sw.disabled = !allowed;
+    const state = badge('', 'ok');
+    const problem = el('small', 'cedar-set-error');
+    problem.hidden = true;
+    if (!allowed) {
+      row.classList.add('unavailable');
+      sw.title = tr('settings.advanced.modelSelection.locked');
+    }
+    main.append(problem);
+    const show = (on) => {
+      sw.setAttribute('aria-checked', String(on));
+      state.textContent = tr(on ? 'settings.advanced.modelSelection.manual' : 'settings.advanced.modelSelection.auto');
+    };
+    show(cedarModels.selectable());
+    sw.addEventListener('click', async () => {
+      const was = sw.getAttribute('aria-checked') === 'true';
+      sw.disabled = true;
+      problem.hidden = true;
+      try {
+        const saved = await adminApi('PUT', '/integrations/model-selection', { enabled: !was });
+        const now = saved?.selection === true;
+        show(now);
+        // The pickers in the composer and the agent form follow, and the Models page's default.
+        await modelsChanged();
+        refreshModels();
+        deps.toast(tr(now ? 'settings.advanced.modelSelection.savedOn' : 'settings.advanced.modelSelection.savedOff'));
+      } catch (err) {
+        show(was);
+        problem.textContent = err.message;
+        problem.hidden = false;
+      } finally {
+        sw.disabled = !allowed;
+        shell()?.refresh('model');
+      }
+    });
+    side.append(state, sw);
+    return row;
   }
 
   /** The Advanced page's Sandbox block around `content`. */
@@ -1231,6 +1335,7 @@ const cedarSettings = (() => {
     if (entry.is_default) side.append(badge(tr('settings.models.default'), 'ok'));
     if (entry.api_key_set) side.append(badge(tr('settings.models.keySet')));
     if (entry.multimodal) side.append(badge(tr('settings.models.images')));
+    if (entry.video) side.append(badge(tr('settings.models.video')));
     side.append(badge(levels.length
       ? (entry.default_reasoning
         ? tr('settings.models.levelsDefault', { levels: levels.join(', '), level: entry.default_reasoning })
@@ -1513,6 +1618,15 @@ const cedarSettings = (() => {
     });
     showImages();
     advanced.append(imagesSet);
+    // Whether the model can watch a video: a screen recording goes to it whole when an action
+    // is made from one (actions.js). Nothing tells this from the outside, so it is said here.
+    const takesVideo = el('label', 'cedar-set-check small plain');
+    const videoBox = el('input');
+    videoBox.type = 'checkbox';
+    videoBox.checked = Boolean(entry?.video);
+    takesVideo.append(videoBox, el('span', '', tr('settings.form.video')));
+    takesVideo.title = tr('settings.form.videoHelp');
+    advanced.append(takesVideo);
     const makeDefault = el('label', 'cedar-set-check small plain');
     const defaultBox = el('input');
     defaultBox.type = 'checkbox';
@@ -1603,6 +1717,7 @@ const cedarSettings = (() => {
         default_reasoning: defaultLevel.value,
         // Said outright under Advanced, or left to cedar with what the list says as a hint.
         ...(imagesSet.value ? { multimodal: imagesSet.value === 'yes' } : { detect_images: true, ...(listedImages() === undefined ? {} : { images_hint: listedImages() }) }),
+        video: videoBox.checked,
         max_tokens: limit,
         is_default: defaultBox.checked,
       };
@@ -2296,7 +2411,7 @@ const cedarSettings = (() => {
     history.replaceState(null, '', location.pathname + location.hash);
     deps.toast(outcome === 'connected' ? tr('settings.google.connectedToast') : `Google: ${params.get('message') || tr('settings.google.notConnectedLower')}`);
     const btn = document.getElementById('settings-btn');
-    if (btn) { btn.dataset.page = 'server'; btn.click(); }
+    if (btn) { btn.dataset.page = params.get('own') ? 'tools' : 'server'; btn.click(); }
   }
 
   function bind() {

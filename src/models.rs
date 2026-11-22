@@ -71,6 +71,10 @@ pub struct Run {
     pub model: String,
     /// The `reasoning_effort` sent with each request, if the run asked for one.
     pub reasoning: Option<String>,
+    /// cedar chooses the run's models by their size (see [`crate::routing`]): it named none
+    /// while the `model_selection` setting was off. `model_id`, `model` and `reasoning` are then
+    /// those of the model it last used.
+    pub model_auto: bool,
     pub max_turns: u32,
     pub turns: u32,
     pub final_text: Option<String>,
@@ -93,12 +97,23 @@ pub struct Run {
     /// The client answers what the run asks while it goes: it waits for the plan to be agreed and
     /// for risky tool calls to be approved. Otherwise the plan is only shown and nothing waits.
     pub interactive: bool,
+    /// Whether what the run would send or change in the user's accounts is held for them to
+    /// approve instead of done (see [`HeldCall`]). It applies while nobody answers the run: one
+    /// that isn't interactive.
+    pub hold_writes: bool,
     /// The user's language and region (a BCP 47 tag such as `de-CH`; see [`crate::locale`]).
     pub locale: String,
+    /// The user's time zone (an IANA name such as `America/Los_Angeles`; see
+    /// [`crate::timezone`]), or `None` when it isn't known and the run is told UTC's date.
+    pub timezone: Option<String>,
     /// The user's verdict on the run (`POST /v1/runs/{id}/feedback`), if they gave one.
     pub rating: Option<Rating>,
     /// Whether its CSV and JSON attachments were imported into record sets when it started.
     pub import_attachments: bool,
+    /// The run is kept out of everything that outlives its conversation: it is shown nothing
+    /// from memory and saves nothing to it, has no records tools, keeps no trace of its model
+    /// calls and calls no webhook. A run that continues a private one is private.
+    pub private: bool,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -112,6 +127,9 @@ pub struct NewRun {
     pub model_id: String,
     pub model: String,
     pub reasoning: Option<String>,
+    /// cedar chooses the models as the run goes (see [`crate::routing`]); `model_id` is the one
+    /// it starts with.
+    pub model_auto: bool,
     pub max_turns: u32,
     /// Continue this run: its conversation, and its workspace if that hasn't expired.
     pub parent_id: Option<Uuid>,
@@ -123,9 +141,13 @@ pub struct NewRun {
     pub callback_secret: Option<String>,
     pub plan: PlanMode,
     pub interactive: bool,
+    pub hold_writes: bool,
     pub locale: String,
+    pub timezone: Option<String>,
     /// Import CSV and JSON attachments into record sets when the run starts.
     pub import_attachments: bool,
+    /// Keep the run out of memory, records and traces, and call no webhook for it.
+    pub private: bool,
 }
 
 /// Whether a run makes a plan before it starts: always, never, or for prompts long enough to
@@ -181,6 +203,9 @@ pub struct ModelEntry {
     /// Accepts images with a prompt, and is shown attached PDFs' first pages as images (see
     /// [`crate::attachments`]). Without it, a run with images is refused; PDFs are fine.
     pub multimodal: bool,
+    /// Accepts a video with a prompt, as a `video_url` content part. A screen recording is sent
+    /// whole to such a model when it is turned into an action (see [`crate::actions`]).
+    pub video: bool,
     /// The most tokens one reply may take, a reasoning model's thinking included. A reply that
     /// reaches it ends with `stop_reason` `max_tokens`.
     pub max_tokens: u32,
@@ -210,6 +235,7 @@ impl ModelEntry {
             "reasoning_levels": self.reasoning_levels,
             "default_reasoning": self.default_reasoning,
             "multimodal": self.multimodal,
+            "video": self.video,
             "max_tokens": self.max_tokens,
             "context_window": self.context_window,
             "is_default": self.is_default,
@@ -304,6 +330,8 @@ pub mod event {
     pub const PLAN_UPDATED: &str = "plan.updated";
     pub const APPROVAL_REQUIRED: &str = "approval.required";
     pub const APPROVAL_RESOLVED: &str = "approval.resolved";
+    /// A call was not made but kept for the user to approve later (see `HeldCall`).
+    pub const CALL_HELD: &str = "call.held";
     /// The sandbox's policy refused a connection or request while a call ran.
     pub const SANDBOX_DENIED: &str = "sandbox.denied";
     pub const USAGE: &str = "usage";
@@ -372,6 +400,34 @@ impl RunStatus {
     }
 }
 
+/// A tool call a run wanted to make that waits in its owner's outbox instead: something that
+/// sends or changes in one of their accounts, held because nobody was there to approve it (an
+/// unattended run with `hold_writes`) or because nobody answered in time. Approving it makes
+/// exactly this call, or the one the owner edited it into, outside any run.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct HeldCall {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    /// The tool call's id in the run.
+    pub call_id: String,
+    pub tool: String,
+    /// The call's input: as the model wrote it, or as the owner sent it once `edited`.
+    pub input: Value,
+    /// One line on what the call does.
+    pub reason: String,
+    /// `unattended` or `timeout`.
+    pub why: String,
+    /// `pending`, `sending`, `sent`, `failed` (the tool refused; it can be approved again) or
+    /// `discarded`.
+    pub status: String,
+    /// Whether the owner changed the input before sending.
+    pub edited: bool,
+    /// What the tool returned, or why it failed.
+    pub output: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub decided_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct StoredMessage {
     pub seq: i64,
@@ -411,10 +467,24 @@ pub struct CreateRunRequest {
     /// (`POST /v1/runs/{id}/plan`) and approve risky tool calls
     /// (`POST /v1/runs/{id}/approvals/{approval_id}`). Absent: false, and nothing waits.
     pub interactive: Option<bool>,
+    /// Hold what the run would send or change in the user's accounts (mail, calendar, files,
+    /// Slack) for them to approve later (`GET /v1/held`), instead of doing it, when the run
+    /// isn't interactive. Absent: false, and an unattended run acts at once.
+    pub hold_writes: Option<bool>,
     /// The user's language and region, a BCP 47 tag such as `de` or `fr-CH` (see
     /// [`crate::locale`]). Absent: the parent's for a continuation, else `DEFAULT_LOCALE`.
     pub locale: Option<String>,
+    /// The user's time zone, an IANA name such as `America/Los_Angeles` (see
+    /// [`crate::timezone`]): the run is told the date and time there, so "today" and "tomorrow"
+    /// are the user's. Absent: the parent's for a continuation, else `DEFAULT_TIMEZONE`, else
+    /// unknown.
+    pub timezone: Option<String>,
     /// Import the run's CSV and JSON attachments into record sets named after the files when it
     /// starts (see "Records" in the README). Absent: `RECORDS_IMPORT_ATTACHMENTS`.
     pub import_attachments: Option<bool>,
+    /// Keep the run out of everything that outlives its conversation: no memory is shown to it
+    /// or saved from it, it has no records tools and imports no attachments, no trace of its
+    /// model calls is kept, and it takes no `callback_url` (see "Private runs" in the README).
+    /// Absent: false, except that a continuation of a private run is always private.
+    pub private: Option<bool>,
 }

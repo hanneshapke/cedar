@@ -7,6 +7,11 @@
 // model's levels and hides itself when the model has none.
 //
 //   load(api) -> Promise<entries>      fetch the registry with the app's /api client
+//   selectable() -> boolean            whether users choose the model (cedar's `model_selection`
+//                                      setting, switched in Settings -> Advanced). Off, the
+//                                      default, cedar chooses for every message by the models'
+//                                      sizes: the pickers and the send button's menu stay
+//                                      hidden, and their selects stay at '' so nothing is named.
 //   all() -> entries                   as last loaded
 //   loaded() -> boolean                whether a load has succeeded (an empty registry counts)
 //   byId(id) -> entry | null
@@ -32,13 +37,18 @@
 const cedarModels = (() => {
   let list = [];
   let ready = false;
+  // Until the server says otherwise (one from before the setting never does), users choose.
+  let selection = true;
 
   async function load(api) {
     const body = await api('GET', '/models');
     list = Array.isArray(body?.models) ? body.models : [];
+    selection = body?.selection !== false;
     ready = true;
     return list;
   }
+
+  const selectable = () => selection;
 
   const all = () => list;
   const loaded = () => ready;
@@ -47,7 +57,8 @@ const cedarModels = (() => {
   const defaultId = () => defaultEntry()?.id || '';
   const resolve = (id) => (id && byId(id)) || defaultEntry();
   const levelsFor = (id) => resolve(id)?.reasoning_levels || [];
-  const multimodal = (id) => Boolean(resolve(id)?.multimodal);
+  // While cedar chooses, an image goes to a model that takes images, if any does.
+  const multimodal = (id) => (selection ? Boolean(resolve(id)?.multimodal) : list.some((m) => m.multimodal));
 
   /** A reasoning level as shown: the common ones in the page's language, others as registered. */
   function levelName(level) {
@@ -67,6 +78,13 @@ const cedarModels = (() => {
    */
   function fillSelect(select, { blank = tr('models.defaultModel'), selected = '' } = {}) {
     select.textContent = '';
+    if (!selection) {
+      // cedar chooses: nothing to pick, and '' so no model is named.
+      select.append(new Option('', ''));
+      select.value = '';
+      select.hidden = true;
+      return false;
+    }
     const def = defaultEntry();
     const withBlank = blank !== null && blank !== undefined;
     if (withBlank) select.append(new Option(def ? tr('models.withDefault', { blank, model: label(def) }) : blank, ''));
@@ -84,8 +102,9 @@ const cedarModels = (() => {
     const entry = resolve(modelId);
     const levels = entry?.reasoning_levels || [];
     select.textContent = '';
-    select.hidden = !levels.length;
-    if (!levels.length) return false;
+    // A level belongs to a model, so there is none to pick while cedar chooses the model.
+    select.hidden = !levels.length || !selection;
+    if (select.hidden) return false;
     const def = entry.default_reasoning;
     select.append(new Option(def ? tr('models.reasoningDefaultIs', { level: levelName(def) }) : tr('models.reasoningDefault'), ''));
     for (const l of levels) select.append(new Option(tr('models.reasoning', { level: levelName(l) }), l));
@@ -127,7 +146,7 @@ const cedarModels = (() => {
     function refresh() {
       const entry = chosenModel();
       const choosable = list.length >= 2 || (entry?.reasoning_levels || []).length > 0;
-      pick.hidden = !entry || !choosable;
+      pick.hidden = !entry || !choosable || !selection;
       if (!entry) { close(); return; }
       labelEl.textContent = levelOf() ? `${label(entry)} · ${levelName(levelOf())}` : label(entry);
       if (!menu.hidden) render();
@@ -216,5 +235,5 @@ const cedarModels = (() => {
     return { refresh };
   }
 
-  return { load, all, loaded, byId, defaultId, levelsFor, multimodal, levelName, fillSelect, fillLevels, bindPair, sendMenu };
+  return { load, selectable, all, loaded, byId, defaultId, levelsFor, multimodal, levelName, fillSelect, fillLevels, bindPair, sendMenu };
 })();

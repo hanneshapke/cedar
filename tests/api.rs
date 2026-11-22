@@ -555,6 +555,7 @@ async fn invalid_requests_are_rejected_with_json_errors() {
         (json!({ "prompt": "x", "reasoning": "max" }), "not offered"),
         (json!({ "prompt": "x", "bogus": 1 }), "bogus"),
         (json!({ "prompt": "x", "locale": "de CH" }), "not a language tag"),
+        (json!({ "prompt": "x", "timezone": "Pacific/Nowhere" }), "not a time zone"),
         (json!({ "nothing": "here" }), "prompt"),
         (json!({ "prompt": "x".repeat(100_001) }), "prompt is longer"),
         (
@@ -836,6 +837,8 @@ async fn defaults_and_clamps_are_applied() {
     ])
     .await;
     app.register("small", "small-model", &[]).await;
+    // Users choose the model here, so a run that names none gets the default one.
+    cedar::routing::set_selection(&app.state.store, true).await.unwrap();
 
     let plain = app.create_run(KEY_A, "x").await;
     assert_eq!(plain["model"], TEST_MODEL);
@@ -913,6 +916,43 @@ async fn the_locale_reaches_the_model_and_continuations_keep_it() {
         .create_run_with(KEY_A, json!({ "prompt": "x", "locale": "pt-BR" }))
         .await;
     assert_eq!(portuguese["locale"], "en");
+}
+
+#[tokio::test]
+async fn the_users_time_zone_sets_the_date_and_continuations_keep_it() {
+    let app = TestApp::new(vec![
+        Step::Reply(text("a")),
+        Step::Reply(text("b")),
+        Step::Reply(text("c")),
+    ])
+    .await;
+    // Without a zone the date is UTC's, and the model is told the user's may differ.
+    let plain = app.create_run(KEY_A, "x").await;
+    assert_eq!(plain["timezone"], Value::Null);
+    app.wait_status(KEY_A, &id_of(&plain), "completed").await;
+
+    let portland = app
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "When is the concert starting tomorrow?", "timezone": " America/Los_Angeles " }),
+        )
+        .await;
+    assert_eq!(portland["timezone"], "America/Los_Angeles");
+    app.wait_status(KEY_A, &id_of(&portland), "completed").await;
+    let child = app
+        .create_run_with(KEY_A, json!({ "prompt": "and after?", "parent_id": id_of(&portland) }))
+        .await;
+    assert_eq!(child["timezone"], "America/Los_Angeles", "a continuation keeps its parent's zone");
+    app.wait_status(KEY_A, &id_of(&child), "completed").await;
+
+    let requests = app.llm.requests();
+    let system = |i: usize| requests[i]["system"].as_str().unwrap().to_string();
+    assert!(system(0).contains("time zone is not known"), "{}", system(0));
+    for i in [1, 2] {
+        let s = system(i);
+        assert!(s.contains("the user's local time is") && s.contains("(America/Los_Angeles, UTC-0"), "{s}");
+        assert!(!s.contains("time zone is not known"), "{s}");
+    }
 }
 
 // -- ownership, listing, deletion -------------------------------------------------------------
@@ -1780,8 +1820,12 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         callback_secret: None,
         plan: cedar::models::PlanMode::Off,
         interactive: false,
+        hold_writes: false,
         locale: "en".into(),
+        timezone: None,
         import_attachments: false,
+        model_auto: false,
+        private: false,
     };
     let running = store
         .insert_run_limited(&new("was running"), 10)
@@ -1829,10 +1873,10 @@ async fn the_registered_models_are_listed_to_any_key() {
         body,
         json!({ "models": [
             { "id": TEST_MODEL, "label": TEST_MODEL, "model": TEST_MODEL, "is_default": true,
-              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true, "max_tokens": 16384, "context_window": null, "price": null },
+              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true, "video": false, "max_tokens": 16384, "context_window": null, "price": null },
             { "id": "small", "label": "small", "model": "small-model", "is_default": false,
-              "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false, "max_tokens": 16384, "context_window": null, "price": null },
-        ] })
+              "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false, "video": false, "max_tokens": 16384, "context_window": null, "price": null },
+        ] , "model_selection": false })
     );
     let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
     assert_eq!(defaults["model"], TEST_MODEL);
@@ -1848,6 +1892,8 @@ async fn a_run_asks_for_a_reasoning_level_and_a_continuation_keeps_it() {
         Step::Reply(text("d")),
     ])
     .await;
+    // Users choose the model here, so a run that names none gets the default one.
+    cedar::routing::set_selection(&app.state.store, true).await.unwrap();
 
     let run = app
         .create_run_with(KEY_A, json!({ "prompt": "think", "reasoning": "high" }))
@@ -2002,6 +2048,8 @@ async fn a_finished_run_can_be_compacted_into_one_prompt() {
     ])
     .await;
     app.register("small", "small-model", &["low", "high"]).await;
+    // Users choose the model here, so a run that names none gets the default one.
+    cedar::routing::set_selection(&app.state.store, true).await.unwrap();
     let run = app
         .create_run_with(
             KEY_A,

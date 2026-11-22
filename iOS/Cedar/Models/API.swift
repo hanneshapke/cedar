@@ -13,11 +13,14 @@ struct ServerConfig: Decodable, Sendable {
     let records: Bool
     /// The server can send a conversation to a training corpus (`CHAT_CONTRIBUTIONS_URL`).
     let contributions: Bool
+    /// The server has private chats; an older one leaves it out, so the app doesn't offer them.
+    let privateChats: Bool
 
     enum CodingKeys: String, CodingKey {
         case authRequired = "auth_required"
         case adminEnabled = "admin_enabled"
         case memory, records, contributions
+        case privateChats = "private_chats"
     }
 
     init(from decoder: Decoder) throws {
@@ -27,6 +30,7 @@ struct ServerConfig: Decodable, Sendable {
         memory = try c.decodeIfPresent(Bool.self, forKey: .memory) ?? false
         records = try c.decodeIfPresent(Bool.self, forKey: .records) ?? false
         contributions = try c.decodeIfPresent(Bool.self, forKey: .contributions) ?? false
+        privateChats = try c.decodeIfPresent(Bool.self, forKey: .privateChats) ?? false
     }
 }
 
@@ -497,8 +501,23 @@ struct ModelInfo: Decodable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// `GET /api/models`. `selection` is whether people choose the model themselves (the server's
+/// "Choose the model yourself" setting). Off, cedar picks the model of every message by the
+/// models' sizes, ignores a model or reasoning level sent to it, and the pickers stay hidden. A
+/// server from before the setting doesn't say, and has people choose.
 struct ModelList: Decodable, Sendable {
     let models: [ModelInfo]
+    let selection: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case models, selection
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        models = try c.decodeIfPresent([ModelInfo].self, forKey: .models) ?? []
+        selection = try c.decodeIfPresent(Bool.self, forKey: .selection) ?? true
+    }
 }
 
 /// A conversation as cedar-chat keeps it: its title, the model it last used, and whether a
@@ -516,6 +535,9 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
     var needsAnswer: Bool
     /// When it was starred, on any device; `nil` when it isn't.
     var starredAt: Date?
+    /// A private chat: in no list, not remembered, deleted when it is left. A server from before
+    /// private chats doesn't say.
+    var privateChat: Bool?
     /// The title of the agent a run belongs to; only the Starred list and a search send it.
     var scheduleTitle: String?
     /// The passage of a message a search matched; only search results carry it.
@@ -528,13 +550,16 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
         case scheduleId = "schedule_id"
         case needsAnswer = "needs_answer"
         case starredAt = "starred_at"
+        case privateChat = "private"
         case scheduleTitle = "schedule_title"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
 
-    /// The title cedar-chat gave it (the first message), or a placeholder.
+    /// The title cedar-chat gave it (the first message), or a placeholder. A private chat's
+    /// title stays out of the navigation bar and the app switcher.
     var displayTitle: String {
+        if isPrivate { return L10n.string("Private Chat") }
         let t = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? L10n.string("New chat") : t
     }
@@ -542,6 +567,7 @@ struct Conversation: Decodable, Identifiable, Hashable, Sendable {
 
 extension Conversation {
     var isStarred: Bool { starredAt != nil }
+    var isPrivate: Bool { privateChat ?? false }
 }
 
 struct ConversationList: Decodable, Sendable {
@@ -557,9 +583,12 @@ struct ConversationDetail: Decodable, Sendable {
     /// What was decided about the follow-ups its runs suggested; a suggestion that isn't here is
     /// still open. Empty on a server from before follow-ups.
     let followups: [FollowUpDecision]
+    /// What was decided about what its runs reported they could not do; a report that isn't
+    /// here is still open. Empty on a server from before feedback.
+    let limitations: [FeedbackDecision]
 
     enum CodingKeys: String, CodingKey {
-        case conversation, turns, agent, followups
+        case conversation, turns, agent, followups, limitations
     }
 
     init(from decoder: Decoder) throws {
@@ -568,6 +597,7 @@ struct ConversationDetail: Decodable, Sendable {
         turns = try c.decode([Turn].self, forKey: .turns)
         agent = try c.decodeIfPresent(AgentRef.self, forKey: .agent)
         followups = try c.decodeIfPresent([FollowUpDecision].self, forKey: .followups) ?? []
+        limitations = try c.decodeIfPresent([FeedbackDecision].self, forKey: .limitations) ?? []
     }
 }
 

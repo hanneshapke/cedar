@@ -10,22 +10,23 @@ use crate::context::{self, Budget};
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
+use crate::actions::{Actions, ActionsContext};
 use crate::memory::{self, Memories, MemoryContext};
 use crate::records::{self, Records, RecordsContext};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
 use crate::plan;
+use crate::routing;
 use crate::policy::Endpoint;
 use crate::sandbox::{Reach, Runtime, Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
 use crate::tools::{
-    question_text, ToolContext, ToolModel, ToolOutput, ToolSet, ToolView, ASK_USER, RECORDS_SAVE,
-    REMEMBER,
+    question_text, Handover, ToolContext, ToolModel, ToolOutput, ToolView, ACCOUNT_GROUPS, ASK_USER,
+    RECORDS_SAVE, REMEMBER, SAVED_ACTIONS,
 };
 use crate::trace;
 use crate::waits::{Answer, Waits};
 use anyhow::{anyhow, Result};
-use arc_swap::ArcSwap;
 use chrono::Utc;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -36,9 +37,6 @@ use tokio_util::sync::CancellationToken;
 pub struct AgentEnv {
     /// The clients of the registered models; a run uses the one for its `model_id`.
     pub llm: Arc<LlmRouter>,
-    /// The current tools. Swapped when an admin changes an integration; a run keeps the set it
-    /// started with.
-    pub tools: Arc<ArcSwap<ToolSet>>,
     pub store: Store,
     pub tool_timeout: Duration,
     pub tool_output_max_bytes: usize,
@@ -49,6 +47,9 @@ pub struct AgentEnv {
     pub approvals: Rules,
     /// How long a run waits for an answer to its plan or an approval.
     pub approval_timeout: Duration,
+    /// After how many plain "allow" answers for the same thing an approval offers "always
+    /// allow"; 0 offers it from the first time.
+    pub always_allow_after: u32,
     /// Where runs wait for those answers.
     pub waits: Arc<Waits>,
     /// The model registry, for whether a run's model takes images.
@@ -67,6 +68,8 @@ pub struct AgentEnv {
     pub memory_consolidate_after: u32,
     /// What owners keep as records across conversations; `None` when records are turned off.
     pub records: Option<Records>,
+    /// What owners showed the agent how to do; `None` when actions are turned off.
+    pub actions: Option<Actions>,
     /// `RUN_TIMEOUT_SECS`: how long a run may take (time spent waiting for the user not counted)
     /// while no admin has saved `run_timeout_secs`; the model is told when little of the limit is
     /// left (see [`time_note`]).
@@ -98,13 +101,33 @@ impl From<anyhow::Error> for AgentError {
 /// browser's lifetimes, and the terminal event.
 pub async fn run_agent(
     env: &AgentEnv,
-    run: &Run,
+    created: &Run,
     sandbox: Arc<dyn Sandbox>,
     browser: Option<Arc<BrowserSession>>,
     computer: Option<Arc<ComputerSession>>,
     events: &Emitter,
     cancel: &CancellationToken,
 ) -> Result<Completion, AgentError> {
+    // A continuation starts with a copy of its parent's conversation (made when it was created).
+    let mut messages: Vec<Value> = env
+        .store
+        .list_messages(created.id)
+        .await?
+        .into_iter()
+        .map(|m| json!({ "role": m.role, "content": m.content }))
+        .collect();
+    let attachments = env.store.list_attachments(created.id).await?;
+    // A run that left the choice of model to cedar moves between the smallest and the biggest
+    // registered one (see [`routing`]); `run` is the run on the model it is using, and
+    // `on_small` whether it may still move up.
+    let (mut run, big) = match route(env, created, &messages, &attachments).await? {
+        Some((run, big)) => (run, Some(big)),
+        None => (created.clone(), None),
+    };
+    let mut on_small = big.as_ref().is_some_and(|big| big.id != run.model_id);
+    let run = &mut run;
+    // The model a tool asks (search_products, plan_trip): such calls are for the biggest.
+    let tool_model = big.as_ref().map_or_else(|| run.clone(), |big| on_model(run, big));
     let ctx = ToolContext {
         sandbox: sandbox.clone(),
         browser,
@@ -112,26 +135,31 @@ pub async fn run_agent(
         max_image_side: crate::images::max_side(&env.store).await?,
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
-        model: env.llm.client_for(&run.model_id).map(|client| {
+        model: env.llm.client_for(&tool_model.model_id).map(|client| {
             Arc::new(ToolModel::new(
                 client,
-                run.model.clone(),
-                max_tokens(env, run),
-                run.reasoning.clone(),
+                tool_model.model.clone(),
+                max_tokens(env, &tool_model),
+                tool_model.reasoning.clone(),
             ))
         }),
         locale: run.locale.clone(),
-        memory: env.memories.as_ref().map(|memories| MemoryContext {
+        timezone: run.timezone.clone(),
+        memory: env.memories.as_ref().filter(|_| !run.private).map(|memories| MemoryContext {
             memories: memories.clone(),
             owner: run.owner.clone(),
             run_id: run.id,
             interactive: run.interactive,
         }),
-        records: env.records.as_ref().map(|records| RecordsContext {
+        records: env.records.as_ref().filter(|_| !run.private).map(|records| RecordsContext {
             records: records.clone(),
             owner: run.owner.clone(),
             run_id: run.id,
             interactive: run.interactive,
+        }),
+        actions: env.actions.as_ref().map(|actions| ActionsContext {
+            actions: actions.clone(),
+            owner: run.owner.clone(),
         }),
     };
     // Connections the key's owner always allows, which the sandbox's base policy doesn't. Only an
@@ -151,21 +179,14 @@ pub async fn run_agent(
             tracing::warn!(run_id = %run.id, error = %format!("{e:#}"), "could not apply the connections this key always allows");
         }
     }
-    let tool_set = env.tools.load_full();
+    // The owner's tools: a user's act for the Google account they connected themselves.
+    let tool_set = env.integrations.tools_for(&run.owner).await;
     // Picks up MCP servers that weren't reachable (or not tried) when earlier runs started.
     tokio::select! {
         biased;
         _ = cancel.cancelled() => return Err(AgentError::Cancelled),
         _ = tool_set.connect_remote(env.tool_timeout) => {}
     }
-    // A continuation starts with a copy of its parent's conversation (made when it was created).
-    let mut messages: Vec<Value> = env
-        .store
-        .list_messages(run.id)
-        .await?
-        .into_iter()
-        .map(|m| json!({ "role": m.role, "content": m.content }))
-        .collect();
     // How much of the model's window the run's requests may take (see [`context`]).
     let mut budget = Budget::new(
         model_entry(env, run).and_then(|m| m.context_window),
@@ -180,7 +201,11 @@ pub async fn run_agent(
     if let Some(allow) = &narrowed {
         tracing::info!(run_id = %run.id, window = ?budget.window(), tools = ?allow, "small context window: offering only the tools the request seems to need");
     }
-    let tools = tool_set.select(narrowed.as_deref().or(run.tools.as_deref()));
+    // A private run keeps nothing about the user: it gets no memory or records tools, and with
+    // them goes everything below that reads or writes either.
+    let tools = tool_set
+        .select(narrowed.as_deref().or(created.tools.as_deref()))
+        .without(if run.private { crate::tools::KEEPING_GROUPS } else { &[] });
     // Looked up now, so an admin's change since the run was created applies. A model that reads
     // no images gets no tool that answers with one, and none of the screenshots an earlier run
     // of the conversation took on another model.
@@ -205,6 +230,13 @@ pub async fn run_agent(
         }
     }
     let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
+    // How this run hands over to its user: what waits for their OK, what is held for them.
+    note.push(' ');
+    note.push_str(&tools.handover_note(Handover {
+        interactive: run.interactive,
+        approvals: !env.approvals.is_empty(),
+        hold_writes: run.hold_writes,
+    }));
     // In `tool` mode the model decides whether a request needs a plan.
     let offers_plan = run.plan == PlanMode::Tool;
     if offers_plan {
@@ -245,6 +277,14 @@ pub async fn run_agent(
         note.push_str("\n\n");
         note.push_str(&records::note(&sets, &columns, run.interactive, memory_on));
     }
+    // What the owner showed the agent how to do, by name; the steps are read with the tool.
+    if let (Some(actions), true) = (&env.actions, tools.get(SAVED_ACTIONS).is_some()) {
+        let saved = actions.list(&run.owner).await?;
+        if !saved.is_empty() {
+            note.push_str("\n\n");
+            note.push_str(&crate::actions::note(&saved, tools.get("browser").is_some()));
+        }
+    }
     // Read per request, so a memory deleted in Settings is gone from the very next run. The
     // `memory` group switches reading and writing together. The profile and pinned
     // instructions are always shown; the rest is what the request calls for (see
@@ -266,17 +306,12 @@ pub async fn run_agent(
     // At the head of cedar's note, where the model can't miss it: so it needs no call to learn
     // the date, and searches for this year's news rather than the year its training ended. The
     // client's own prompt stays first, so the start of every request stays the same.
-    let now = Utc::now();
-    let date = format!(
-        "Today is {} and the time is {} UTC. Use this date, and this year, for anything \
-         recent: searches, date filters, \"the last 24 hours\".",
-        now.format("%A, %Y-%m-%d"),
-        now.format("%H:%M")
-    );
+    // It is the user's clock when the run knows their time zone: by UTC's alone, "tomorrow"
+    // asked on a Saturday evening in Portland is Monday (see [`crate::timezone`]).
+    let date = crate::timezone::date_note(Utc::now(), run.timezone.as_deref());
     let mut system = with_note(&run.system, &with_note(&date, &note));
     let workspace_lost = !messages.is_empty() && !run.workspace_reused;
     let opening = opening_message(&messages, &run.prompt, workspace_lost);
-    let attachments = env.store.list_attachments(run.id).await?;
     // CSV and JSON attachments go into record sets named after them before the model sees
     // anything, when the run asks for it (see [`records::import`]); the note says what became
     // of each, and a `records.updated` event what was imported.
@@ -330,9 +365,12 @@ pub async fn run_agent(
         }
     }
     push_message(env, run, &mut messages, "user", opening).await?;
-    env.store
-        .record_sent_prompt(run.id, &system, &tool_defs)
-        .await?;
+    // A private run keeps no trace (see [`call_model`]).
+    if !run.private {
+        env.store
+            .record_sent_prompt(run.id, &system, &tool_defs)
+            .await?;
+    }
     let mut sources = Sources::default();
 
     // The system prompt and tools are the same in every request; only the messages grow.
@@ -343,6 +381,12 @@ pub async fn run_agent(
     // The limit the manager enforces for this run (see [`crate::manager::run_time_limit`]).
     let time_limit = crate::manager::run_time_limit(&env.store, env.run_timeout).await;
     for turn in 1..=run.max_turns {
+        // A run that is still working after its first turns is a complex task.
+        if let (true, Some(big)) = (on_small && turn > routing::SMALL_TURNS, &big) {
+            move_to(env, run, big, &mut budget, "the task takes many turns").await?;
+            on_small = false;
+        }
+        let resp = 'ask: loop {
         // Looked up each turn, so an admin's change applies to the next call.
         budget.set_max_reply(max_tokens(env, run));
         let llm = env.llm.client_for(&run.model_id).ok_or_else(|| {
@@ -390,7 +434,10 @@ pub async fn run_agent(
             };
             let started = Instant::now();
             let resp = call_model(env, run, llm.as_ref(), &req, trace::AGENT, turn, cancel).await??;
-            if let Some(text) = &resp.reasoning {
+            // The smallest model reached for a complex tool: the turn is asked again of the
+            // biggest (below), and nothing of this reply is shown.
+            let dropped = on_small && calls_complex_tool(&resp);
+            if let Some(text) = resp.reasoning.as_ref().filter(|_| !dropped) {
                 events
                     .emit(
                         event::ASSISTANT_REASONING,
@@ -404,7 +451,7 @@ pub async fn run_agent(
                 .await?;
             budget.calibrate(sent_bytes, resp.usage);
             let learned = budget.learn_window(req.max_tokens, resp.stop_reason.as_deref(), resp.usage);
-            if !cut_off_empty(&resp) {
+            if dropped || !cut_off_empty(&resp) {
                 break resp;
             }
             // Less conversation only helps when the window, not the reply limit, cut it short:
@@ -419,6 +466,14 @@ pub async fn run_agent(
                 continue;
             }
             return Err(AgentError::Failed(cut_off_reason(&budget, req.max_tokens, resp.usage, window_bound)));
+        };
+        match &big {
+            Some(big) if on_small && calls_complex_tool(&resp) => {
+                move_to(env, run, big, &mut budget, "a complex tool call").await?;
+                on_small = false;
+            }
+            _ => break 'ask resp,
+        }
         };
         push_message(
             env,
@@ -526,6 +581,80 @@ pub async fn run_agent(
     )))
 }
 
+/// The run on the model it starts with and the biggest model, for a run that left the choice of
+/// model to cedar (see [`routing`]); `None` for a run that named its model. Looked up now, so
+/// the registry as it is counts, not as it was when the run was created. It starts on the
+/// smallest model unless it plans first; a conversation with images stays among the models that
+/// take them.
+async fn route(
+    env: &AgentEnv,
+    run: &Run,
+    messages: &[Value],
+    attachments: &[crate::models::Attachment],
+) -> Result<Option<(Run, crate::models::ModelEntry)>, AgentError> {
+    if !run.model_auto {
+        return Ok(None);
+    }
+    let shown = |m: &Value| {
+        m["content"].as_array().is_some_and(|blocks| blocks.iter().any(|b| b["type"] == "image"))
+    };
+    let images = attachments.iter().any(|a| a.is_image()) || messages.iter().any(shown);
+    let Some(tiers) = routing::Tiers::pick(&env.integrations.models(), images) else {
+        return Ok(None);
+    };
+    // A request to do something out in the world (buy, book, cancel) starts with the biggest
+    // model, like one that plans: see [`routing::asks_to_act`].
+    let first = if plan::wanted(run.plan, &run.prompt) || routing::asks_to_act(&run.prompt) {
+        &tiers.big
+    } else {
+        &tiers.small
+    };
+    let start = on_model(run, first);
+    if start.model_id != run.model_id || start.reasoning != run.reasoning {
+        env.store
+            .set_run_model(run.id, &start.model_id, &start.model, start.reasoning.as_deref())
+            .await?;
+    }
+    Ok(Some((start, tiers.big)))
+}
+
+/// `run` as it is on `entry`: that model, at its default reasoning level.
+fn on_model(run: &Run, entry: &crate::models::ModelEntry) -> Run {
+    Run {
+        model_id: entry.id.clone(),
+        model: entry.model.clone(),
+        reasoning: entry.default_reasoning.clone(),
+        ..run.clone()
+    }
+}
+
+/// Take the run on with the biggest model (see [`routing`]): its requests, its limits and its
+/// window from here on, and what `GET /v1/runs/{id}` reports as the run's model.
+async fn move_to(
+    env: &AgentEnv,
+    run: &mut Run,
+    big: &crate::models::ModelEntry,
+    budget: &mut Budget,
+    why: &str,
+) -> Result<(), AgentError> {
+    tracing::info!(run_id = %run.id, from = %run.model_id, to = %big.id, why, "going on with the biggest model");
+    *run = on_model(run, big);
+    *budget = Budget::new(big.context_window, big.max_tokens);
+    env.store
+        .set_run_model(run.id, &run.model_id, &run.model, run.reasoning.as_deref())
+        .await?;
+    Ok(())
+}
+
+/// Whether a reply asks for a tool that is for the biggest model (see [`routing::complex_tool`]).
+fn calls_complex_tool(resp: &LlmResponse) -> bool {
+    resp.content
+        .iter()
+        .filter(|b| b["type"] == "tool_use")
+        .filter_map(|b| b["name"].as_str())
+        .any(routing::complex_tool)
+}
+
 /// The run's completion, after what it learned has been noted (see [`note_memory`]). The answer
 /// is already out, so being cancelled while noting only skips it.
 async fn finish(
@@ -602,7 +731,15 @@ async fn note_memory(
     if call && !transcript.text.trim().is_empty() {
         if let Some(llm) = env.llm.client_for(&run.model_id) {
             let (system, call_messages) =
-                memory::extract::call(&remembered, sets.as_deref(), &transcript, facts, experience, told);
+                memory::extract::call(
+                &remembered,
+                sets.as_deref(),
+                &transcript,
+                facts,
+                experience,
+                told,
+                crate::timezone::today(Utc::now(), run.timezone.as_deref()),
+            );
             let reasoning = quiet_reasoning(env, run);
             let req = MessageRequest {
                 model: &run.model,
@@ -767,8 +904,8 @@ pub fn with_attachments(opening: Value, blocks: Vec<Value>) -> Value {
     Value::Array(parts)
 }
 
-/// Call the model and record the call for the run's trace. The outer error is a cancellation or a
-/// failure to record it; the inner one is the call's own.
+/// Call the model and record the call for the run's trace, unless the run is private. The outer
+/// error is a cancellation or a failure to record it; the inner one is the call's own.
 async fn call_model(
     env: &AgentEnv,
     run: &Run,
@@ -785,6 +922,9 @@ async fn call_model(
         _ = cancel.cancelled() => return Err(AgentError::Cancelled),
         r = llm.create_message(req) => r,
     };
+    if run.private {
+        return Ok(resp);
+    }
     let call = trace::NewCall {
         turn,
         purpose,
@@ -887,7 +1027,7 @@ fn history_text(messages: &[Value]) -> String {
 
 /// The `usage` event for one model call, with what it cost when the model has a price.
 fn usage_event(env: &AgentEnv, run: &Run, turn: u32, usage: Usage) -> Value {
-    let mut data = json!({ "turn": turn, "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens });
+    let mut data = json!({ "turn": turn, "model_id": run.model_id, "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens });
     let price = env
         .integrations
         .models()
@@ -1025,8 +1165,30 @@ async fn propose_plan(
 const DECLINED: &str = "The user declined this call, so it did not run. Don't try it again     another way; go on without it, or say what you would need.";
 const NOT_APPROVED: &str = "No one approved this call in time, so it did not run. Go on without     it, or say what you would need.";
 
-/// In an interactive run, wait for the user's OK if the call needs one (and isn't always
-/// allowed already). `Ok(None)`: go ahead; `Ok(Some(message))`: don't, and tell the model this.
+/// What the model reads back for a call that was held (see [`hold`]).
+const HELD_NOTE: &str = "Not done yet: this call is held in the user's outbox and is only made \
+    if they approve it there. Don't make it again and don't wait for it. Go on with the rest, \
+    and tell the user that it is waiting for their approval.";
+
+/// At most this many calls of one run are held; more are refused, so a run that loops can't
+/// fill its owner's outbox.
+const MAX_HELD_PER_RUN: i64 = 20;
+
+/// What becomes of a call before it runs.
+enum Verdict {
+    /// Make it.
+    Go,
+    /// Don't, and tell the model this.
+    Refused(String),
+    /// Don't: it waits in the owner's outbox. The model is told this, as the call's result.
+    Held(String),
+}
+
+/// Decide whether a call runs now. In an interactive run, wait for the user's OK if the call
+/// needs one (and isn't always allowed already); one that sends or changes something in the
+/// user's accounts and got no answer in time is held for them rather than dropped. In a run
+/// nobody answers, such a call is held when the run says so (`hold_writes`), and everything
+/// else goes ahead.
 #[allow(clippy::too_many_arguments)]
 async fn approve(
     env: &AgentEnv,
@@ -1039,27 +1201,33 @@ async fn approve(
     call_id: &str,
     name: &str,
     input: &Value,
-) -> Result<Option<&'static str>, AgentError> {
+) -> Result<Verdict, AgentError> {
+    // By the tool's group in this run's set, so a personal tool whose name merely looks like an
+    // account's is never held: it needs a sandbox to run.
+    let holdable = ACCOUNT_GROUPS.contains(&tools.group(name)) && crate::tools::holdable(name);
     if !run.interactive {
-        return Ok(None);
+        if run.hold_writes && holdable {
+            return hold(env, run, events, call_id, name, input, "unattended").await;
+        }
+        return Ok(Verdict::Go);
     }
     // The user's own computer: asked every time, until they allow the rest of this run. That is
     // kept with the run and never saved, unlike the other rules' "always".
     if let Some(computer) = ctx.computer.as_ref().filter(|c| name == "computer" && c.native()) {
         let Some(gate) = approvals::check_computer(&env.approvals, input) else {
-            return Ok(None);
+            return Ok(Verdict::Go);
         };
         if computer.allowed() {
-            return Ok(None);
+            return Ok(Verdict::Go);
         }
         return Ok(match ask(env, run, events, cancel, call_id, name, input, &gate).await? {
-            Decision::Allow => None,
+            Decision::Allow => Verdict::Go,
             Decision::Always => {
                 computer.allow();
-                None
+                Verdict::Go
             }
-            Decision::Timeout => Some(NOT_APPROVED),
-            Decision::Deny => Some(DECLINED),
+            Decision::Timeout => Verdict::Refused(NOT_APPROVED.into()),
+            Decision::Deny => Verdict::Refused(DECLINED.into()),
         });
     }
     let personal = tools
@@ -1067,21 +1235,61 @@ async fn approve(
         .and_then(|t| t.personal())
         .and_then(|t| approvals::check_personal(&env.approvals, t));
     let Some(gate) = approvals::check(&env.approvals, name, input, reach).or(personal) else {
-        return Ok(None);
+        return Ok(Verdict::Go);
     };
     let rule = gate.rule.as_str();
     if env.store.granted(&run.owner, rule, &gate.grants).await? {
-        return Ok(None);
+        return Ok(Verdict::Go);
     }
     match ask(env, run, events, cancel, call_id, name, input, &gate).await? {
-        Decision::Allow => Ok(None),
+        Decision::Allow => Ok(Verdict::Go),
         Decision::Always => {
             env.store.grant(&run.owner, rule, &gate.grants).await?;
-            Ok(None)
+            Ok(Verdict::Go)
         }
-        Decision::Timeout => Ok(Some(NOT_APPROVED)),
-        Decision::Deny => Ok(Some(DECLINED)),
+        Decision::Timeout if holdable => hold(env, run, events, call_id, name, input, "timeout").await,
+        Decision::Timeout => Ok(Verdict::Refused(NOT_APPROVED.into())),
+        Decision::Deny => Ok(Verdict::Refused(DECLINED.into())),
     }
+}
+
+/// Keep a call in its owner's outbox instead of making it, and say so with a `call.held` event.
+/// The call is stored as the model wrote it; approving it later makes exactly that call (see
+/// `POST /v1/held/{id}`).
+async fn hold(
+    env: &AgentEnv,
+    run: &Run,
+    events: &Emitter,
+    call_id: &str,
+    name: &str,
+    input: &Value,
+    why: &str,
+) -> Result<Verdict, AgentError> {
+    if env.store.count_held(run.id).await? >= MAX_HELD_PER_RUN {
+        return Ok(Verdict::Refused(format!(
+            "{MAX_HELD_PER_RUN} calls of this run already wait for the user's approval, so this \
+             one was not kept. Stop here and tell the user what is waiting."
+        )));
+    }
+    let reason = approvals::describe(name, input);
+    let held = env
+        .store
+        .hold_call(run.id, &run.owner, call_id, name, input, &reason, why)
+        .await?;
+    // The same call made twice is kept once; only the first is announced.
+    if held.call_id == call_id {
+        events
+            .emit(
+                event::CALL_HELD,
+                json!({ "id": held.id, "call_id": call_id, "tool": name, "input": input,
+                        "reason": reason, "why": why }),
+            )
+            .await?;
+    }
+    Ok(Verdict::Held(
+        json!({ "held": { "id": held.id, "tool": name, "reason": reason, "why": why }, "note": HELD_NOTE })
+            .to_string(),
+    ))
 }
 
 /// What the user answered to an approval card.
@@ -1107,28 +1315,55 @@ async fn ask(
 ) -> Result<Decision, AgentError> {
     let id = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
     let key = format!("approval:{id}");
+    let rule = gate.rule.as_str();
+    // "Always allow" is earned: it is offered once the owner plainly allowed the same thing
+    // `always_allow_after` times, counted since they last declined it. Until then the event
+    // carries no `scope`, which is how clients know not to offer it, and `always` says how far
+    // along it is.
+    // On the user's own computer "always" lasts for this run only and is never saved, so there
+    // is nothing to earn: it is offered from the first card.
+    let after = if gate.rule == approvals::Rule::Computer { 0 } else { env.always_allow_after };
+    let allowed = match &gate.scope {
+        Some(_) if after > 0 => env.store.allow_count(&run.owner, rule, &gate.grants).await?,
+        _ => 0,
+    };
+    let offered = gate.scope.is_some() && allowed >= after;
+    let mut data = json!({ "id": id, "call_id": call_id, "tool": name, "input": input, "rule": rule,
+                           "reason": gate.reason, "scope": gate.scope.as_ref().filter(|_| offered) });
+    if gate.scope.is_some() && after > 0 {
+        data["always"] = json!({ "scope": gate.scope, "allowed": allowed, "after": after, "offered": offered });
+    }
     let rx = env.waits.register(run.id, &key);
-    events
-        .emit(
-            event::APPROVAL_REQUIRED,
-            json!({ "id": id, "call_id": call_id, "tool": name, "input": input, "rule": gate.rule.as_str(),
-                    "reason": gate.reason, "scope": gate.scope }),
-        )
-        .await?;
+    events.emit(event::APPROVAL_REQUIRED, data).await?;
     let decision = match env.waits.wait(run.id, &key, rx, env.approval_timeout, cancel).await {
         Answer::Cancelled => return Err(AgentError::Cancelled),
-        Answer::TimedOut => "timeout".to_string(),
-        Answer::Given(v) => v["decision"].as_str().unwrap_or("deny").to_string(),
+        Answer::TimedOut => "timeout",
+        Answer::Given(v) => match v["decision"].as_str() {
+            Some("allow") => "allow",
+            // An "always" that wasn't offered counts as this once.
+            Some("allow_always") if offered => "allow_always",
+            Some("allow_always") => "allow",
+            _ => "deny",
+        },
     };
     let by = if decision == "timeout" { "timeout" } else { "user" };
     events
         .emit(event::APPROVAL_RESOLVED, json!({ "id": id, "decision": decision, "by": by }))
         .await?;
-    Ok(match decision.as_str() {
-        "allow" => Decision::Allow,
-        "allow_always" => Decision::Always,
+    Ok(match decision {
+        "allow" => {
+            env.store.count_allow(&run.owner, rule, &gate.grants).await?;
+            Decision::Allow
+        }
+        "allow_always" => {
+            env.store.reset_allow_counts(&run.owner, rule, &gate.grants).await?;
+            Decision::Always
+        }
         "timeout" => Decision::Timeout,
-        _ => Decision::Deny,
+        _ => {
+            env.store.reset_allow_counts(&run.owner, rule, &gate.grants).await?;
+            Decision::Deny
+        }
     })
 }
 
@@ -1345,6 +1580,8 @@ struct Prepared<'b> {
     name: String,
     /// Why it isn't run: refused by the user or a rule, or taken out by the [`Breaker`].
     refused: Option<String>,
+    /// The call was held instead of made: what the model reads as its result.
+    held: Option<String>,
     since: SystemTime,
 }
 
@@ -1364,12 +1601,15 @@ async fn prepare_call<'b>(
     let name = block["name"].as_str().unwrap_or_default().to_string();
     let input = &block["input"];
     let mut refused = breaker.refusal(&name);
+    let mut held = None;
     // A call to a tool the run doesn't have fails without running, so it needs no OK.
     if refused.is_none() && tools.get(&name).is_some() {
         let reach = Reach::of(ctx.sandbox.runtime(), &env.sandbox);
-        refused = approve(env, tools, &reach, ctx, run, events, cancel, &id, &name, input)
-            .await?
-            .map(String::from);
+        match approve(env, tools, &reach, ctx, run, events, cancel, &id, &name, input).await? {
+            Verdict::Go => {}
+            Verdict::Refused(why) => refused = Some(why),
+            Verdict::Held(output) => held = Some(output),
+        }
     }
     events
         .emit(
@@ -1377,7 +1617,7 @@ async fn prepare_call<'b>(
             json!({ "id": id, "name": name, "input": input }),
         )
         .await?;
-    Ok(Prepared { block, id, name, refused, since: SystemTime::now() })
+    Ok(Prepared { block, id, name, refused, held, since: SystemTime::now() })
 }
 
 /// Run a prepared call; the result and how long it took.
@@ -1391,6 +1631,9 @@ async fn run_call(
     let work = async {
         if let Some(message) = &call.refused {
             return Err(anyhow!(message.clone()));
+        }
+        if let Some(output) = &call.held {
+            return Ok(ToolOutput::from(output.clone()));
         }
         // A tool left out of the run's selection is as unknown as a made-up one.
         match tools.get(&call.name) {
@@ -1431,7 +1674,7 @@ async fn finish_call(
         // Errors go back to the model so it can recover.
         Err(e) => (format!("{e:#}"), None, true),
     };
-    if call.refused.is_none() {
+    if call.refused.is_none() && call.held.is_none() {
         breaker.record(name, is_error, &output);
     }
     if call.refused.is_none() && RUNS_CODE.contains(&name) && tools.get(name).is_some() {

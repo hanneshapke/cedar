@@ -9,6 +9,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /** The client against a fake cedar-chat: the requests it makes and how it reads the answers. */
 class ChatClientTest {
@@ -57,8 +59,8 @@ class ChatClientTest {
     fun postsTheLocaleWithAMessage() = runBlocking {
         server.enqueue(json("""{"id":"t1","conversation_id":"c1","seq":1,"run_id":"r1","prompt":"hallo","status":"queued"}"""))
         val locale = AppLocales.effective(null, java.util.Locale.forLanguageTag("de-CH"))
-        client.send("c1", ChatClient.SendMessage("hallo", locale = locale))
-        assertEquals(j("""{"content":"hallo","locale":"de-CH"}"""), j(server.takeRequest().body.readUtf8()))
+        client.send("c1", ChatClient.SendMessage("hallo", locale = locale, timezone = "Europe/Zurich"))
+        assertEquals(j("""{"content":"hallo","locale":"de-CH","timezone":"Europe/Zurich"}"""), j(server.takeRequest().body.readUtf8()))
     }
 
     @Test
@@ -75,6 +77,28 @@ class ChatClientTest {
             assertEquals("PUT /api/settings/locale", "${it.method} ${it.path}")
             assertEquals(j("""{"locale":null}"""), j(it.body.readUtf8()), "Automatic clears it, explicitly")
         }
+    }
+
+    @Test
+    fun startsAPrivateChatOnlyWhenAskedTo() = runBlocking {
+        val made = """{"id":"c1","created_at":"2026-10-12T03:36:00Z","updated_at":"2026-10-12T03:36:00Z"}"""
+        server.enqueue(json(made))
+        server.enqueue(json(made.replace("\"id\":\"c1\"", "\"id\":\"c2\",\"private\":true")))
+        server.enqueue(json("{}"))
+
+        assertFalse(client.createConversation().isPrivate)
+        val chat = client.createConversation(private = true)
+        client.delete(chat.id)
+
+        // An ordinary chat doesn't mention the field, so an older server takes it as ever.
+        assertEquals(j("{}"), j(server.takeRequest().body.readUtf8()))
+        server.takeRequest().let {
+            assertEquals("POST /api/conversations", "${it.method} ${it.path}")
+            assertEquals(j("""{"private":true}"""), j(it.body.readUtf8()))
+        }
+        assertTrue(chat.isPrivate)
+        // Leaving it deletes it.
+        assertEquals("DELETE /api/conversations/c2", server.takeRequest().let { "${it.method} ${it.path}" })
     }
 
     @Test
@@ -463,5 +487,40 @@ class ChatClientTest {
     fun aStreamThatIsRefusedThrows() {
         server.enqueue(json("{}", 401))
         assertFailsWith<ChatException.Unauthorized> { runBlocking { client.notices().toList() } }
+    }
+
+    @Test
+    fun readsAndDecidesTheOutboxAndSendsFeedback() = runBlocking {
+        server.enqueue(json("""{"items":[{"id":"h-1","tool":"gmail_send_message","status":"pending","input":{"to":"ana@example.com"}}]}"""))
+        server.enqueue(json("""{"id":"h-1","tool":"gmail_send_message","status":"sent","output":"ok","decided_at":"2026-11-19T10:00:00Z"}"""))
+        server.enqueue(json("""{"id":"h-2","tool":"slack_send_message","status":"discarded"}"""))
+        server.enqueue(json("""{"error":{"code":"conflict","message":"this call is already sent"}}""", 409))
+        server.enqueue(json("""{"id":"h-1","tool":"gmail_send_message","status":"sent"}"""))
+        server.enqueue(json("""{"feedback":{"id":"f1","turn_id":"t1","call_id":"call_1","status":"sent","summary":"No booking tool","category":"missing_tool","created_at":"2026-11-19T10:00:00Z"}}"""))
+
+        assertEquals(listOf("h-1"), client.outbox().map { it.id })
+        assertEquals(true, client.decideOutbox("h-1", approve = true).isSent)
+        assertEquals("discarded", client.decideOutbox("h-2", approve = false).status)
+        val late = assertFailsWith<ChatException.Api> { client.decideOutbox("h-1", approve = true) }
+        assertEquals(409, late.status)
+        assertEquals(true, client.outboxItem("h-1").isSent)
+        val sent = client.decideLimitation("t1", "call_1", FeedbackChoice.Send(LimitationReport("No booking tool", "missing_tool")))
+        assertEquals(true, sent.feedback.isSent)
+
+        assertEquals("GET /api/outbox", server.takeRequest().let { "${it.method} ${it.path}" })
+        server.takeRequest().let {
+            assertEquals("POST /api/outbox/h-1", "${it.method} ${it.path}")
+            assertEquals(j("""{"decision":"approve"}"""), j(it.body.readUtf8()))
+        }
+        server.takeRequest().let {
+            assertEquals("POST /api/outbox/h-2", "${it.method} ${it.path}")
+            assertEquals(j("""{"decision":"discard"}"""), j(it.body.readUtf8()))
+        }
+        assertEquals("POST /api/outbox/h-1", server.takeRequest().let { "${it.method} ${it.path}" })
+        assertEquals("GET /api/outbox/h-1", server.takeRequest().let { "${it.method} ${it.path}" })
+        server.takeRequest().let {
+            assertEquals("PUT /api/turns/t1/limitations/call_1", "${it.method} ${it.path}")
+            assertEquals(j("""{"decision":"send","summary":"No booking tool","category":"missing_tool"}"""), j(it.body.readUtf8()))
+        }
     }
 }

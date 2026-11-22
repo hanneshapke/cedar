@@ -21,6 +21,8 @@ final class AppModel {
     private(set) var settings: ServerSettings
     private(set) var conversations: [Conversation] = []
     private(set) var models: [ModelInfo] = []
+    /// Whether people choose the model (see `ModelList`); off, the server does and the pickers are hidden.
+    private(set) var modelSelection = true
     /// How many finished responses nobody has looked at (the bell in the web UI).
     private(set) var inboxUnread = 0
     private(set) var isRefreshing = false
@@ -33,6 +35,15 @@ final class AppModel {
     private(set) var agentLimits = AgentList.Limits()
     /// An agent's runs, newest first, once its detail loaded them.
     private(set) var agentRuns: [String: [AgentRun]] = [:]
+    /// The outbox: what runs would have sent or changed in the person's accounts and held for
+    /// them instead (`/api/outbox`), newest first. The Agents list shows it; nothing in it
+    /// happens until they approve it.
+    private(set) var outbox: [OutboxItem] = []
+    /// Held calls by id, as last heard of: the list's, and those a conversation's cards asked about.
+    private(set) var heldCalls: [String: OutboxItem] = [:]
+    /// The ids of held calls the server no longer has (their run was deleted).
+    private(set) var goneHeldCalls: Set<String> = []
+    @ObservationIgnored private var loadingHeldCalls: Set<String> = []
     /// The agents with a finished run nobody has looked at, and how many runs that is.
     private(set) var unreadAgents: Set<String> = []
     private(set) var agentsUnread = 0
@@ -91,6 +102,8 @@ final class AppModel {
     private(set) var recordsLimits: RecordsList.Limits?
     /// The server can send conversations to a corpus (`/api/config` says so); Settings shows Contribute only then.
     private(set) var serverHasContributions = false
+    /// The server has private chats (`/api/config` says so); a new chat offers one only then.
+    private(set) var serverHasPrivateChats = false
     private(set) var contributionSettings: ContributionSettings?
     private(set) var contributions: [Contribution] = []
     var contributionsError: String?
@@ -143,6 +156,9 @@ final class AppModel {
             starred = []
             starredLoaded = false
             agents = []
+            outbox = []
+            heldCalls = [:]
+            goneHeldCalls = []
             agentLimits = AgentList.Limits()
             agentRuns = [:]
             unreadAgents = []
@@ -157,9 +173,11 @@ final class AppModel {
             activityError = nil
             conversationAgents = [:]
             models = []
+            modelSelection = true
             modelsLoaded = false
             serverHasMemory = false
             serverHasContributions = false
+            serverHasPrivateChats = false
             contributionSettings = nil
             contributions = []
             contributionsError = nil
@@ -412,11 +430,14 @@ final class AppModel {
             }
             if !modelsLoaded {
                 modelsLoaded = true
-                models = (try? await client.models()) ?? []
+                let list = try? await client.modelList()
+                models = list?.models ?? []
+                modelSelection = list?.selection ?? true
                 let config = try? await client.config()
                 serverHasMemory = config?.memory ?? false
                 serverHasRecords = config?.records ?? false
                 serverHasContributions = config?.contributions ?? false
+                serverHasPrivateChats = config?.privateChats ?? false
             }
         } catch is CancellationError {
         } catch {
@@ -616,6 +637,55 @@ final class AppModel {
         let ids = Set(agents.map(\.id))
         agentRuns = agentRuns.filter { ids.contains($0.key) }
         agentSecrets = agentSecrets.filter { ids.contains($0.key) }
+        await refreshOutbox()
+    }
+
+    // MARK: The outbox
+
+    /// Reads what waits for approval. A server from before the outbox has none to show.
+    func refreshOutbox() async {
+        guard let client else { return }
+        guard let items = try? await client.outbox() else { return }
+        outbox = items
+        for item in items { heldCalls[item.id] = item }
+    }
+
+    /// Asks the server what became of a held call a conversation shows, once.
+    func loadHeldCall(id: String) async {
+        guard let client, heldCalls[id] == nil, !goneHeldCalls.contains(id), !loadingHeldCalls.contains(id) else { return }
+        loadingHeldCalls.insert(id)
+        defer { loadingHeldCalls.remove(id) }
+        do {
+            heldCalls[id] = try await client.outboxItem(id: id)
+        } catch let error as ChatError where error.status == 404 {
+            goneHeldCalls.insert(id)
+        } catch {
+            // Asked again the next time the card appears.
+        }
+    }
+
+    /// Approves a held call, which makes it now exactly as it was written, or discards it.
+    /// Throws the server's reason when it refuses, for the card to show; a call that was decided
+    /// elsewhere in the meantime is then shown as it is now.
+    func decideHeldCall(id: String, approve: Bool) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        do {
+            let item = try await client.decideOutbox(id: id, approve: approve)
+            settle(item)
+        } catch let error as ChatError where error.status == 409 {
+            if let now = try? await client.outboxItem(id: id) { settle(now) }
+            throw error
+        }
+    }
+
+    /// The server's latest word on a held call; one that is settled leaves the outbox.
+    private func settle(_ item: OutboxItem) {
+        heldCalls[item.id] = item
+        if item.isOpen {
+            if let index = outbox.firstIndex(where: { $0.id == item.id }) { outbox[index] = item }
+        } else {
+            outbox.removeAll { $0.id == item.id }
+        }
     }
 
     /// Reads one agent and its runs, for its detail.
@@ -826,6 +896,24 @@ final class AppModel {
         compactColumn = .detail
         showingSettings = false
         Task { await refresh() }
+    }
+
+    /// The selection moved away from `id` (a conversation's, or a draft's key). A private chat
+    /// ends there: it is deleted on the server, a response still being written included, since
+    /// no list leads back to it. One that was never sent is only dropped.
+    func left(_ id: String) {
+        guard let chat = chats[id], chat.isPrivate else { return }
+        chats.removeValue(forKey: id)?.stopStreaming()
+        otherConversations[id] = nil
+        guard let conversationId = chat.conversationId, let client else { return }
+        // If this fails (no connection), the server deletes the chat itself once it has been idle.
+        Task { try? await client.delete(conversationId: conversationId) }
+    }
+
+    /// Ends the private chat on screen (see `left`).
+    func endPrivateChat() {
+        selection = nil
+        compactColumn = .sidebar
     }
 
     /// Called when a draft chat's conversation is created: from now on it has an id.

@@ -31,10 +31,24 @@ Both interfaces have all of these, except where noted:
 
 - A conversation list (a sidebar in Claude style, a drawer behind the menu button in Cedar style)
   with new chat, rename (click the title), and delete
+- [Private chats](#private-chats), which are in no list, are not remembered and are deleted when
+  you leave them
 - Replies stream in as the agent works. Text, tool calls (`bash`, `run_python`, the file,
   document, chart, web, and weather tools, and `web_search` when cedar has a Brave key) with their input and
   output, errors, and token usage are shown as they happen
 - A stop button cancels the running response
+- [Slack](#slack): message the Slack app or mention it in a channel, and the answer comes back in
+  the thread, with plans and approvals as buttons (when the server has a Slack app)
+- [An outbox](#the-outbox): what an agent would have sent or changed in your accounts waits on the
+  Agents page until you approve, edit or discard it
+- [Feedback](#feedback): when Cedar can't do something you asked for, it says so in a card you can
+  send as feedback, which stays on this server
+- [Actions](#actions): show Cedar how to do what it couldn't, by recording your screen while you do
+  it; a model writes the steps, you correct and save them, and Cedar follows them from then on,
+  with a password it can type but never sees, if you store one
+- A response that needs your OK while you are away [is announced](#when-a-response-waits-for-you)
+  by your notification method, and "Always allow" is offered only once you have allowed the same
+  thing a few times
 - Expert mode (Settings → Advanced settings → Expert mode, saved in this browser) adds a Trace button to each message
   you send. It opens a dialog with everything the agent did for that response, from cedar's
   `GET /v1/runs/{id}/trace` (`/api/turns/{id}/trace` here): a timeline of each model call (the
@@ -287,6 +301,9 @@ remove the tool.
 | `CHAT_ADMIN_TOKEN` | unset | If set, Settings offers [the models](#models) and the [integrations](#integrations) (cedar's API keys and Google account) to whoever enters it. Must differ from `CHAT_ACCESS_TOKEN` |
 | `CHAT_MODELS_ACCESS` | `users` | Who may add, change and remove [the models](#models): `users` (everyone the access token lets in) or `admins` (the admin token; set this on a server several people use). API keys and the Google account stay with admins either way |
 | `CHAT_PUBLIC_URL` | `http://<CHAT_BIND_ADDR>` | This server's address as the browser reaches it; "Connect Google" sends Google `<CHAT_PUBLIC_URL>/api/oauth/google/callback`, except for a browser that opened the chat at a loopback address (`127.0.0.1`, `localhost`), which is sent back to that address |
+| `CHAT_ATTENTION_DELAY_SECS` | `20` | How long a response may wait for you (an approval, a plan to agree to) before you are told by your notification method (see [When a response waits for you](#when-a-response-waits-for-you)) |
+| `CHAT_FEEDBACK_ISSUES_URL` | `https://github.com/hanneshapke/cedar/issues/new` | Where *Report it to the project* opens an issue for [a report](#feedback) the person files themselves: an `https` "new issue" address that takes `title` and `body`. `off` removes the link. The server sends nothing there |
+| `CHAT_PRIVATE_TTL_SECS` | `86400` | How long a [private chat](#private-chats) that nobody ended may sit idle before the server deletes it |
 | `CHAT_HISTORY_MAX_BYTES` | `40000` | How much earlier conversation is inlined if the previous run is gone from cedar, or compacted for an agent in that case (at most 60000) |
 | `CHAT_PUSHOVER_URL` | `https://api.pushover.net/1/messages.json` | Where Pushover messages go (for tests) |
 | `CHAT_APNS_URL` | unset | Where iPhone pushes go instead of Apple's production or sandbox APNs (for tests) |
@@ -297,9 +314,51 @@ remove the tool.
 | `CHAT_UPDATE_DIR` | unset | The directory the root `cedar-update` unit watches (`/var/lib/cedar/update` in [DEPLOYMENT.md](../DEPLOYMENT.md#updates)). When set, an admin's *Update* in the banner installs the release; otherwise the banner shows the commands to run |
 | `CHAT_UPDATE_URL` | `https://api.github.com/repos/hanneshapke/cedar/releases/latest` | Where the latest release is looked up (for tests) |
 | `CHAT_CONTRIBUTIONS_URL` | the project's corpus | The base URL of a [cedar-contrib](../contrib/README.md) ingest that a conversation can be [contributed](#contributing-a-conversation) to; unset, the project's own ingest. `off`, and nothing can be sent; the review dialog still exports a bundle to a file |
+| `CHAT_SLACK_APP_TOKEN` | unset | The Slack app's app-level token (`xapp-…`, scope `connections:write`), which opens the Socket Mode connection people talk to Cedar through (see [Slack](#slack)). Set with `CHAT_SLACK_BOT_TOKEN`, or neither; without them an admin can save both in Settings → Slack instead |
+| `CHAT_SLACK_BOT_TOKEN` | unset | The same app's bot token (`xoxb-…`), which answers in Slack. It may be the token cedar's `SLACK_BOT_TOKEN` has |
+| `CHAT_SLACK_API_URL` | `https://slack.com/api` | The root of Slack's Web API, for tokens from the environment or Settings (for tests) |
 
 Without `CHAT_ACCESS_TOKEN`, anyone who can reach the chat server can run the agent with your
 cedar key. Keep the default loopback bind, or set a token before listening on a public address.
+
+## Users
+
+A server starts with one user, the *primary* one: whoever presents `CHAT_ACCESS_TOKEN` (or
+anyone, without one). More people are added over the API with the admin token, and each signs in
+with an access token of their own, entered where the page or an app asks for the token:
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $CHAT_ACCESS_TOKEN" -H "X-Admin-Token: $CHAT_ADMIN_TOKEN" \
+     -H 'content-type: application/json' -d '{"name": "Ada"}' localhost:3000/api/users
+# {"user": {"id": "0193…", "name": "Ada", ...}, "token": "…"}   the token is shown this once
+```
+
+Two things have to be set first: `CHAT_ACCESS_TOKEN` and `CHAT_ADMIN_TOKEN` here, and this
+server's `CEDAR_API_KEY` in cedar's `CEDAR_SERVICE_KEYS` (see
+[Acting for users](../README.md#acting-for-users)); `POST /api/users` answers `409` until cedar
+agrees.
+
+Each user has their own conversations, starred list, search and inbox, agents and their runs,
+settings (defaults, language, notifications, contributing), registered browsers and phones, and
+contribution receipts; another user's conversation or agent is a `404`. In cedar, a user's runs,
+traces, memories and records are filed under the user's id, so the Memory and Records pages are
+theirs too. The primary user's stay where they always were, under this server's own key, which is
+why adding users changes nothing for a server that had one.
+
+The Google account under Settings → **Server** is the primary user's. Everyone else connects
+their own, without the admin token: Settings → **Tools** shows *Your Google account* with a
+**Connect Google** button, once an admin has saved the OAuth client. Until they do, their messages
+and agents have no Gmail, Calendar, Drive, Sheets or Slides tools; nobody's runs can read another person's
+mail. If the OAuth client is still in *Testing* in the Google Cloud console, each person's address
+has to be on its list of test users.
+
+Shared by everyone on the server, for now: the models and the server settings (with the default
+`CHAT_MODELS_ACCESS=users`, any user can change them), the other integrations (the search keys,
+and the Slack token, which every user's runs can use), and the personal tools. There is no page for
+managing users yet.
+
+[Pairing](#pairing-the-ios-and-android-apps) a phone hands it the token of whoever opened the
+page, so the phone is theirs; the shared `CHAT_ACCESS_TOKEN` is shown to the primary user only.
 
 ## Updates
 
@@ -345,6 +404,36 @@ Only one response per conversation runs at a time. The UI replays each turn from
 so reloading the page or opening a conversation shows the full tool trace. Deleting a conversation
 also deletes its runs on cedar (best effort), which frees the workspace.
 
+## Private chats
+
+The **Private** button in the composer, on the new-chat screen, makes the chat you are about to
+start a private one. It is for something you want neither remembered nor kept:
+
+- It is in no conversation list, Starred list, search or inbox. The tab is titled *Private chat*,
+  not after what you wrote.
+- Its runs are cedar's [private runs](../README.md#private-runs): Cedar is shown nothing from
+  [memory](#memory) and saves nothing to it or to [records](#records), and no trace of its model
+  calls is kept, so there is no Trace button.
+- Nothing about it is sent anywhere: no push, mail, Pushover or desktop notification when a
+  response finishes or waits for you, and no notice to your other tabs.
+- It can't be starred, [contributed](#contributing-a-conversation) or made into an agent.
+
+It is deleted when you leave it: **End chat** in the note above the message box, opening another
+conversation, or starting a new one. A response still being written is stopped. Deleting removes
+the conversation here and its runs on cedar, and with them its messages and workspace files, so
+download what you want to keep first. Reloading the page keeps the chat (its address still opens
+it); a chat that was never left, such as a closed tab, is deleted by the server once nobody has
+written in it for `CHAT_PRIVATE_TTL_SECS` (a day).
+
+A conversation is private from its first message or not at all. While it lasts, the conversation
+and its runs are stored like any other, on your own servers; what it asks the model and the tools
+it uses (a web search, say) go where they always go.
+
+The iOS and Android apps have private chats too: a new chat has a **Private Chat** button (the
+crossed-out eye) in its top bar, shown when the server says it has them (`private_chats` in
+`GET /api/config`). There the chat is deleted when you go back to the list, open another
+conversation or tap **End Chat**; putting the app in the background keeps it.
+
 ## Notifications
 
 A response that ends while nobody is looking at its conversation is not lost in the list. The
@@ -371,6 +460,31 @@ What the page does with that:
   `POST /api/conversations/{id}/seen`.
 
 A run the user stopped is not announced. Responses from before this feature count as seen.
+
+### When a response waits for you
+
+A response can stop in the middle to ask: a risky call needs your OK, or its plan is to be agreed
+to. cedar only waits so long (`APPROVAL_TIMEOUT_SECS`, five minutes unless changed), and the
+request used to be on the page alone. Now the server follows the run of every message sent from
+the page, and:
+
+- every open tab hears of a wait at once (a `turn.waiting` notice on `GET /api/events`); a tab on
+  another conversation says so in a toast;
+- a wait that is still unanswered after `CHAT_ATTENTION_DELAY_SECS` (20) goes out by your default
+  notification method, with what the call would do: *Invoice: needs your OK*. One answered
+  sooner, by whoever is looking at the page, is never announced. With "only in the app" nothing
+  is sent.
+
+If nobody answers in time, a call that would have sent or changed something in your accounts is
+not lost: it is kept in [the outbox](#the-outbox), and the finished response is announced as
+*waiting for your approval*. Anything else is skipped, and the reply says so. Runs started from
+Slack are not followed this way: their requests are posted in the thread. A wait that is going
+when this server restarts is not announced.
+
+**"Always allow" is earned.** An approval offers *Always for …* only once you have allowed the
+same thing (a host, a package) three times since you last declined it (cedar's
+`ALWAYS_ALLOW_AFTER`); until then the card says how many more it takes. Sending mail, posting to
+Slack and deleting files are asked about every time, as before.
 
 ### Out of the app
 
@@ -566,6 +680,62 @@ follow-up would run, and **Set up** and **Dismiss**.
 This is why a prompt injection can at most put a suggestion in front of you: an agent only comes
 to exist when you press the button, and you see its prompt first.
 
+### The outbox
+
+Nobody reads along while an agent runs, so nobody can approve what it does. An agent therefore
+**holds what it would send or change** in your accounts: mail, calendar events, files in Drive,
+cells in Sheets, messages in Slack. The call is not made. It is kept, exactly as the model wrote
+it, and the run goes on and tells you in its result what is waiting. Reading is never held.
+
+- The **Agents** page lists what waits under *Waiting for your approval*, each with the agent
+  whose run wanted it and a link to that run. The same card is in the run's conversation.
+- **Approve** makes that call now, with no model involved: what you approved is what goes out,
+  whatever the run read. **Edit** lets you change the text fields first (the recipient, the
+  subject, the body) and approve the result. **Discard** drops it.
+- A call the service refuses (a mistyped address, a channel the app isn't in) stays with the error
+  and a **Try again** button.
+- A run that left something in the outbox is announced as *waiting for your approval*, whatever
+  **Send it for** says.
+
+The iOS and Android apps show the outbox above their list of agents and the card in a run's
+conversation, with **Approve** and **Discard**; changing a call before it goes out is done on
+the page.
+
+Holding is a setting of each agent (*Hold what it sends or changes until I approve it*), on for
+every agent made from now on and for the follow-ups you set up. Agents that existed before keep
+acting at once, as they did when you made them; turn it on in their form. Turn it off for an agent
+you trust to act alone, say one that posts a digest to a channel every morning. It is cedar's
+`hold_writes` (see [The outbox](../README.md#the-outbox) in cedar's README): an agent made for
+events still gets only the tools that read unless you choose otherwise, so there is something to
+hold only once you gave it tools that write.
+
+### Feedback
+
+When Cedar can't do something you asked for (there is no tool for it, an account isn't connected,
+a site refuses it, it ran into a limit), it says so, does what it can, and notes the gap with
+cedar's `report_limitation` tool. That tool **records nothing**. The chat shows what the model
+noted as a card under the reply: one sentence, a category, what would make it possible, and
+**Send feedback** and **Dismiss**.
+
+- **Send feedback** keeps the report on this server, with a note of your own if you add one. It
+  holds the sentence on the card and nothing of the conversation. Nothing is sent anywhere else.
+- **Dismiss** records only that you saw it.
+- The first decision stands, on every device.
+
+A report you sent can also go to the project: **Report it to the project**, on the card and in
+Settings, opens a new GitHub issue with the report filled in (the sentence, the category, what
+would help, your note). This server sends nothing itself. You read the issue in GitHub's own form
+and submit it with your own account, so it is public and under your name, and nothing else of the
+conversation is in it. `CHAT_FEEDBACK_ISSUES_URL` names another repository's "new issue" address
+(a fork's, or a company's own tracker that takes `title` and `body` the same way), and `off`
+removes the link.
+
+**Settings → Feedback** lists what you sent, counted by category, and lets you delete a report.
+Whoever runs the server sees everyone's there once the admin token is entered (or with
+`GET /api/feedback?users=all`): which tools and connections people keep missing. A report
+outlives its conversation, since it says what was missing, not what was said.
+
+### Webhooks
 ### Webhooks
 
 Saving a webhook agent gives it an address, `{CHAT_PUBLIC_URL}/api/hooks/<32 hex characters>`, and
@@ -597,6 +767,133 @@ curl -X POST 'https://chat.example/api/hooks/6be059e30e9f97a82578455b139de8cb' \
 - The sender has to be able to reach this server. On the default `127.0.0.1` that is only this
   machine; behind Tailscale, only your tailnet. The secret is kept in this server's database
   (`CHAT_DATABASE_URL`) as it is, like the notification credentials.
+
+## Slack
+
+People can talk to Cedar from your team's Slack: message the Slack app directly, or mention it in
+a channel, and it answers in the thread. Each thread is one conversation, listed on the page like
+any other, and each reply in it continues the conversation the way a message on the page does (the
+run continues the previous one, with its workspace and files). Plans to agree to and tool calls to
+approve show up in the thread with buttons. This is separate from cedar's
+[`slack_*` tools](../README.md#slack), which let the model read and post in Slack during a run; the
+same Slack app can do both.
+
+The app connects with Slack's **Socket Mode**: this server opens a WebSocket to Slack and the
+events come down it, so Slack never has to reach this server. It works on `127.0.0.1`, behind a
+NAT or on a tailnet, with no public address.
+
+### Setting it up
+
+1. At [api.slack.com/apps](https://api.slack.com/apps), *Create New App* → *From a manifest*, pick
+   the workspace, and paste this (or add what it lists to the app you already have for cedar's
+   Slack tools):
+
+   ```yaml
+   display_information:
+     name: Cedar
+   features:
+     app_home:
+       messages_tab_enabled: true
+       messages_tab_read_only_enabled: false
+     bot_user:
+       display_name: cedar
+       always_online: true
+   oauth_config:
+     scopes:
+       bot:
+         - app_mentions:read   # mentions in channels
+         - chat:write          # answering
+         - im:history          # direct messages to the app
+         - channels:history    # replies in a channel thread the app answers in
+         - groups:history      # the same in private channels
+         - reactions:write     # 👀 while working, ✅ when done
+         - users:read          # the name and language of someone who isn't linked yet
+         - channels:read       # (cedar's slack_* tools)
+         - groups:read         # (cedar's slack_* tools)
+   settings:
+     event_subscriptions:
+       bot_events:
+         - app_mention
+         - message.im
+         - message.channels
+         - message.groups
+     interactivity:
+       is_enabled: true
+     socket_mode_enabled: true
+   ```
+
+2. *Install to Workspace*, and copy the **Bot User OAuth Token** (`xoxb-…`) from *OAuth &
+   Permissions*. If the app already had a token for cedar's tools, reinstalling it with the new
+   scopes keeps that token.
+3. Under *Basic Information* → *App-Level Tokens*, *Generate Token and Scopes* with the scope
+   `connections:write`, and copy it (`xapp-…`).
+4. Give cedar-chat both tokens, one of two ways:
+   - **In Settings → Slack** (an admin: unlock Settings → Server with `CHAT_ADMIN_TOKEN` first).
+     Paste the two tokens under *Slack app* and *Check & save*: they are checked with Slack (the
+     bot token with `auth.test`, the app-level token by opening a Socket Mode connection), saved,
+     and the app connects at once, with no restart. This is the way in the desktop app.
+   - **In the environment**, which wins over Settings and can't be changed there:
+
+     ```sh
+     CHAT_SLACK_APP_TOKEN=xapp-… CHAT_SLACK_BOT_TOKEN=xoxb-… cargo run -p cedar-chat
+     ```
+
+   The log says `Slack app connected` with the workspace's name, and Settings → Slack says so too.
+5. Invite the app to the channels it should answer in (`/invite @cedar`). Direct messages need no
+   invitation.
+
+Set `CHAT_PUBLIC_URL` to an address the people in Slack can open (the tailnet one, say), and each
+answer ends with a link to its conversation on the page; with a loopback address it has none.
+
+### Linking a Slack account
+
+Nobody's messages reach Cedar until their Slack account is linked to a [user](#users) here. The
+first time someone messages the app (or mentions it), it answers, only to them, with a code that
+is good for 15 minutes; they enter it in **Settings → Slack**, signed in here as themselves. Each
+side has then shown it is who it says: the code went to that Slack account, and only someone
+signed in here can enter it. The app then confirms in a direct message. Settings → Slack lists the
+linked accounts and can unlink one. On a server with one person, that is linking your own account;
+on a shared one, everyone links their own, and their runs, memories and conversations are theirs.
+
+### How it behaves
+
+- **What starts a conversation:** a direct message to the app, or a message that mentions it in
+  a channel. The app answers in the message's thread, and that thread is the conversation from
+  then on. In a direct message, a reply at the top level (not in the thread) starts a new one.
+- **Continuing:** a reply in the thread continues it, in a channel too, with no need to mention
+  the app again. Only the person who started a thread continues it; anyone else who mentions the
+  app there is told, only them, to start their own.
+- **While it works** the message gets 👀; a ✅ when the answer is posted, ❌ if the run failed.
+  A second message while a response is still going is not queued: the app says to wait or to say
+  `stop`, which cancels the running response (`stop`, `cancel`, and the same in German, French and
+  Spanish).
+- **Plans and approvals.** Runs from Slack are interactive, like messages on the page: a plan the
+  run waits on is posted with *Go ahead* and *Stop*, and a tool call that needs approval (the
+  `TOOL_APPROVALS` rules of [cedar](../README.md#plans-and-approvals)) with *Allow*, *Always
+  allow* (when the call has a scope, and once it [was allowed a few times](#when-a-response-waits-for-you)) and *Deny*. Only the person whose run it is can press them,
+  and the message shows the decision once one is made, here or on the page. Without an answer, a
+  wait ends after cedar's `APPROVAL_TIMEOUT_SECS`.
+- **The answer** is posted in the thread in Slack's markup (bold, links, lists, headings; tables
+  and code as preformatted text), split into messages of under 4,000 characters. A question the
+  agent asks back (`ask_user`) is answered by replying in the thread. What a run made in its
+  workspace stays there: open the conversation on the page for the files.
+- **Messages** are the person's own words, run with their settings (model, tools, plan, language)
+  and their memories; mentions of people and channels arrive as names, links as their address.
+  The app's own messages are in the language of the person's Settings (before linking, their Slack
+  language).
+- **Restarts** lose nothing: a Slack thread, the turns asked from it and what was posted for them
+  are kept in the database, and a response that ended while this server was down is answered when
+  it is back. A code that wasn't entered yet is lost; the person gets a new one by writing again.
+
+### Privacy
+
+What someone writes to the app goes to the model server like any message on the page, and what it
+answers goes to Slack. The tokens are only sent to `CHAT_SLACK_API_URL` (and the WebSocket
+address Slack gives it). Set in the environment, they stay in this process; saved in Settings,
+they are kept in this server's database (`CHAT_DATABASE_URL`) as they are, like the notification
+credentials, and never sent back to the page. Messages from
+accounts that aren't linked are not kept or sent anywhere; the app only looks up their name and
+language to word the code's message.
 
 ## Tools and settings
 
@@ -641,16 +938,73 @@ it), then the memories by kind (*About you*, *Conversations*, *Ways of working*)
 *Archive*, newest first, each with the words it was taken from, the date, a link to the
 conversation it came from and how often it was used, with **Pin** (always shown to cedar),
 **Archive** or **Restore**, and **Remove** (for good) on each, **Export** for a backup, and
-**Forget all**. A change applies from the next message on, in every conversation. The thumbs on a
+**Forget all**. **Graph** draws the same memories as a network (`memory-graph.js` and
+`memory-graph.css`): every memory a mark (a circle for what is about you, a square for a
+conversation, a diamond for a way of working; bigger the more it weighs in recall, ringed when
+pinned, hollow when archived) and a line between two that came from the same conversation, share a
+topic, were used together, or replaced one another. Pointing at a mark lights up what it is linked
+to; choosing it shows the memory below the picture with its usual actions and the list of what it
+is linked to and why. The legend hides and shows each kind of mark and line, *Include the archive*
+adds what was replaced or archived, and the picture is dragged to move and zoomed with the buttons
+or a pinch. A change applies from the next message on, in every conversation. The thumbs on a
 reply are passed on to cedar, which counts them for or against what it learned in that run. The
 iOS and Android apps have the same page in Settings: the profile, the kinds and the archive, with
-pin, archive, restore and delete on each memory.
+pin, archive, restore and delete on each memory. The graph is on the web and in the desktop app only.
 
 Memory is the `memory` tool group, so **Settings → Tools** turns it off for new conversations and
 the conversation's **Tools** button for one conversation. If you ever unticked a group there,
 your saved choice predates memory and leaves it off; the Memory page says so. Everyone using this
 chat server shares one memory, since the chat calls cedar with one `CEDAR_API_KEY`. Memory stays
 on your own cedar server and is never shared with a third party (see [PRIVACY.md](../PRIVACY.md)).
+
+### Actions
+
+When Cedar can't do something, show it how. **Actions**, in the sidebar, lists what you have shown
+it; **Record an action** starts a new one, and so does **Show Cedar how**, which is beside every
+message you send (it opens the recorder with that message as what you are about to show) and on
+the card of [something it couldn't do](#feedback):
+
+1. Say in a sentence what you are about to show, and choose **One window** (a window or browser
+   tab, best for a website) or **Entire screen**. Your browser asks what to share.
+2. Do the task yourself, at your usual pace, then come back and press **Stop** (or end the share
+   from the browser's own bar). A recording can be ten minutes long.
+3. The page makes the recording small, without sending anything: it was captured at a few frames
+   a second and at most 1600 pixels a side, and is now played through once, fast (or stepped through, where the browser doesn't show
+   the frames of a video played fast), to keep the
+   frames in which the screen changed, and the one before each change, which shows what you had
+   typed and where the pointer was. Of those it keeps at most one a second, at most 1200 pixels
+   a side, which is what a model that reads images is sent. You see the video, its size, and
+   those frames.
+4. **Write the steps** sends it to cedar's model once: the video if a model there is marked
+   *Takes video* (Settings → Models → Advanced), the frames otherwise. Nothing of the recording is
+   kept, here or on cedar.
+5. You get the steps as text to read and correct: one per line, with what changes each time in
+   `{curly braces}`. **Save action** keeps them; the page says so if the model noticed something
+   Cedar will need you for (a code sent to your phone, a desktop app).
+
+From then on Cedar is told which actions you saved and reads the steps of the one a request
+matches. An action's page shows how often that happened, and is where you correct the steps when
+a site changes, or delete it.
+
+**Passwords.** What you type into a password field shows as dots in a recording, and the steps
+never hold one. Under *Passwords* you can store it with the action, so Cedar can sign in on its
+own: it is encrypted on cedar's server, Cedar's model never sees it, and it is typed only on the
+website the action names (you can't store one without naming the site). The field is empty when
+you open an action again; leave it so to keep what is stored. Without `CEDAR_SECRET_KEY` on
+cedar, the page says passwords can't be stored, and Cedar asks you instead. See
+[cedar's README](../README.md#actions) for how the typing is kept away from the model.
+
+In the Cedar app for the Mac, whose window can't share the screen as a browser does, the app
+records for the page: **Entire screen** is recorded by the app (on macOS 15 and later), with
+your clicks shown (with several displays connected, you pick which one), and handed to the page, which reduces it the same way. Cedar's window hides while it
+records, and a red light in the menu bar stops the recording and brings the window back. The first time, macOS asks
+whether Cedar may record the screen (System Settings → Privacy & Security → Screen & System Audio
+Recording); Cedar has to be quit and opened again after you allow it. On Windows the app's window
+records like a browser. A browser that can't record at all (a phone) offers **Use a video file**
+instead: record with the system's own screen recorder and choose the file; the same reduction
+runs on it. Steps on a website need cedar's browser tool (`BROWSER=on`); the
+form says so when it is off. Actions are the `actions` tool group. Close what you don't want
+the model to see before you record: the frames go to the model server cedar is set up with.
 
 ### Records
 
@@ -786,6 +1140,17 @@ confirm; see [Community tools](../README.md#community-tools).
 
 ### Models
 
+**Which model answers.** Unless you turn on Settings → Advanced settings → *Choose the model
+yourself*, cedar picks the model for every message, and the chat shows no model picker: with one
+model registered it uses that one; with several it reads their sizes off their names (the
+parameter count, `8b`, `70b`) and has the bigger model plan, review and take complex tool calls
+and long tasks, and the smaller one answer everyday requests (see "Which model a run gets" in
+[cedar's README](../README.md#which-model-a-run-gets)). With the switch on, the send button's
+menu, the agent form and *Default model* on the Models page are back, and each message goes to
+the model you chose. Whoever may manage the models may flip the switch. The phone apps
+follow the same switch: while it is off, their Settings and agent form show no model picker, and
+a note says where to turn it on.
+
 The **Models** list in that section shows every model cedar has registered: its label, the model
 name and the server it is on, whether an API key is saved, its reasoning levels, and which one is
 the default. **Add a model**, in the heading of the list, offers three ways, the same as the
@@ -832,15 +1197,29 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/config` | `{auth_required, admin_enabled, models_access, memory, contributions}`; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), `contributions` is whether `CHAT_CONTRIBUTIONS_URL` is set, and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
+| `GET /api/slack` | Settings → Slack: `{available, source, workspace, links}`. `available` is whether this server has a [Slack app](#slack), `source` where its tokens come from (`env`, `settings`, or `null`); `workspace` is `{team, team_name, bot}` once it is connected (else `null`); `links` are the caller's linked Slack accounts, each `{team, team_name, slack_user, name, created_at}` |
+| `PUT /api/slack/app` | Admin: save the Slack app's tokens, `{"app_token", "bot_token"}`, once Slack takes both, and connect with them (no restart) → `{source, workspace}`. `400` with Slack's reason for a token it refuses (or one of the wrong kind); `409` while the environment sets them |
+| `DELETE /api/slack/app` | Admin: forget the saved tokens and disconnect: `204`; `409` while the environment sets them. Linked accounts stay linked |
+| `POST /api/slack/link` | Link the Slack account a code was sent to: `{"code"}` (any case, with or without the dash) → `201 {link}`, and the account is told in Slack. `400` for a code that isn't one, was used, or ran out (15 minutes); `404` without a Slack app |
+| `DELETE /api/slack/links/{team}/{slack_user}` | Unlink one of the caller's Slack accounts: `204`, or `404`. Its threads stay the caller's conversations; nobody continues them from Slack until it is linked again |
+| `GET /api/me` | Who the token belongs to: `{id, name, primary, has_token, created_at}` (see [Users](#users)) |
+| `GET /api/users` | Admin: `{users: [...]}`, the primary user first |
+| `POST /api/users` | Admin: add a user, `{"name"}`. `201` with `{user, token}`; the token is not shown again. `409` when cedar doesn't let this server act for users |
+| `PATCH /api/users/{id}` | Admin: rename, `{"name"}` |
+| `POST /api/users/{id}/token` | Admin: a new token for the user, `{user, token}`; the old one stops working |
+| `DELETE /api/users/{id}` | Admin: remove a user with their conversations, agents, settings and devices here and their runs, memories, records and Google account in cedar. `409` for the primary user |
+| `GET /api/google` | The caller's own Google account, as cedar's `GET /v1/google` gives it: `{available, reason, services, connected, account?, missing_scopes?, server}`; `server: true` for the primary user, whose account is the server's |
+| `POST /api/google/connect` | Start connecting the caller's own account: `{url}` to go to (`?browser=1` from the desktop app, as for the server's). `409` for the primary user |
+| `DELETE /api/google` | Disconnect the caller's own account |
+| `GET /api/config` | `{auth_required, admin_enabled, models_access, memory, contributions, private_chats}`; `private_chats` is `true` on a chat server with [private chats](#private-chats), so the apps offer them only there; `models_access` is `admins` or `users` (`CHAT_MODELS_ACCESS`), `contributions` is whether `CHAT_CONTRIBUTIONS_URL` is set, and `memory` is `true` on a chat server with the `/api/memory` routes, so the apps can hide Memory on an older one |
 | `GET /api/update` | The [update](#updates) banner's state: `{enabled, current, latest: {version, notes_url, published_at, tarball_url, checksums_url}, available, checked_at, error, can_install, install: {state, version, detail}, commands}`. `install.state` is `idle`, `requested`, `downloading`, `verifying`, `installing`, `restarting`, `done` or `failed` |
 | `POST /api/update/check` | Look the latest release up now (at most once a minute); answers like `GET` |
 | `POST /api/update` | Admin (`X-Admin-Token`): ask the `cedar-update` unit to install the latest release. 202, or 403 without `CHAT_UPDATE_DIR`, 409 when nothing newer is known or an update is running |
 | `GET /api/conversations` | Conversations, most recently active first, each with `unread` and `needs_answer` (see [Notifications](#notifications)). Conversations that are an agent's runs are left out |
-| `POST /api/conversations` | Create one. Body `{}` or `{"title": "..."}` |
-| `GET /api/conversations/{id}` | `{conversation, turns, agent?, followups}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen`. `agent` is `{id, title, trigger_kind}` when the conversation is an [agent](#agents)'s run; `followups` lists what was decided about the [follow-ups suggested](#follow-ups-the-agent-suggests) in its turns (one not listed is still open) |
+| `POST /api/conversations` | Create one. Body `{}` or `{"title": "...", "private": true}`; `private` makes it a [private chat](#private-chats), which no list, search or inbox shows |
+| `GET /api/conversations/{id}` | `{conversation, turns, agent?, followups, limitations}`. Unfinished turns are refreshed from cedar; each turn carries `stop_reason`, `finished_at` and `seen`. `agent` is `{id, title, trigger_kind}` when the conversation is an [agent](#agents)'s run; `followups` lists what was decided about the [follow-ups suggested](#follow-ups-the-agent-suggests) in its turns (one not listed is still open) |
 | `PATCH /api/conversations/{id}` | Rename: `{"title": "..."}` |
-| `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running |
+| `DELETE /api/conversations/{id}` | Delete. Returns 409 while a response is running, except for a private chat, whose response is stopped |
 | `POST /api/conversations/{id}/messages` | Send `{"content": "...", "model"?: "<registry id>", "reasoning"?: "<level>", "plan"?: "off"\|"on"\|"auto"\|"tool", "locale"?: "de-CH", "attachments"?: [{"name", "media_type", "data"}]}` (`data` is base64; see [Attachments](#attachments) for the types and limits, and the body may be up to 48 MiB). Starts a cedar run with the [settings](#tools-and-settings) (`plan`, the phone apps' Plans setting, overrides the Settings one for this message; `locale`, the language the page or app is shown in, overrides the saved one) and returns the turn, whose `attachments` lists `{name, media_type, size}` for each file. `model` and `reasoning` go to cedar as they are and its verdict is relayed (400 for an unregistered model or a level it doesn't offer); the conversation then reports them as `model` and `reasoning`. Images to a model registered without "accepts images" are a 400 from cedar, relayed. Returns 409 if a response is still running |
 | `PUT /api/conversations/{id}/tools` | `{"tools": [...]}` gives the conversation its own tools; `{"tools": null}` returns it to the defaults |
 | `GET /api/conversations/{id}/files` | The workspace files of the latest turn's run, as cedar reports them (`{workspace_id, files, truncated}`); empty for a conversation without turns |
@@ -858,7 +1237,7 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `GET /api/starred` | `{conversations}`: the starred conversations, most recently starred first, agents' runs included, each with `schedule_title` (the agent a run belongs to, else `null`) |
 | `POST /api/conversations/{id}/seen` | The conversation has been looked at: its finished responses leave the inbox. Returns the conversation (see [Notifications](#notifications)) |
 | `GET /api/inbox` | `{items, unread}`: the finished or failed responses nobody has looked at, newest first (at most 50), each `{turn_id, conversation_id, title, schedule_id, status, stop_reason, needs_answer, finished_at}`, and how many there are |
-| `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends. No replay: read `/api/inbox` on connecting |
+| `GET /api/events` | Server-Sent Events for the page: a `turn.finished` event (`{turn_id, conversation_id, run_id, status, stop_reason, error, needs_answer, title, schedule_id, finished_at}`) for every response that ends, a `turn.waiting` event (`{turn_id, conversation_id, what: "approval" \| "plan", reason}`) when one sent from the page stops for an OK or for its plan, and `outbox.changed` (`{id, status}`) when a held call was decided. No replay: read `/api/inbox` on connecting |
 | `GET /api/notifications` | How to be told [out of the app](#out-of-the-app): `{default_method, configured: [the methods that can send], scope, pushover: {configured, token_set, user_set, user_last4}, email: {configured, host, port, security, username, password_set, from, to}, browser: {public_key, contact, subscriptions: [{id, user_agent, created_at, last_used_at}]}, desktop: {configured, connected_at, listening}, ios: {configured, team_id, key_id, key_set, topic, environment, devices: [{id, name, created_at, last_used_at}]}, android: {configured (FCM set up, or a UnifiedPush phone registered), fcm_configured, project_id, client_email, key_set, devices: [{id, transport: "fcm"\|"unifiedpush", name, created_at, last_used_at}]}, last_delivery}`. Never the secrets. Makes the push keys on first read |
 | `PUT /api/notifications` | Change any of `{"default_method": "none"\|"desktop"\|"browser"\|"ios"\|"android"\|"pushover"\|"email", "scope": "attention"\|"all", "pushover": {"token"?, "user"?}, "email": {"host"?, "port"?, "security"?: "tls"\|"starttls"\|"none", "username"?, "password"?, "from"?, "to"?}, "ios": {"team_id"?, "key_id"?, "private_key"? (the `.p8` file's contents), "topic"?, "environment"?: "production"\|"sandbox"}, "android": {"service_account"? (the Firebase service account's JSON file; checked for `project_id`, `client_email` and an RSA `private_key`)}, "contact"?}`. A secret left out is kept, an empty one cleared. 400 if the default method can't send (missing credentials, no subscribed browser, no registered iPhone or Android phone, only FCM phones and no service account, the Mac app never connected) |
 | `POST /api/notifications/test` | `{"method"}`: send a test message with the saved settings. `{ok, detail}`, or 502 with what went wrong; recorded as `last_delivery` either way |
@@ -874,14 +1253,23 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `DELETE /api/notifications/android/devices/{id}` | Remove a registered Android phone |
 | `GET /api/turns/{id}/events?after=N` | The turn's cedar event stream (SSE), relayed |
 | `POST /api/turns/{id}/cancel` | Stop the turn's run |
-| `GET /api/agents` | `{agents, limits}`: every [agent](#agents), enabled ones first, each `{id, title, prompt, model, reasoning, tools, notify, enabled, source_conversation_id, timezone, trigger, next_run_at, next_check_at, last_run_at, last_checked_at, last_error, waiting, min_interval_secs, max_runs_per_day, hook, last_run, created_at, updated_at}`. `next_run_at` is set for an agent on a clock and `next_check_at` for one that watches; `last_error` says why its last check failed; `waiting` that a webhook call is held until it may run; `hook` is `{url, path, secret_last4}` for a webhook agent. `limits` has the defaults (`max_agents`, `min_interval_secs`, `max_runs_per_day`, `min_interval_minutes`, `check_minutes`, `personal_check_minutes`) |
-| `POST /api/agents` | Create one: `{"title", "prompt", "trigger", "timezone"?, "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?, "enabled"?, "min_interval_secs"?, "max_runs_per_day"?}`. `trigger` is one of the shapes below. Without `tools`, an agent that events start gets the [careful choice](#runs-that-start-from-outside), and one on a clock the conversation's tools or the defaults; `null` means the defaults. `notify` is how its finished runs are announced: a method set up under Notifications (`desktop`, `browser`, `ios`, `android`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method. Returns `201` with the agent; a webhook agent's `hook.secret` is in this response only. 409 at 100 agents |
+| `GET /api/agents` | `{agents, limits}`: every [agent](#agents), enabled ones first, each `{id, title, prompt, model, reasoning, tools, notify, enabled, source_conversation_id, timezone, trigger, next_run_at, next_check_at, last_run_at, last_checked_at, last_error, waiting, min_interval_secs, max_runs_per_day, hold_writes, hook, last_run, created_at, updated_at}`. `next_run_at` is set for an agent on a clock and `next_check_at` for one that watches; `last_error` says why its last check failed; `waiting` that a webhook call is held until it may run; `hook` is `{url, path, secret_last4}` for a webhook agent. `limits` has the defaults (`max_agents`, `min_interval_secs`, `max_runs_per_day`, `min_interval_minutes`, `check_minutes`, `personal_check_minutes`) |
+| `POST /api/agents` | Create one: `{"title", "prompt", "trigger", "timezone"?, "model"?, "reasoning"?, "conversation_id"?, "tools"?, "notify"?, "enabled"?, "min_interval_secs"?, "max_runs_per_day"?, "hold_writes"?}` (`hold_writes`, true unless given, keeps what its runs would send or change in [the outbox](#the-outbox)). `trigger` is one of the shapes below. Without `tools`, an agent that events start gets the [careful choice](#runs-that-start-from-outside), and one on a clock the conversation's tools or the defaults; `null` means the defaults. `notify` is how its finished runs are announced: a method set up under Notifications (`desktop`, `browser`, `ios`, `android`, `pushover`, `email`; 400 if it isn't set up), `none`, or `null` (the default) for the default method. Returns `201` with the agent; a webhook agent's `hook.secret` is in this response only. 409 at 100 agents |
 | `GET /api/agents/{id}` | `{agent, runs}`, newest run first (at most 100), each `{id, schedule_id, conversation_id, turn_id, due_at, started_at, manual, error, cause, turn}`. `cause` is what started it, `{kind, summary, excerpt?}` with `kind` one of `clock`, `changed`, `holds`, `rows`, `webhook`, `device`, `mail`, `soon`, `new_event`, `files`, and `summary` a line in the saved language; `null` for "run now". `turn` is refreshed while unfinished; `error` says why a run could not be started |
 | `PATCH /api/agents/{id}` | Change any of the fields above, or `{"enabled": false}` to pause. A `trigger` replaces the whole trigger and forgets what the old one had seen; resuming skips what was missed. A webhook agent that gets another trigger loses its address |
 | `DELETE /api/agents/{id}` | Delete the agent with its runs' conversations and cedar runs. Returns 409 while one of its runs is going |
 | `POST /api/agents/{id}/run` | Start a run now, whatever the trigger says. Returns 409 while its latest run is still going |
 | `POST /api/agents/{id}/hook/rotate` | A new secret for a webhook agent, returned in `hook.secret` this once; the old one stops working. 409 if the agent has no webhook |
 | `POST /api/agents/{id}/trigger` | [Your phone](#your-phone) asks for a run of any agent that isn't paused: `{"source"?, "text"?, "title"?, "url"?}` (the body may be left out; at most 16 KiB, else `413`). `202 {started: true, conversation_id}` or `202 {started: false, held: "busy" \| "too_soon" \| "daily_limit" \| "cedar_busy"}`; `409` for a paused agent |
+| `PUT /api/turns/{id}/limitations/{call_id}` | Decide about [something the model reported it could not do](#feedback) in that turn (`call_id` is the `report_limitation` call's id): `{"decision": "send", "summary", "category"?, "needed"?, "comment"?}` keeps it as feedback, `{"decision": "dismiss"}` keeps only that it was seen. Returns `{feedback}`; the first decision stands |
+| `GET /api/feedback` | `{feedback, by_category}`: the reports you sent, newest first, each `{id, turn_id, call_id, status, summary, category, needed, comment, created_at}`. With `?users=all` and the admin token, everyone's, each with `user_name` |
+| `DELETE /api/feedback/{id}` | Take one report back (with `?users=all` and the admin token, anyone's). `204` |
+| `GET /api/actions` | cedar's `GET /v1/actions` for whoever is signed in, with `supported` (`false` on a cedar from before actions) |
+| `POST /api/actions/draft` | The steps cedar's model reads from a recording (cedar's body, up to 40 MB, passed on as it is). Saves nothing |
+| `POST /api/actions`, `GET`/`PUT`/`DELETE /api/actions/{id}` | Save, read, change and delete an action, as cedar's routes do |
+| `GET /api/outbox` | `{items}`: what waits for your approval in [the outbox](#the-outbox), newest first: cedar's held calls (`{id, run_id, tool, input, reason, why, status, edited, output, created_at, decided_at}`), each with `turn_id`, `conversation_id`, `title` and `agent: {id, title}` where the run is one of this chat's. `?status=` asks for `sent`, `failed`, `discarded` or `all` instead |
+| `GET /api/outbox/{id}` | One held call, whatever became of it |
+| `POST /api/outbox/{id}` | `{"decision": "approve" \| "discard", "input"?}`: approve a held call, which makes it now (with `input` in place of what the model wrote, if given), or discard it. Returns the call as it is afterwards; the open tabs get an `outbox.changed` notice |
 | `PUT /api/turns/{id}/followups/{call_id}` | Decide about [a follow-up the model suggested](#follow-ups-the-agent-suggests) in that turn (`call_id` is the `suggest_follow_up` call's id in the run's events): `{"decision": "accept", "title", "prompt", "at", "timezone"}` makes a one-off agent, `{"decision": "dismiss"}` records that. Returns `{followup: {turn_id, call_id, status, agent_id, decided_at}, agent}`. The first decision stands; deciding again returns it. `400` if the time has passed |
 | `POST /api/agents/test` | Try a watching trigger out, keeping nothing: `{"trigger"}` → `{ok: true, value, would_fire, summary?, sample: {text, cut, json}}`, or `{ok: false, error, sample?}` when the check fails. 400 for a trigger that doesn't watch |
 | `GET /api/agents/activity` | The latest runs of all agents, newest first: `{items, next_before}`, each item a run as above plus `agent: {id, title, trigger_kind}`. `?limit=` (30, at most 100) and `?before=` (the previous page's `next_before`) page back |
@@ -892,8 +1280,10 @@ All routes are under `/api`. When `CHAT_ACCESS_TOKEN` is set, they need
 | `PUT /api/settings` | Replace them (all but `locale`, which has its own route). Tool names are checked against cedar's `/v1/tools` and `model` against its `/v1/models`. A default model cedar no longer has is dropped when a message is sent, so cedar's own default applies |
 | `GET /api/pairing` | What the iOS and Android apps connect with (Settings → Phone): `{platform, server, on_tailnet, access_token, link, qr_svg, tailscale: {state, name, detail}}`. `server` (and `link`, `qr_svg`) is `null` unless `CHAT_PUBLIC_URL` is `https://`; `tailscale.state` is `missing`, `unavailable`, `logged_out`, `stopped`, `connecting`, `no_magic_dns`, `no_https` or `ready` |
 | `GET /api/tools` | cedar's tool groups (`GET /v1/tools`), relayed |
-| `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers |
+| `GET /api/models` | cedar's registered models (`GET /v1/models`), relayed, for the pickers: `{models, selection}`. `selection` is cedar's `model_selection` setting: `false` (the default) means cedar chooses the model of every message, the pickers are hidden, and a `model` or `reasoning` sent with a message, saved in Settings or on an agent is not passed on |
+| `PUT /api/integrations/model-selection` | Turn choosing models on or off (`{"enabled": true \| false}`, cedar's `model_selection`); open to whoever may manage the models (`CHAT_MODELS_ACCESS`). Returns `{selection}`. The Advanced settings page's "Choose the model yourself" |
 | `GET /api/memory` | What cedar remembers about the user (`GET /v1/memory`): `{supported, items, limits}`, each item `{id, text, run_id, created_at, updated_at}` plus the `conversation_id` and `title` of the conversation it was saved in (`null` when there is none here). A cedar from before memory gives `supported: false` and no items. See [Memory](#memory) |
+| `GET /api/memory/graph` | Memory as a network (`GET /v1/memory/graph`): `{supported, nodes, edges, total, left_out}`, each node with its `conversation_id` and `title` as above. `?archived=true` and `?limit=` are passed on. A cedar from before the graph gives `supported: false` |
 | `POST /api/memory` | `{"text"}`: remember something by hand, relayed to `POST /v1/memory` |
 | `DELETE /api/memory/{id}` | Forget one memory (`404` if cedar has no such item) |
 | `DELETE /api/memory` | Forget everything cedar remembers about the user |

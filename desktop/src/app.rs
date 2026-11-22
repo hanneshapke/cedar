@@ -131,6 +131,8 @@ pub struct AppState {
     /// Whether a newer release is out, and how far installing it got (see update.rs).
     update: Mutex<UpdateStatus>,
     pub supervisor: Supervisor,
+    /// The screen recording the chat's Actions page asked for (see recorder.rs).
+    recorder: crate::recorder::Recorder,
     /// What suits this computer's GPU, once it was looked at (see `llamasetup::detect`).
     llama_plan: Mutex<Option<cedar_llama::Plan>>,
     llama_setup: Mutex<(SetupStatus, Option<f64>)>,
@@ -196,6 +198,7 @@ impl AppState {
     pub fn new(paths: Paths, config: Config, exe_dir: PathBuf) -> Self {
         Self {
             supervisor: Supervisor::new(exe_dir, paths.clone()),
+            recorder: Default::default(),
             llama_plan: Mutex::new(None),
             llama_setup: Mutex::new((SetupStatus::Idle, None)),
             llama_cancel: Mutex::new(CancellationToken::new()),
@@ -220,6 +223,10 @@ impl AppState {
 
     pub fn config(&self) -> Config {
         self.config.lock().unwrap().clone()
+    }
+
+    pub fn recorder(&self) -> &crate::recorder::Recorder {
+        &self.recorder
     }
 
     /// Changes the config and writes it out.

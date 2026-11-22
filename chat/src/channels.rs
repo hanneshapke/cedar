@@ -557,7 +557,7 @@ pub async fn send(state: &AppState, settings: &NotificationSettings, method: Met
 fn send_desktop(state: &AppState, message: &Message) -> Result<String, String> {
     let mut payload = serde_json::to_value(message).map_err(|e| e.to_string())?;
     payload["type"] = json!("notification");
-    match state.desktop.send(payload) {
+    match state.desktop.send((state.user(), payload)) {
         Ok(_) => Ok("handed to the Cedar app".into()),
         Err(_) => Err("the Cedar app for macOS is not listening; is it running?".into()),
     }
@@ -1093,10 +1093,13 @@ pub fn message_for(
     title: Option<&str>,
     scheduled: bool,
     locale: Option<&str>,
+    held: usize,
 ) -> Message {
     let needs_answer = turn.status == "completed" && turn.stop_reason.as_deref() == Some("ask_user");
     let outcome = if needs_answer {
         Outcome::NeedsAnswer
+    } else if turn.status == "completed" && held > 0 {
+        Outcome::NeedsApproval
     } else if turn.status == "failed" {
         Outcome::Failed
     } else {
@@ -1126,15 +1129,16 @@ fn excerpt(text: &str) -> String {
     format!("{}…", cut.trim_end())
 }
 
-/// Whether a finished turn is worth sending under `scope`. Stopped runs never are.
-pub fn wanted(scope: Scope, turn: &crate::store::Turn, scheduled: bool) -> bool {
+/// Whether a finished turn is worth sending under `scope`. Stopped runs never are. `held` is how
+/// many of its calls wait in the outbox for the person's approval: such a turn needs them.
+pub fn wanted(scope: Scope, turn: &crate::store::Turn, scheduled: bool, held: usize) -> bool {
     if !matches!(turn.status.as_str(), "completed" | "failed") {
         return false;
     }
     match scope {
         Scope::All => true,
         Scope::Attention => {
-            turn.status == "failed" || turn.stop_reason.as_deref() == Some("ask_user") || scheduled
+            turn.status == "failed" || turn.stop_reason.as_deref() == Some("ask_user") || scheduled || held > 0
         }
     }
 }
@@ -1150,6 +1154,10 @@ pub async fn dispatch(state: &AppState, turn_id: Uuid) -> Result<Option<Result<S
     }
     let settings = state.store.notification_settings().await?;
     let conversation = state.store.get_conversation(turn.conversation_id).await?;
+    // Nothing about a private conversation is sent anywhere.
+    if conversation.as_ref().is_some_and(|c| c.private) {
+        return Ok(None);
+    }
     let schedule = match conversation.as_ref().and_then(|c| c.schedule_id) {
         Some(id) => state.store.get_schedule(id).await?,
         None => None,
@@ -1161,11 +1169,20 @@ pub async fn dispatch(state: &AppState, turn_id: Uuid) -> Result<Option<Result<S
     }
     let scheduled = schedule.is_some();
     let scope = if own.is_some() { Scope::All } else { settings.scope };
-    if !wanted(scope, &turn, scheduled) {
+    // What the run would have sent or changed and now waits in the outbox. A cedar that can't
+    // say (or doesn't know the outbox yet) is taken as none: the turn is still announced.
+    let held = match state.cedar.held(Some("pending"), Some(turn.run_id)).await {
+        Ok(held) => held.len(),
+        Err(e) => {
+            tracing::debug!(turn_id = %turn.id, error = %e, "could not ask cedar what the run left in the outbox");
+            0
+        }
+    };
+    if !wanted(scope, &turn, scheduled, held) {
         return Ok(None);
     }
     let locale = state.store.preferences().await?.locale;
-    let message = message_for(state, &turn, conversation.as_ref().and_then(|c| c.title.as_deref()), scheduled, locale.as_deref());
+    let message = message_for(state, &turn, conversation.as_ref().and_then(|c| c.title.as_deref()), scheduled, locale.as_deref(), held);
     let outcome = send(state, &settings, method, &message).await;
     match &outcome {
         Ok(detail) => tracing::info!(turn_id = %turn.id, method = method.as_str(), detail, "notification sent"),

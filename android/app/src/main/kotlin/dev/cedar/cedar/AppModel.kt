@@ -30,6 +30,7 @@ import dev.cedar.core.RecordsLimits
 import kotlinx.serialization.json.JsonObject
 import dev.cedar.core.ModelInfo
 import dev.cedar.core.Notice
+import dev.cedar.core.OutboxItem
 import dev.cedar.core.ServerSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -90,6 +91,9 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var conversations by mutableStateOf<List<Conversation>>(emptyList())
         private set
     var models by mutableStateOf<List<ModelInfo>>(emptyList())
+
+    /** Whether people choose the model (see [dev.cedar.core.ModelList]); off, the server does and the pickers are hidden. */
+    var modelSelection by mutableStateOf(true)
         private set
 
     /** How many finished responses nobody has looked at (the bell in the web UI). */
@@ -110,6 +114,25 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
 
     /** The runs of each agent whose page was opened, newest first, once loaded. */
     val agentRuns = mutableStateMapOf<String, List<AgentRun>>()
+
+    /**
+     * The outbox: what runs would have sent or changed in the person's accounts and held for
+     * them instead (`/api/outbox`), newest first. The Agents list shows it; nothing in it happens
+     * until they approve it.
+     */
+    var outbox by mutableStateOf<List<OutboxItem>>(emptyList())
+        private set
+
+    /** Held calls by id, as last heard of: the list's, and those a conversation's cards asked about. */
+    private val heldCalls = mutableStateMapOf<String, OutboxItem>()
+
+    /** The ids of held calls the server no longer has (their run was deleted). */
+    private var goneHeldCalls by mutableStateOf<Set<String>>(emptySet())
+
+    /** The held calls a decision is on its way for, and why the last one for each failed. */
+    private var decidingHeldCalls by mutableStateOf<Set<String>>(emptySet())
+    private var heldCallErrors by mutableStateOf<Map<String, String>>(emptyMap())
+    private val loadingHeldCalls = mutableSetOf<String>()
 
     /** The agents with a finished run nobody has looked at, and how many runs that is. */
     var unreadAgents by mutableStateOf<Set<String>>(emptySet())
@@ -234,6 +257,9 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     /** The server can send conversations to a corpus (`/api/config` says so); Settings shows Contribute only then. */
     var serverHasContributions by mutableStateOf(false)
         private set
+    /** The server has private chats (`/api/config` says so); a new chat offers one only then. */
+    var serverHasPrivateChats by mutableStateOf(false)
+        private set
     var showingContribute by mutableStateOf(false)
     var contributionSettings by mutableStateOf<ContributionSettings?>(null)
         private set
@@ -244,8 +270,19 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     /** Conversations the list leaves out (an agent's runs), as their chats loaded them. */
     private val otherConversations = mutableStateMapOf<String, Conversation>()
 
-    /** The selected conversation id, or a draft chat's key. */
-    var selection by mutableStateOf<String?>(null)
+    private var selected by mutableStateOf<String?>(null)
+
+    /**
+     * The selected conversation id, or a draft chat's key. Moving it away from a private chat
+     * ends that chat (see [left]), wherever the move comes from: Back, the list, a notification.
+     */
+    var selection: String?
+        get() = selected
+        set(value) {
+            val old = selected
+            selected = value
+            if (old != null && old != value) left(old)
+        }
     var showingSettings by mutableStateOf(!settings.isConfigured)
 
     /** Whether the feature tour was seen (or skipped); a new install shows it after the language. */
@@ -355,9 +392,11 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             agentForm = null
             hookSecrets.clear()
             models = emptyList()
+            modelSelection = true
             modelsLoaded = false
             serverHasMemory = false
             serverHasContributions = false
+            serverHasPrivateChats = false
             contributionSettings = null
             contributions = emptyList()
             contributionsError = null
@@ -583,11 +622,14 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             }
             if (!modelsLoaded) {
                 modelsLoaded = true
-                models = runCatching { client.models() }.getOrDefault(emptyList())
+                val list = runCatching { client.modelList() }.getOrNull()
+                models = list?.models.orEmpty()
+                modelSelection = list?.selection ?: true
                 val config = runCatching { client.config() }.getOrNull()
                 serverHasMemory = config?.memory ?: false
                 serverHasRecords = config?.records ?: false
                 serverHasContributions = config?.contributions ?: false
+                serverHasPrivateChats = config?.privateChats ?: false
             }
         } catch (e: CancellationException) {
             throw e
@@ -744,6 +786,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             agentError = describe(e)
             return
         }
+        refreshOutbox()
         val ids = agents.map { it.id }.toSet()
         agentRuns.keys.filter { it !in ids }.forEach { agentRuns.remove(it) }
         showingAgent?.let { id -> if (id in ids) loadAgent(id) else closeAgent() }
@@ -751,6 +794,90 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     }
 
     fun agent(id: String): Agent? = agents.firstOrNull { it.id == id }
+
+    // The outbox
+
+    /** Reads what waits for approval. A server from before the outbox has none to show. */
+    suspend fun refreshOutbox() {
+        val client = client ?: return
+        try {
+            val items = client.outbox()
+            outbox = items
+            items.forEach { heldCalls[it.id] = it }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Nothing to show; the agents list says what is wrong when the server can't be reached.
+        }
+    }
+
+    /** A held call as last heard of; `null` until [loadHeldCall] has an answer. */
+    fun heldCall(id: String): OutboxItem? = heldCalls[id]
+
+    /** The server no longer has it: its run was deleted. */
+    fun isHeldCallGone(id: String): Boolean = id in goneHeldCalls
+
+    fun isDecidingHeldCall(id: String): Boolean = id in decidingHeldCalls
+
+    /** Why the last decision about it didn't go through, in the server's words. */
+    fun heldCallError(id: String): String? = heldCallErrors[id]
+
+    /** Asks the server what became of a held call a conversation shows, once. */
+    fun loadHeldCall(id: String) {
+        val client = client ?: return
+        if (id in heldCalls || id in goneHeldCalls || !loadingHeldCalls.add(id)) return
+        scope.launch {
+            try {
+                heldCalls[id] = client.outboxItem(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ChatException.Api) {
+                if (e.status == 404) goneHeldCalls = goneHeldCalls + id
+            } catch (_: Exception) {
+                // Asked again the next time the card is drawn.
+            } finally {
+                loadingHeldCalls.remove(id)
+            }
+        }
+    }
+
+    /**
+     * Approves a held call, which makes it now exactly as it was written, or discards it. The
+     * server waits for the call itself, so this can take a while. A call decided elsewhere in
+     * the meantime is shown as it is now.
+     */
+    fun decideHeldCall(id: String, approve: Boolean) {
+        val client = client ?: return
+        if (id in decidingHeldCalls) return
+        decidingHeldCalls = decidingHeldCalls + id
+        heldCallErrors = heldCallErrors - id
+        scope.launch {
+            try {
+                settle(client.decideOutbox(id, approve))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                heldCallErrors = heldCallErrors + (id to describe(e))
+                if (e is ChatException.Api && e.status == 409) {
+                    try {
+                        settle(client.outboxItem(id))
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The error above says what happened.
+                    }
+                }
+            } finally {
+                decidingHeldCalls = decidingHeldCalls - id
+            }
+        }
+    }
+
+    /** Takes the server's latest word on a held call; one that is settled leaves the outbox. */
+    private fun settle(item: OutboxItem) {
+        heldCalls[item.id] = item
+        outbox = if (item.isOpen) outbox.map { if (it.id == item.id) item else it } else outbox.filter { it.id != item.id }
+    }
 
     /** Reads one agent and its runs, for its page. */
     suspend fun loadAgent(id: String) {
@@ -971,6 +1098,30 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         selection = conversationId
         showingSettings = false
         scope.launch { refresh() }
+    }
+
+    /**
+     * The selection moved away from `id` (a conversation's, or a draft's key). A private chat ends
+     * there: it is deleted on the server, a response still being written included, since no list
+     * leads back to it. One that was never sent is only dropped. A draft that just became a
+     * conversation is no longer under its key (see [chatDidStart]), so it is left alone.
+     */
+    private fun left(id: String) {
+        val chat = chats[id]?.takeIf { it.isPrivate } ?: return
+        chats.remove(id)
+        chat.stopStreaming()
+        otherConversations.remove(id)
+        val conversationId = chat.conversationId ?: return
+        val client = client ?: return
+        scope.launch {
+            // If this fails (no connection), the server deletes the chat itself once it has been idle.
+            try {
+                client.delete(conversationId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
     }
 
     /** Called when a draft chat's conversation is created: from now on it has an id. */

@@ -8,8 +8,10 @@
 //! in the cedar process too, and so do the Slack tools, through Slack's Web API. Personal tools written in Python (`custom`) run in the sandbox like
 //! `run_python`.
 
+mod actions;
 mod ask_user;
 mod follow_up;
+mod limitation;
 mod bash;
 mod bestbuy;
 mod browser;
@@ -25,6 +27,7 @@ mod files;
 mod flights;
 mod gmail;
 mod sheets;
+mod slides;
 pub mod slack;
 mod google;
 mod map;
@@ -42,8 +45,10 @@ mod transit;
 mod weather;
 mod web_search;
 
+pub use actions::{SavedActions, NAME as SAVED_ACTIONS};
 pub use ask_user::{as_text as question_text, AskUser, NAME as ASK_USER};
 pub use follow_up::{SuggestFollowUp, NAME as SUGGEST_FOLLOW_UP};
+pub use limitation::{ReportLimitation, CATEGORIES as LIMITATION_CATEGORIES, NAME as REPORT_LIMITATION};
 pub use bash::Bash;
 pub use bestbuy::BestBuy;
 pub use browser::BrowserTool;
@@ -71,6 +76,7 @@ pub use transit::PlanTrip;
 pub use weather::WeatherForecast;
 pub use web_search::BraveSearch;
 
+use crate::actions::ActionsContext;
 use crate::browser::BrowserSession;
 use crate::computer::ComputerSession;
 use crate::config::Config;
@@ -109,12 +115,18 @@ pub struct ToolContext {
     pub model: Option<Arc<ToolModel>>,
     /// The run's locale (see [`crate::locale`]), which personal tools see as `CEDAR_LOCALE`.
     pub locale: String,
+    /// The run's time zone (see [`crate::timezone`]), which personal tools see as
+    /// `CEDAR_TIMEZONE`; `None` when it isn't known.
+    pub timezone: Option<String>,
     /// The run owner's memory, for `remember` and `forget`. `None` when memory is turned off, or
     /// outside a run.
     pub memory: Option<MemoryContext>,
     /// The run owner's records, for the `records_*` tools. `None` when records are turned off,
     /// or outside a run.
     pub records: Option<RecordsContext>,
+    /// The run owner's saved actions, for `saved_actions` and the secrets the browser types for
+    /// them. `None` when actions are turned off, or outside a run.
+    pub actions: Option<ActionsContext>,
 }
 
 /// The run's model as a tool may use it: one tool-free request at a time, with the tokens it
@@ -238,11 +250,62 @@ pub trait Tool: Send + Sync {
     }
 }
 
+/// The tools that act for one Google account: Gmail, Calendar, Drive, Sheets and Slides through the REST
+/// APIs, or the MCP servers that stand in for them. They share one [`GoogleOAuth`], and so one
+/// cached access token.
+pub struct AccountTools {
+    tools: Vec<Arc<dyn Tool>>,
+    remote: Vec<Arc<McpServer>>,
+}
+
+impl AccountTools {
+    /// No account: a set with it is the set itself.
+    pub fn none() -> Self {
+        Self { tools: Vec::new(), remote: Vec::new() }
+    }
+
+    /// The Google tools the server offers (`GMAIL`, `CALENDAR`, `DRIVE`, `SHEETS`, `SLIDES`), acting for
+    /// the account `refresh_token` belongs to, which `client` connected.
+    pub fn google(
+        cfg: &Config,
+        client: &crate::config::GoogleClientConfig,
+        refresh_token: String,
+    ) -> Result<Self> {
+        let creds = GoogleCredentials {
+            client_id: client.client_id.clone(),
+            client_secret: client.client_secret.clone(),
+            refresh_token,
+            token_url: client.token_url.clone(),
+        };
+        let auth = Arc::new(GoogleOAuth::new(creds)?);
+        let mut tools: Vec<Arc<dyn Tool>> = Vec::new();
+        for api in &cfg.google_apis {
+            let made = match api.prefix.as_str() {
+                "gmail" => gmail::tools(api, auth.clone())?,
+                "calendar" => calendar::tools(api, auth.clone())?,
+                "drive" => drive::tools(api, auth.clone())?,
+                "sheets" => sheets::tools(api, auth.clone())?,
+                "slides" => slides::tools(api, auth.clone())?,
+                other => anyhow::bail!("no REST API tools for {other}"),
+            };
+            tools.extend(made.into_iter().map(Arc::from));
+        }
+        let mut remote = Vec::new();
+        for server in &cfg.mcp_servers {
+            remote.push(Arc::new(McpServer::new(server, auth.clone())?));
+        }
+        Ok(Self { tools, remote })
+    }
+}
+
 /// The tools available to every run.
 pub struct ToolSet {
-    tools: Vec<Box<dyn Tool>>,
+    tools: Vec<Arc<dyn Tool>>,
     /// MCP servers; their tools join the set once discovered (see [`Self::connect_remote`]).
-    remote: Vec<McpServer>,
+    remote: Vec<Arc<McpServer>>,
+    /// Where the tools that act for a Google account go among `tools` (see
+    /// [`Self::with_account`]): after the built-in ones, before Slack's and the personal ones.
+    account_at: usize,
     /// The names of the personal tools loaded from `TOOLS_DIR`, which form the `custom` group.
     custom: HashSet<String>,
 }
@@ -250,7 +313,8 @@ pub struct ToolSet {
 impl ToolSet {
     pub fn new(tools: Vec<Box<dyn Tool>>) -> Self {
         Self {
-            tools,
+            account_at: tools.len(),
+            tools: tools.into_iter().map(Arc::from).collect(),
             remote: Vec::new(),
             custom: HashSet::new(),
         }
@@ -277,6 +341,7 @@ impl ToolSet {
     /// isn't off), `compare_stocks` unless `STOCKS` is off, `search_products` if a Brave or
     /// Best Buy key is configured or saved (and `PRODUCTS` isn't off), `ask_user` unless `ASK_USER` is off,
     /// `remember` and `forget` unless `MEMORY` is off, the `records_*` tools unless `RECORDS` is off,
+    /// `saved_actions` unless `ACTIONS` is off,
     /// `browser` if `BROWSER` is on, `computer` if `COMPUTER` is on, the Gmail and Calendar tools if `GMAIL` or `CALENDAR`
     /// is on (through the REST APIs, or MCP servers whose tools are discovered later), the Slack
     /// tools if a Slack bot token is configured or saved (and `SLACK` isn't off), and the
@@ -289,41 +354,53 @@ impl ToolSet {
     /// the environment leaves unset. Gmail and Calendar tools need a refresh token from one or the
     /// other.
     pub fn build(cfg: &Config, overrides: &Overrides) -> Result<Self> {
+        let (shared, account) = Self::build_parts(cfg, overrides)?;
+        Ok(match account {
+            Some(account) => shared.with_account(&account),
+            None => shared,
+        })
+    }
+
+    /// What [`Self::build`] puts together, apart: the tools that are the same for everyone, and
+    /// those of the server's Google account, if it has one. A user with a Google account of
+    /// their own gets the first with their account's tools (see
+    /// [`crate::integrations::Integrations::tools_for`]).
+    pub fn build_parts(cfg: &Config, overrides: &Overrides) -> Result<(Self, Option<AccountTools>)> {
         let mut set = Self::standard();
         let brave_key = cfg
             .brave_api_key
             .as_ref()
             .or(overrides.brave_api_key.as_ref());
         if let Some(key) = brave_key {
-            set.tools.push(Box::new(BraveSearch::new(
+            set.tools.push(Arc::new(BraveSearch::new(
                 key.clone(),
                 cfg.brave_base_url.clone(),
             )?));
         }
         if cfg.web_fetch {
             let client = Arc::new(WebClient::new(cfg.web_fetch_allow_private)?);
-            set.tools.push(Box::new(FetchUrl(client.clone())));
-            set.tools.push(Box::new(DownloadFile(client)));
+            set.tools.push(Arc::new(FetchUrl(client.clone())));
+            set.tools.push(Arc::new(DownloadFile(client)));
         }
         if cfg.weather {
-            set.tools.push(Box::new(WeatherForecast::new(
+            set.tools.push(Arc::new(WeatherForecast::new(
                 cfg.weather_base_url.clone(),
                 cfg.weather_geocoding_base_url.clone(),
             )?));
         }
         if cfg.maps {
-            set.tools.push(Box::new(ShowMap::new(
+            set.tools.push(Arc::new(ShowMap::new(
                 cfg.weather_geocoding_base_url.clone(),
             )?));
         }
         if cfg.recipes {
-            set.tools.push(Box::new(ShowRecipe::new(
+            set.tools.push(Arc::new(ShowRecipe::new(
                 cfg.recipe_wikipedia_url.clone(),
                 cfg.recipe_commons_url.clone(),
             )?));
         }
         if cfg.transit {
-            set.tools.push(Box::new(PlanTrip::new(
+            set.tools.push(Arc::new(PlanTrip::new(
                 cfg.transit_base_url.clone(),
                 cfg.driving_base_url.clone(),
             )?));
@@ -333,13 +410,13 @@ impl ToolSet {
             .as_ref()
             .or(overrides.serpapi_api_key.as_ref());
         if let (true, Some(key)) = (cfg.flights, serpapi_key) {
-            set.tools.push(Box::new(SearchFlights::new(
+            set.tools.push(Arc::new(SearchFlights::new(
                 key.clone(),
                 cfg.flights_api_url.clone(),
             )?));
         }
         if cfg.stocks {
-            set.tools.push(Box::new(CompareStocks::new(
+            set.tools.push(Arc::new(CompareStocks::new(
                 cfg.stocks_chart_url.clone(),
                 cfg.stocks_news_url.clone(),
             )?));
@@ -358,32 +435,38 @@ impl ToolSet {
                 .transpose()?;
             let web = Arc::new(WebClient::new(cfg.web_fetch_allow_private)?);
             set.tools
-                .push(Box::new(SearchProducts::new(brave, bestbuy, web)));
+                .push(Arc::new(SearchProducts::new(brave, bestbuy, web)));
         }
         if cfg.follow_ups {
-            set.tools.push(Box::new(SuggestFollowUp));
+            set.tools.push(Arc::new(SuggestFollowUp));
         }
         if cfg.ask_user {
-            set.tools.push(Box::new(AskUser));
+            set.tools.push(Arc::new(AskUser));
+        }
+        if cfg.feedback {
+            set.tools.push(Arc::new(ReportLimitation));
         }
         if cfg.memory {
-            set.tools.push(Box::new(Remember));
-            set.tools.push(Box::new(Forget));
-            set.tools.push(Box::new(RecallTool));
+            set.tools.push(Arc::new(Remember));
+            set.tools.push(Arc::new(Forget));
+            set.tools.push(Arc::new(RecallTool));
         }
         if cfg.records {
-            set.tools.push(Box::new(RecordsList));
-            set.tools.push(Box::new(RecordsDescribe));
-            set.tools.push(Box::new(RecordsSave));
-            set.tools.push(Box::new(RecordsLookup));
-            set.tools.push(Box::new(RecordsDrop));
+            set.tools.push(Arc::new(RecordsList));
+            set.tools.push(Arc::new(RecordsDescribe));
+            set.tools.push(Arc::new(RecordsSave));
+            set.tools.push(Arc::new(RecordsLookup));
+            set.tools.push(Arc::new(RecordsDrop));
+        }
+        if cfg.actions {
+            set.tools.push(Arc::new(SavedActions));
         }
         if cfg.browser.enabled {
             set.tools
-                .push(Box::new(BrowserTool::new(cfg.web_fetch_allow_private)));
+                .push(Arc::new(BrowserTool::new(cfg.web_fetch_allow_private)));
         }
         if cfg.computer.enabled {
-            set.tools.push(Box::new(ComputerTool::new(&cfg.computer)));
+            set.tools.push(Arc::new(ComputerTool::new(&cfg.computer)));
         }
         // The client from the environment wins over a saved one, as elsewhere; a refresh token
         // from the environment only ever belongs to the environment's client.
@@ -394,40 +477,52 @@ impl ToolSet {
         let refresh_token = oauth
             .and_then(|o| o.refresh_token.clone())
             .or_else(|| overrides.google_refresh_token.clone());
-        if let (Some(oauth), Some(refresh_token)) = (oauth, refresh_token) {
-            let creds = GoogleCredentials {
-                client_id: oauth.client_id.clone(),
-                client_secret: oauth.client_secret.clone(),
-                refresh_token,
-                token_url: oauth.token_url.clone(),
-            };
-            let auth = Arc::new(GoogleOAuth::new(creds)?);
-            for api in &cfg.google_apis {
-                let tools = match api.prefix.as_str() {
-                    "gmail" => gmail::tools(api, auth.clone())?,
-                    "calendar" => calendar::tools(api, auth.clone())?,
-                    "drive" => drive::tools(api, auth.clone())?,
-                    "sheets" => sheets::tools(api, auth.clone())?,
-                    other => anyhow::bail!("no REST API tools for {other}"),
-                };
-                set.tools.extend(tools);
+        let account = match (oauth, refresh_token) {
+            (Some(oauth), Some(refresh_token)) => {
+                Some(AccountTools::google(cfg, oauth, refresh_token)?)
             }
-            for server in &cfg.mcp_servers {
-                set.remote.push(McpServer::new(server, auth.clone())?);
-            }
-        }
+            _ => None,
+        };
+        set.account_at = set.tools.len();
         let slack_token = cfg
             .slack_bot_token
             .as_ref()
             .or(overrides.slack_bot_token.as_ref());
         if let (true, Some(token)) = (cfg.slack, slack_token) {
-            set.tools
-                .extend(slack::tools(token.clone(), cfg.slack_api_url.clone())?);
+            set.tools.extend(
+                slack::tools(token.clone(), cfg.slack_api_url.clone())?
+                    .into_iter()
+                    .map(Arc::from),
+            );
         }
         if let Some(dir) = &cfg.sandbox.tools_dir {
             set.load_custom(dir, &overrides.tool_secrets)?;
         }
-        Ok(set)
+        Ok((set, account))
+    }
+
+    /// This set with the tools of a Google account added, in the place they have always had.
+    /// The tools themselves are shared, so this is cheap: one set per account is fine. A tool
+    /// whose name the set already has (a personal tool named like one of Google's) is left out.
+    pub fn with_account(&self, account: &AccountTools) -> Self {
+        let taken: HashSet<&str> = self.tools.iter().map(|t| t.name()).collect();
+        let added: Vec<Arc<dyn Tool>> = account
+            .tools
+            .iter()
+            .filter(|t| !taken.contains(t.name()))
+            .cloned()
+            .collect();
+        let at = self.account_at.min(self.tools.len());
+        let mut tools = self.tools.clone();
+        tools.splice(at..at, added);
+        let mut remote = self.remote.clone();
+        remote.extend(account.remote.iter().cloned());
+        Self {
+            tools,
+            remote,
+            account_at: self.account_at,
+            custom: self.custom.clone(),
+        }
     }
 
     /// Add the personal tools in `dir` (see [`custom`]), each with its saved secrets. Names
@@ -441,7 +536,7 @@ impl ToolSet {
         let loaded = custom::load_dir(dir, &taken, secrets)?;
         for tool in loaded {
             self.custom.insert(tool.name().to_string());
-            self.tools.push(Box::new(tool));
+            self.tools.push(Arc::new(tool));
         }
         if !self.custom.is_empty() {
             let mut names: Vec<&str> = self.custom.iter().map(|s| s.as_str()).collect();
@@ -482,7 +577,7 @@ impl ToolSet {
     /// The tools a run may use. `None` (or an entry `*`) means every tool; otherwise each entry
     /// names a group (see [`GROUPS`]) or a single tool, and the sandbox tools are always included.
     pub fn select<'a>(&'a self, allow: Option<&'a [String]>) -> ToolView<'a> {
-        ToolView { set: self, allow, no_computer: false }
+        ToolView { set: self, allow, without: &[], no_computer: false }
     }
 
     /// Check a run's tool selection. Groups are accepted whether or not this server offers them
@@ -602,7 +697,7 @@ impl ToolSet {
 
 /// Tool groups a run with a small context window always keeps when its selection is narrowed
 /// (see [`ToolSet::narrow_selection`]): looking things up and the run's own bookkeeping.
-const ALWAYS_OFFERED: &[&str] = &["web_search", "web_fetch", "ask_user", "follow_up", "memory", "records"];
+const ALWAYS_OFFERED: &[&str] = &["web_search", "web_fetch", "ask_user", "follow_up", "feedback", "memory", "records", "actions"];
 
 /// Words that show a request may need a tool group, matched as whole words (or with a plural
 /// `s`) in the request.
@@ -620,6 +715,7 @@ const GROUP_WORDS: &[(&str, &[&str])] = &[
     ("calendar", &["calendar", "meeting", "schedule", "appointment", "agenda", "availability", "event", "busy", "free"]),
     ("drive", &["drive", "doc", "docs", "gdoc", "folder", "google"]),
     ("sheets", &["sheet", "spreadsheet", "google"]),
+    ("slides", &["slide", "slides", "deck", "presentation", "powerpoint", "keynote", "pitch"]),
     (slack::PREFIX, &["slack", "channel", "dm"]),
 ];
 
@@ -674,24 +770,27 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("products", "Shopping"),
     ("ask_user", "Clarifying questions"),
     ("follow_up", "Follow-ups"),
+    ("feedback", "Feedback on what it can't do"),
     ("memory", "Memory"),
     ("records", "Records"),
+    ("actions", "Saved actions"),
     ("browser", "Browser"),
     ("computer", "Computer use"),
     ("gmail", "Gmail"),
     ("calendar", "Calendar"),
     ("drive", "Google Drive & Docs"),
     ("sheets", "Google Sheets"),
+    ("slides", "Google Slides"),
     (slack::PREFIX, "Slack"),
     (custom::GROUP, "Personal tools"),
 ];
 
 /// The groups that act for the connected Google account; each tool's name starts with its group.
-pub const GOOGLE_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets"];
+pub const GOOGLE_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", "slides"];
 
 /// The groups that act for a connected account, Google's or Slack's: their tools read what other
 /// people wrote, some of them write, and each one's name starts with its group.
-pub const ACCOUNT_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", slack::PREFIX];
+pub const ACCOUNT_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", "slides", slack::PREFIX];
 
 /// The group a tool belongs to, by name. Personal tools can have any name, so use
 /// [`ToolSet::group`] where the set is at hand.
@@ -708,14 +807,17 @@ pub fn group_of(name: &str) -> &'static str {
         "search_products" => "products",
         "ask_user" => "ask_user",
         "suggest_follow_up" => "follow_up",
+        "report_limitation" => "feedback",
         REMEMBER | FORGET | RECALL => "memory",
         RECORDS_LIST | RECORDS_DESCRIBE | RECORDS_SAVE | RECORDS_LOOKUP | RECORDS_DROP => "records",
+        SAVED_ACTIONS => "actions",
         "browser" => "browser",
         "computer" => "computer",
         n if n.starts_with("gmail_") => "gmail",
         n if n.starts_with("calendar_") => "calendar",
         n if n.starts_with("drive_") => "drive",
         n if n.starts_with("sheets_") => "sheets",
+        n if n.starts_with("slides_") => "slides",
         n if n.starts_with("slack_") => slack::PREFIX,
         _ => "core",
     }
@@ -738,12 +840,23 @@ pub fn writes(name: &str) -> bool {
 pub struct ToolView<'a> {
     set: &'a ToolSet,
     allow: Option<&'a [String]>,
+    /// Groups the run may not use whatever it selected (see [`ToolView::without`]).
+    without: &'static [&'static str],
     /// The run gets no `computer`: its model reads no images, or the computer is the user's own
     /// and nobody is there to answer for the run.
     no_computer: bool,
 }
 
+/// The groups that keep things about the user beyond a conversation: a private run has none
+/// of their tools.
+pub const KEEPING_GROUPS: &[&str] = &["memory", "records"];
+
 impl<'a> ToolView<'a> {
+    /// The same tools without those of `groups`, even where the selection names them.
+    pub fn without(self, groups: &'static [&'static str]) -> Self {
+        Self { without: groups, ..self }
+    }
+
     /// The view without the `computer` tool, whose every result is a screenshot: for a model
     /// that reads no images, and for an unattended run when the computer is the user's own.
     pub fn without_computer(mut self) -> Self {
@@ -753,7 +866,7 @@ impl<'a> ToolView<'a> {
 
     fn allows(&self, name: &str) -> bool {
         let group = self.set.group(name);
-        if self.no_computer && group == "computer" {
+        if self.without.contains(&group) || (self.no_computer && group == "computer") {
             return false;
         }
         let Some(allow) = self.allow else {
@@ -777,6 +890,64 @@ impl<'a> ToolView<'a> {
     /// The group a tool belongs to (see [`ToolSet::group`]).
     pub fn group(&self, name: &str) -> &'static str {
         self.set.group(name)
+    }
+
+    /// A note for the system prompt on how this run hands work over to its user: which calls wait
+    /// for their OK, what is held for them instead of sent, and how to end an answer that leaves
+    /// something for them to do. What it says follows what the run can do, so a model is never
+    /// told about an approval or an outbox that this run doesn't have.
+    pub fn handover_note(&self, how: Handover) -> String {
+        let account_writes = self.all().any(|t| holdable(t.name()));
+        let mut note = String::new();
+        if how.interactive && how.approvals {
+            note.push_str(
+                "Some of your calls wait for the user's OK before they run: sending or changing \
+                 mail, posting to Slack, saving a file from the web, installing packages, \
+                 deleting files, running a community tool. Make each such call complete and \
+                 final (the whole message, the real recipient), because what the user approves \
+                 is exactly what happens. If they decline, don't try to get the same thing done \
+                 another way: go on without it, or ask what they would prefer.",
+            );
+            if account_writes {
+                note.push_str(
+                    " If nobody answers in time, a message or change for one of their accounts \
+                     is kept in their outbox to approve later, and any other call is skipped; \
+                     say which in your answer.",
+                );
+            } else {
+                note.push_str(" If nobody answers in time, the call is skipped; say so in your answer.");
+            }
+        } else if !how.interactive && how.hold_writes && account_writes {
+            note.push_str(
+                "Nobody is reading along in this run, so you can't ask anything, and whatever \
+                 you send or change in the user's accounts (mail, calendar, files, Slack) is not \
+                 done right away: each such call is held in their outbox, where they approve, \
+                 edit or discard it later. Write each one complete and ready to go, since it is \
+                 sent as you wrote it and you won't be asked again. Make each call once, don't \
+                 wait for it, and don't build on its result. In your answer, list what is \
+                 waiting for their approval, and never say that it was sent.",
+            );
+        } else if !how.interactive {
+            note.push_str(
+                "Nobody is reading along in this run, so you can't ask anything and nothing \
+                 waits for approval: do what the prompt asks for and no more.",
+            );
+            if account_writes {
+                note.push_str(
+                    " Send or change something in the user's accounts only where the prompt \
+                     says to.",
+                );
+            }
+        }
+        if !note.is_empty() {
+            note.push(' ');
+        }
+        note.push_str(
+            "When you finish with something left open, end your answer with what is left for \
+             the user: what is waiting for their approval or their answer, what you could not do \
+             and why, and the next step that is theirs. Leave that out when nothing is left.",
+        );
+        note
     }
 
     /// A note for the system prompt saying what the sandbox can reach and how to use the web, so
@@ -898,6 +1069,24 @@ impl<'a> ToolView<'a> {
                  to come back to something by yourself: without it you can't.",
             );
         }
+        if self.get(REPORT_LIMITATION).is_some() {
+            note.push_str(
+                " When you can't do something the user asked for because of what you have here \
+                 (no tool for it, an account that isn't connected, a site that refuses you, a \
+                 limit you hit), say so plainly, do the part you can, and note the gap with \
+                 report_limitation; the user decides whether it is sent as feedback. When the \
+                 thing asked for is an act you have no tool for and no saved action covers \
+                 (buying, booking, paying, signing in, submitting a form), you know that from \
+                 your tools before you start: report it within your first few calls, find out \
+                 only what helps the user do it themselves, and stop; more searching and \
+                 fetching will not make it possible. Call it \
+                 before you write that answer, every time: saying \"I can't\" in the text alone \
+                 leaves the user without the card it shows, which is also where they can show \
+                 you how it is done so that you can do it next time. Never \
+                 describe something as done that wasn't, and don't report a request you \
+                 declined or a fact you don't know.",
+            );
+        }
         if ["bash", "run_python", "write_file", "generate_chart"]
             .iter()
             .any(|t| self.get(t).is_some())
@@ -936,6 +1125,14 @@ impl<'a> ToolView<'a> {
                 note.push_str(" sheets_ tools (a spreadsheet's tabs and cells)");
             }
             note.push('.');
+        }
+        if self.get("slides_create_presentation").is_some() {
+            note.push_str(
+                " When the user wants a presentation, a deck or slides, make it with \
+                 slides_create_presentation, which designs a Google Slides deck from your \
+                 outline, rather than building a file in the sandbox (unless they ask for a \
+                 PowerPoint file), and give them its link.",
+            );
         }
         if gmail || calendar || drive || sheets {
             note.push_str(
@@ -986,6 +1183,25 @@ impl<'a> ToolView<'a> {
         }
         note
     }
+}
+
+/// How a run hands work over to its user, for [`ToolView::handover_note`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Handover {
+    /// Someone answers while the run goes (see `interactive` on a run).
+    pub interactive: bool,
+    /// Some calls wait for that person's OK (`TOOL_APPROVALS` isn't off).
+    pub approvals: bool,
+    /// What the run would send or change in the user's accounts is held for them instead (see
+    /// `hold_writes` on a run).
+    pub hold_writes: bool,
+}
+
+/// Whether a call of `name` can be held for the user's approval instead of made: one that sends
+/// or changes something in a connected account. Such a call needs nothing of the run (no
+/// sandbox, no model), so it can be made later, exactly as it was written.
+pub fn holdable(name: &str) -> bool {
+    writes(name)
 }
 
 /// The rules for tools that handle health data, which every run that has one gets, whatever
@@ -1300,6 +1516,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1307,7 +1524,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1324,6 +1542,7 @@ mod tests {
                 "search_products",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1331,7 +1550,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1347,6 +1567,7 @@ mod tests {
                 "search_products",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1354,7 +1575,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1373,6 +1595,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1380,7 +1603,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ]),
             "a key alone doesn't offer the tool when PRODUCTS is off"
         );
@@ -1394,6 +1618,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1401,7 +1626,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1415,6 +1641,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1422,7 +1649,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1436,6 +1664,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1443,7 +1672,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1457,6 +1687,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1464,7 +1695,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1478,6 +1710,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1485,7 +1718,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1499,6 +1733,7 @@ mod tests {
                 "plan_trip",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1506,7 +1741,8 @@ mod tests {
                 "records_describe",
                 "records_save",
                 "records_lookup",
-                "records_drop"
+                "records_drop",
+                "saved_actions"
             ])
         );
         assert_eq!(
@@ -1520,8 +1756,10 @@ mod tests {
                 ("STOCKS", "off"),
                 ("ASK_USER", "off"),
                 ("FOLLOW_UPS", "off"),
+                ("FEEDBACK", "off"),
                 ("MEMORY", "off"),
-                ("RECORDS", "off")
+                ("RECORDS", "off"),
+                ("ACTIONS", "off")
             ])),
             with(&[])
         );
@@ -1537,6 +1775,7 @@ mod tests {
                 "compare_stocks",
                 "suggest_follow_up",
                 "ask_user",
+                "report_limitation",
                 "remember",
                 "forget",
                 "recall",
@@ -1545,6 +1784,7 @@ mod tests {
                 "records_save",
                 "records_lookup",
                 "records_drop",
+                "saved_actions",
                 "browser"
             ])
         );
@@ -1615,6 +1855,9 @@ mod tests {
         assert!(!writes("drive_download_file"));
         assert!(!writes("sheets_read_range"));
         assert!(writes("sheets_append_rows"));
+        assert_eq!(group_of("slides_get_presentation"), "slides");
+        assert!(writes("slides_create_presentation") && writes("slides_append_slides"));
+        assert!(!writes("slides_get_presentation"));
         assert!(!writes("gmail_search_threads"));
         assert!(!writes("calendar_suggest_time"));
         assert!(writes("gmail_create_draft"));

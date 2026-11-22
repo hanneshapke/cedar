@@ -50,6 +50,11 @@ server (they are for developers).
 | check (a look at what an agent watches) | Prüfung, prüfen | vérification, vérifier | comprobación, comprobar |
 | plan, step | Plan, Schritt | plan, étape | plan, paso |
 | approve, approval | freigeben, Freigabe | approuver, approbation | aprobar, aprobación |
+| outbox (what waits for approval) | Postausgang | boîte d'envoi | bandeja de salida |
+| hold (a call that waits), discard | zurückhalten, verwerfen | retenir, abandonner | retener, descartar |
+| feedback, report (something Cedar couldn't do) | Feedback, Meldung | retour, signalement | comentario, reporte |
+| action (something you showed Cedar how to do), screen recording | Aktion, Bildschirmaufnahme | action, enregistrement d'écran | acción, grabación de pantalla |
+| key frame, password | Schlüsselbild, Passwort | image clé, mot de passe | fotograma clave, contraseña |
 | Allow / Allow always / Deny | Erlauben / Immer erlauben / Ablehnen | Autoriser / Toujours autoriser / Refuser | Permitir / Permitir siempre / Denegar |
 | tool, tool group | Werkzeug, Werkzeuggruppe | outil, groupe d'outils | herramienta, grupo de herramientas |
 | personal tools | Eigene Werkzeuge | Outils personnels | Herramientas propias |

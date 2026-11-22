@@ -147,6 +147,8 @@ pub async fn tick(state: &AppState, now: DateTime<Utc>) -> anyhow::Result<usize>
     let mut started = 0;
     let mut watching = Vec::new();
     for schedule in state.store.due_schedules(now).await? {
+        // Each agent's work is done as its owner.
+        let state = &state.as_user(schedule.user_id);
         let trigger = match Trigger::of(&schedule) {
             Ok(trigger) => trigger,
             Err(e) => {
@@ -170,7 +172,7 @@ pub async fn tick(state: &AppState, now: DateTime<Utc>) -> anyhow::Result<usize>
     }
     let checked: Vec<bool> = futures_util::stream::iter(watching)
         .map(|(schedule, trigger)| async move {
-            match check(state, &schedule, &trigger, now).await {
+            match check(&state.as_user(schedule.user_id), &schedule, &trigger, now).await {
                 Ok(started) => started,
                 Err(e) => {
                     tracing::warn!(schedule_id = %schedule.id, error = %e, "could not check an agent's trigger");
@@ -372,7 +374,12 @@ pub async fn fire(state: &AppState, schedule: &Schedule, firing: Firing) -> Resu
     };
 
     let conversation = state.store.create_scheduled_conversation(schedule.id, &title).await?;
-    let run = match state.cedar.create_run(&unattended(&schedule.prompt, event.as_ref(), data.as_deref()), &settings.options(None)).await {
+    // Nobody reads along: what the run would send or change waits in the outbox, if the agent says so.
+    // The agent's own zone, unless it was left at the UTC default: then the one the user's
+    // device last sent, so the run's "today" is theirs.
+    let zone = Some(schedule.timezone.as_str()).filter(|z| *z != "UTC").or(settings.timezone.as_deref());
+    let options = crate::cedar::RunOptions { hold_writes: schedule.hold_writes, timezone: zone, ..settings.options(None) };
+    let run = match state.cedar.create_run(&unattended(&schedule.prompt, event.as_ref(), data.as_deref()), &options).await {
         Ok(run) => run,
         Err(e) => {
             // Nothing happened; don't leave an empty conversation behind.

@@ -122,6 +122,7 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
     SideEffect { app.settingsDraft = draft }
     var check by remember { mutableStateOf<Check>(Check.Idle) }
     var models by remember { mutableStateOf(app.models) }
+    var modelSelection by remember { mutableStateOf(app.modelSelection) }
     var showToken by remember { mutableStateOf(false) }
     var scanError by remember { mutableStateOf<String?>(null) }
     var testStatus by remember { mutableStateOf<String?>(null) }
@@ -152,7 +153,9 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
             check = try {
                 val client = ChatClient.from(settings)
                 client.verify()
-                models = runCatching { client.models() }.getOrDefault(emptyList())
+                val list = runCatching { client.modelList() }.getOrNull()
+                models = list?.models.orEmpty()
+                modelSelection = list?.selection ?: true
                 Check.Ok(models.size)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -285,29 +288,36 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
 
                 HorizontalDivider()
                 Section(stringResource(R.string.section_ai_model))
-                val selected = models.firstOrNull { it.id == draft.model }
-                val serverDefault = stringResource(R.string.server_default)
-                Picker(
-                    label = stringResource(R.string.ai_model),
-                    // The saved pick, kept until the list is loaded or it is changed.
-                    value = selected?.label ?: if (draft.model.isEmpty()) serverDefault else draft.model,
-                    options = listOf("" to serverDefault) + models.map { it.id to it.label },
-                ) { id ->
-                    // A level the new model doesn't offer is dropped.
-                    val levels = models.firstOrNull { it.id == id }?.reasoningLevels
-                    draft = draft.copy(model = id, reasoning = if (levels != null && draft.reasoning !in levels) "" else draft.reasoning)
-                }
-                val levels = selected?.reasoningLevels.orEmpty()
-                if (levels.isNotEmpty()) {
-                    // The levels are the server's words (low, medium, high).
-                    val default = stringResource(R.string.reasoning_default)
+                // While the server picks the model there is nothing to choose here.
+                if (modelSelection) {
+                    val selected = models.firstOrNull { it.id == draft.model }
+                    val serverDefault = stringResource(R.string.server_default)
                     Picker(
-                        label = stringResource(R.string.reasoning_effort),
-                        value = draft.reasoning.replaceFirstChar { it.uppercase() }.ifEmpty { default },
-                        options = listOf("" to default) + levels.map { it to it.replaceFirstChar { c -> c.uppercase() } },
-                    ) { draft = draft.copy(reasoning = it) }
+                        label = stringResource(R.string.ai_model),
+                        // The saved pick, kept until the list is loaded or it is changed.
+                        value = selected?.label ?: if (draft.model.isEmpty()) serverDefault else draft.model,
+                        options = listOf("" to serverDefault) + models.map { it.id to it.label },
+                    ) { id ->
+                        // A level the new model doesn't offer is dropped.
+                        val levels = models.firstOrNull { it.id == id }?.reasoningLevels
+                        draft = draft.copy(model = id, reasoning = if (levels != null && draft.reasoning !in levels) "" else draft.reasoning)
+                    }
+                    val levels = selected?.reasoningLevels.orEmpty()
+                    if (levels.isNotEmpty()) {
+                        // The levels are the server's words (low, medium, high).
+                        val default = stringResource(R.string.reasoning_default)
+                        Picker(
+                            label = stringResource(R.string.reasoning_effort),
+                            value = draft.reasoning.replaceFirstChar { it.uppercase() }.ifEmpty { default },
+                            options = listOf("" to default) + levels.map { it to it.replaceFirstChar { c -> c.uppercase() } },
+                        ) { draft = draft.copy(reasoning = it) }
+                    }
                 }
-                Footnote(stringResource(if (models.isEmpty()) R.string.models_footnote_empty else R.string.models_footnote))
+                Footnote(stringResource(when {
+                    models.isEmpty() -> R.string.models_footnote_empty
+                    !modelSelection -> R.string.models_footnote_auto
+                    else -> R.string.models_footnote
+                }))
 
                 HorizontalDivider()
                 Section(stringResource(R.string.section_plan_approval))

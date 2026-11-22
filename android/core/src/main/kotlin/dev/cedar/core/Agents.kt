@@ -440,6 +440,8 @@ data class Agent(
     /** How far apart events may start runs, and how many in a day; `null` for the list's `limits`. */
     @SerialName("min_interval_secs") val minIntervalSecs: Int? = null,
     @SerialName("max_runs_per_day") val maxRunsPerDay: Int? = null,
+    /** Whether what its runs would send or change in the person's accounts waits in the outbox. */
+    @SerialName("hold_writes") val holdWrites: Boolean = false,
     val hook: Hook? = null,
     @SerialName("last_run") val lastRun: AgentRun? = null,
     @SerialName("created_at") val createdAt: Instant? = null,
@@ -824,6 +826,8 @@ data class AgentBody(
     val timezone: String? = null,
     val minIntervalSecs: Change<Int> = Change.Keep,
     val maxRunsPerDay: Change<Int> = Change.Keep,
+    /** Hold what its runs would send or change until the person approves it. Left out when creating: yes. */
+    val holdWrites: Boolean? = null,
 ) {
     fun toJson(): JsonObject = buildJsonObject {
         title?.let { put("title", it) }
@@ -854,6 +858,7 @@ data class AgentBody(
             Change.Clear -> put("max_runs_per_day", JsonNull)
             is Change.Set -> put("max_runs_per_day", maxRunsPerDay.value)
         }
+        holdWrites?.let { put("hold_writes", it) }
     }
 }
 

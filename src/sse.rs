@@ -77,17 +77,19 @@ fn notification_to_sse(n: &Notification) -> SseEvent {
 /// Stream an owner's finished runs (`GET /v1/events`): the notifications with `id > after`,
 /// then every later one as it happens. Unlike a run's stream it has no end; the client closes
 /// it. Subscribing before the first read keeps a run that ends meanwhile from being missed.
+/// With `users`, the stream also carries the runs of every user a service key acted for.
 pub fn notification_stream(
     store: Store,
     hub: Arc<EventHub>,
     owner: String,
+    users: bool,
     after: i64,
 ) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
     let stream = async_stream::stream! {
-        let mut live = hub.subscribe_owner(&owner);
+        let mut live = if users { hub.subscribe_all() } else { hub.subscribe_owner(&owner) };
         let mut cursor = after;
         loop {
-            let batch = match store.notifications_after(&owner, cursor, BATCH).await {
+            let batch = match store.notifications_after(&owner, users, cursor, BATCH).await {
                 Ok(batch) => batch,
                 Err(e) => {
                     tracing::error!(error = ?e, "reading notifications for stream");

@@ -7,7 +7,7 @@
 //! container, so the page, its dialogs, and its history last from one call to the next.
 
 use crate::config::BrowserConfig;
-use crate::sandbox::{docker_checked, docker_output, DOCKER_CALL_TIMEOUT, DOCKER_CREATE_TIMEOUT};
+use crate::sandbox::{docker_checked, docker_output_env, DOCKER_CALL_TIMEOUT, DOCKER_CREATE_TIMEOUT};
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use serde_json::Value;
@@ -23,6 +23,16 @@ pub trait Browser: Send + Sync {
     /// the driver's explanation, meant for the model; [`BrowserLost`] means the browser itself is
     /// stuck or gone.
     async fn call(&self, request: &Value, timeout: Duration) -> Result<Value>;
+
+    /// Like [`Self::call`] for a `type` request whose text is a saved secret (see
+    /// [`crate::actions`]): `request` comes without `text`, and `text` is what to type. Apart
+    /// so an implementation can keep the value out of places a request ends up in (a command
+    /// line, a log).
+    async fn call_with_text(&self, request: &Value, text: &str, timeout: Duration) -> Result<Value> {
+        let mut request = request.clone();
+        request["text"] = Value::String(text.to_string());
+        self.call(&request, timeout).await
+    }
 }
 
 #[async_trait]
@@ -66,6 +76,15 @@ impl BrowserSession {
 
     /// Send one request, starting the browser first if this is the run's first call.
     pub async fn call(&self, request: &Value, timeout: Duration) -> Result<Value> {
+        self.send(request, None, timeout).await
+    }
+
+    /// Send a `type` request whose text is a saved secret (see [`Browser::call_with_text`]).
+    pub async fn call_with_text(&self, request: &Value, text: &str, timeout: Duration) -> Result<Value> {
+        self.send(request, Some(text), timeout).await
+    }
+
+    async fn send(&self, request: &Value, text: Option<&str>, timeout: Duration) -> Result<Value> {
         let browser = {
             let mut slot = self.browser.lock().await;
             match slot.as_ref() {
@@ -85,7 +104,11 @@ impl BrowserSession {
                 }
             }
         };
-        match browser.call(request, timeout).await {
+        let reply = match text {
+            Some(text) => browser.call_with_text(request, text, timeout).await,
+            None => browser.call(request, timeout).await,
+        };
+        match reply {
             Err(e) if e.is::<BrowserLost>() => {
                 self.browser.lock().await.take();
                 self.factory.destroy(self.run_id).await;
@@ -171,12 +194,31 @@ pub struct DockerBrowser {
     container: String,
 }
 
-#[async_trait]
-impl Browser for DockerBrowser {
-    async fn call(&self, request: &Value, timeout: Duration) -> Result<Value> {
-        let args = call_args(&self.container, request);
+/// The environment variable a secret to type travels in (see [`secret_call_args`]).
+const TEXT_ENV: &str = "CEDAR_BROWSER_TEXT";
+
+/// Arguments for `docker exec` that send a `type` request whose text is a secret. The value is
+/// not among them: `-e NAME` hands the driver's client docker's own variable of that name, and
+/// the request only says which variable holds the text (`text_env`), so the secret is in no
+/// command line.
+pub fn secret_call_args(container: &str, request: &Value) -> Vec<String> {
+    let mut request = request.clone();
+    request["text_env"] = Value::String(TEXT_ENV.into());
+    vec![
+        "exec".into(),
+        "-e".into(),
+        TEXT_ENV.into(),
+        container.into(),
+        "cedar-browser".into(),
+        "call".into(),
+        request.to_string(),
+    ]
+}
+
+impl DockerBrowser {
+    async fn exec(&self, args: &[String], env: &[(&str, &str)], timeout: Duration) -> Result<Value> {
         // docker_output's own limit is only a backstop; this one is the call's.
-        let call = docker_output(&self.docker, &args, timeout + DOCKER_CALL_TIMEOUT);
+        let call = docker_output_env(&self.docker, args, env, timeout + DOCKER_CALL_TIMEOUT);
         let out = tokio::time::timeout(timeout, call)
             .await
             .map_err(|_| BrowserLost(format!("did not respond within {}s", timeout.as_secs())))??;
@@ -195,6 +237,17 @@ impl Browser for DockerBrowser {
             bail!("the page is too large to describe");
         }
         serde_json::from_slice(&out.stdout).context("the browser sent an unreadable reply")
+    }
+}
+
+#[async_trait]
+impl Browser for DockerBrowser {
+    async fn call(&self, request: &Value, timeout: Duration) -> Result<Value> {
+        self.exec(&call_args(&self.container, request), &[], timeout).await
+    }
+
+    async fn call_with_text(&self, request: &Value, text: &str, timeout: Duration) -> Result<Value> {
+        self.exec(&secret_call_args(&self.container, request), &[(TEXT_ENV, text)], timeout).await
     }
 }
 

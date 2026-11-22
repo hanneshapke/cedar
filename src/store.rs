@@ -3,8 +3,8 @@
 //! Uses runtime-checked queries (not the `query!` macros) so building doesn't need a database.
 
 use crate::models::{
-    event, Attachment, Event, ModelEntry, NewRun, Notification, PlanMode, Rating, Run, RunStatus,
-    StoredMessage, Usage,
+    event, Attachment, Event, HeldCall, ModelEntry, NewRun, Notification, PlanMode, Rating, Run,
+    RunStatus, StoredMessage, Usage,
 };
 use crate::trace::{LlmCall, NewCall};
 use anyhow::{anyhow, Context, Result};
@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 const RUN_COLS: &str = "id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
     turns, final_text, stop_reason, error, input_tokens, output_tokens, parent_id, workspace_id, \
-    workspace_reused, tools, plan, interactive, locale, callback_url, rating, import_attachments, created_at, started_at, finished_at";
+    workspace_reused, tools, plan, interactive, hold_writes, locale, timezone, callback_url, rating, import_attachments, model_auto, private, created_at, started_at, finished_at";
 
 /// What `GET /v1/events` and the webhook worker read for a notification: the row joined with
 /// its run's final state.
@@ -28,7 +28,7 @@ const NOTIFICATION_COLS: &str = "n.id, n.run_id, n.seq, r.status, r.stop_reason,
     r.parent_id, r.finished_at";
 
 const MODEL_COLS: &str =
-    "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, max_tokens, \
+    "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, video, max_tokens, \
     context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, position, listed_models, created_at, \
     updated_at";
 
@@ -52,6 +52,7 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
         model_id: r.try_get("model_id")?,
         model: r.try_get("model")?,
         reasoning: r.try_get("reasoning")?,
+        model_auto: r.try_get::<i64, _>("model_auto")? != 0,
         max_turns: r.try_get::<i64, _>("max_turns")? as u32,
         turns: r.try_get::<i64, _>("turns")? as u32,
         final_text: r.try_get("final_text")?,
@@ -78,9 +79,12 @@ fn run_from_row(r: &SqliteRow) -> Result<Run> {
         callback_url: r.try_get("callback_url")?,
         plan: PlanMode::parse(r.try_get("plan")?).unwrap_or_default(),
         interactive: r.try_get("interactive")?,
+        hold_writes: r.try_get::<i64, _>("hold_writes")? != 0,
         locale: r.try_get("locale")?,
+        timezone: r.try_get("timezone")?,
         rating: r.try_get::<Option<i64>, _>("rating")?.and_then(|v| match v { 1 => Some(Rating::Up), -1 => Some(Rating::Down), _ => None }),
         import_attachments: r.try_get::<i64, _>("import_attachments")? != 0,
+        private: r.try_get::<i64, _>("private")? != 0,
         created_at: to_dt(r.try_get("created_at")?),
         started_at: r.try_get::<Option<i64>, _>("started_at")?.map(to_dt),
         finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
@@ -96,6 +100,7 @@ fn model_from_row(r: &SqliteRow) -> Result<ModelEntry> {
         reasoning_levels: serde_json::from_str(r.try_get("reasoning_levels")?)?,
         default_reasoning: r.try_get("default_reasoning")?,
         multimodal: r.try_get("multimodal")?,
+        video: r.try_get("video")?,
         max_tokens: u32::try_from(r.try_get::<i64, _>("max_tokens")?)
             .unwrap_or(crate::models::DEFAULT_MAX_TOKENS),
         context_window: r
@@ -133,6 +138,26 @@ pub enum InsertRefused {
     ParentActive,
     /// The parent was already continued by this run.
     ParentContinued(Uuid),
+}
+
+const HELD_COLS: &str =
+    "id, run_id, call_id, tool, input, reason, why, status, edited, output, created_at, decided_at";
+
+fn held_from_row(r: &SqliteRow) -> Result<HeldCall> {
+    Ok(HeldCall {
+        id: Uuid::parse_str(r.try_get::<&str, _>("id")?)?,
+        run_id: Uuid::parse_str(r.try_get::<&str, _>("run_id")?)?,
+        call_id: r.try_get("call_id")?,
+        tool: r.try_get("tool")?,
+        input: serde_json::from_str(r.try_get::<&str, _>("input")?)?,
+        reason: r.try_get("reason")?,
+        why: r.try_get("why")?,
+        status: r.try_get("status")?,
+        edited: r.try_get::<i64, _>("edited")? != 0,
+        output: r.try_get("output")?,
+        created_at: to_dt(r.try_get("created_at")?),
+        decided_at: r.try_get::<Option<i64>, _>("decided_at")?.map(to_dt),
+    })
 }
 
 fn notification_from_row(r: &SqliteRow) -> Result<Notification> {
@@ -196,6 +221,9 @@ pub struct Finish<'a> {
     pub event_data: Value,
 }
 
+/// The lowest version a downstream build's migration may have; cedar numbers its own below it.
+pub const EXTENSION_MIGRATION_FLOOR: i64 = 1_000_000;
+
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,
@@ -231,11 +259,37 @@ impl Store {
     }
 
     async fn migrated(pool: SqlitePool) -> Result<Self> {
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .context("running migrations")?;
+        let mut migrator = sqlx::migrate!("./migrations");
+        // Downstream builds keep their own migrations in the same table (see
+        // [`Self::run_extension_migrations`]), so applied versions this list lacks are expected.
+        migrator.set_ignore_missing(true);
+        migrator.run(&pool).await.context("running migrations")?;
         Ok(Self { pool })
+    }
+
+    /// Apply a downstream build's migrations (e.g. `sqlx::migrate!("./migrations")` in its own
+    /// crate) to this database. They share sqlx's bookkeeping table with cedar's, so every
+    /// version must be at least [`EXTENSION_MIGRATION_FLOOR`]; cedar's own stay below it.
+    /// Keep extension tables separate (a name prefix such as `ee_`) and never alter cedar's.
+    pub async fn run_extension_migrations(
+        &self,
+        mut migrator: sqlx::migrate::Migrator,
+    ) -> Result<()> {
+        if let Some(m) = migrator
+            .iter()
+            .find(|m| m.version < EXTENSION_MIGRATION_FLOOR)
+        {
+            anyhow::bail!(
+                "extension migration {} ({}) is numbered below {EXTENSION_MIGRATION_FLOOR}, the range cedar reserves for its own",
+                m.version,
+                m.description
+            );
+        }
+        migrator.set_ignore_missing(true);
+        migrator
+            .run(&self.pool)
+            .await
+            .context("running extension migrations")
     }
 
     pub async fn ping(&self) -> Result<()> {
@@ -304,7 +358,8 @@ impl Store {
                     child.try_get("id")?,
                 )?)));
             }
-            if callback.0.is_none() {
+            // A private run calls no webhook, not even the one its parent had.
+            if callback.0.is_none() && !new.private {
                 callback = (
                     parent.try_get("callback_url")?,
                     parent.try_get("callback_secret")?,
@@ -341,8 +396,8 @@ impl Store {
 
         sqlx::query(
             "INSERT INTO runs (id, owner, status, prompt, system, model_id, model, reasoning, max_turns, \
-             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, locale, import_attachments, created_at) \
-             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             parent_id, workspace_id, workspace_reused, tools, callback_url, callback_secret, plan, interactive, hold_writes, locale, timezone, import_attachments, model_auto, private, created_at) \
+             VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(&new.owner)
@@ -360,8 +415,12 @@ impl Store {
         .bind(&callback.1)
         .bind(new.plan.as_str())
         .bind(new.interactive)
+        .bind(new.hold_writes as i64)
         .bind(&new.locale)
+        .bind(&new.timezone)
         .bind(new.import_attachments as i64)
+        .bind(new.model_auto as i64)
+        .bind(new.private as i64)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -390,8 +449,8 @@ impl Store {
         })?))
     }
 
-    /// For modules that keep their own tables (see `secrets`).
-    pub(crate) fn pool(&self) -> &SqlitePool {
+    /// For modules that keep their own tables (see `secrets`), and a downstream build's.
+    pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }
 
@@ -486,6 +545,215 @@ impl Store {
         Ok(())
     }
 
+    /// How often `owner` plainly allowed every one of `scopes` for `rule` since they last
+    /// declined one: the lowest of their counts, 0 for no scopes.
+    pub async fn allow_count(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<u32> {
+        let mut least: Option<i64> = None;
+        for scope in scopes {
+            let n: Option<i64> = sqlx::query_scalar(
+                "SELECT allows FROM approval_counts WHERE owner = ? AND rule = ? AND scope = ?",
+            )
+            .bind(owner)
+            .bind(rule)
+            .bind(scope)
+            .fetch_optional(&self.pool)
+            .await?;
+            let n = n.unwrap_or(0);
+            least = Some(least.map_or(n, |l| l.min(n)));
+        }
+        Ok(least.unwrap_or(0).max(0) as u32)
+    }
+
+    /// Count one plain "allow" of `scopes` for `rule`.
+    pub async fn count_allow(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<()> {
+        for scope in scopes {
+            sqlx::query(
+                "INSERT INTO approval_counts (owner, rule, scope, allows, updated_at) VALUES (?, ?, ?, 1, ?) \
+                 ON CONFLICT (owner, rule, scope) DO UPDATE SET allows = allows + 1, updated_at = excluded.updated_at",
+            )
+            .bind(owner)
+            .bind(rule)
+            .bind(scope)
+            .bind(now_ms())
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Forget how often `scopes` were allowed for `rule`: the owner declined one, or always
+    /// allows them now.
+    pub async fn reset_allow_counts(&self, owner: &str, rule: &str, scopes: &[String]) -> Result<()> {
+        for scope in scopes {
+            sqlx::query("DELETE FROM approval_counts WHERE owner = ? AND rule = ? AND scope = ?")
+                .bind(owner)
+                .bind(rule)
+                .bind(scope)
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
+    }
+
+    // -- held calls (the outbox) --------------------------------------------------------------
+
+    /// Keep a call for its owner to decide about. The same call (tool and input) already
+    /// waiting for the same run is returned instead of kept twice.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn hold_call(
+        &self,
+        run_id: Uuid,
+        owner: &str,
+        call_id: &str,
+        tool: &str,
+        input: &Value,
+        reason: &str,
+        why: &str,
+    ) -> Result<HeldCall> {
+        let input = serde_json::to_string(input)?;
+        let waiting: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM held_calls WHERE run_id = ? AND tool = ? AND input = ? AND status = 'pending'",
+        )
+        .bind(run_id.to_string())
+        .bind(tool)
+        .bind(&input)
+        .fetch_optional(&self.pool)
+        .await?;
+        let id = match waiting {
+            Some(id) => Uuid::parse_str(&id)?,
+            None => {
+                let id = Uuid::now_v7();
+                sqlx::query(
+                    "INSERT INTO held_calls (id, run_id, owner, call_id, tool, input, reason, why, status, created_at) \
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+                )
+                .bind(id.to_string())
+                .bind(run_id.to_string())
+                .bind(owner)
+                .bind(call_id)
+                .bind(tool)
+                .bind(&input)
+                .bind(reason)
+                .bind(why)
+                .bind(now_ms())
+                .execute(&self.pool)
+                .await?;
+                id
+            }
+        };
+        self.get_held(owner, id)
+            .await?
+            .ok_or_else(|| anyhow!("held call {id} vanished after insert"))
+    }
+
+    /// One of `owner`'s held calls.
+    pub async fn get_held(&self, owner: &str, id: Uuid) -> Result<Option<HeldCall>> {
+        let row = sqlx::query(&format!("SELECT {HELD_COLS} FROM held_calls WHERE id = ? AND owner = ?"))
+            .bind(id.to_string())
+            .bind(owner)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.as_ref().map(held_from_row).transpose()
+    }
+
+    /// `owner`'s held calls, newest first: all of them, or those in `status`, or of one run.
+    pub async fn list_held(
+        &self,
+        owner: &str,
+        status: Option<&str>,
+        run_id: Option<Uuid>,
+        limit: u32,
+    ) -> Result<Vec<HeldCall>> {
+        let rows = sqlx::query(&format!(
+            "SELECT {HELD_COLS} FROM held_calls WHERE owner = ?1 AND (?2 IS NULL OR status = ?2) \
+             AND (?3 IS NULL OR run_id = ?3) ORDER BY created_at DESC, id DESC LIMIT ?4"
+        ))
+        .bind(owner)
+        .bind(status)
+        .bind(run_id.map(|r| r.to_string()))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.iter().map(held_from_row).collect()
+    }
+
+    /// How many calls a run has had held so far, whatever became of them.
+    pub async fn count_held(&self, run_id: Uuid) -> Result<i64> {
+        Ok(sqlx::query_scalar("SELECT COUNT(*) FROM held_calls WHERE run_id = ?")
+            .bind(run_id.to_string())
+            .fetch_one(&self.pool)
+            .await?)
+    }
+
+    /// Take a held call to send it: only one that is waiting, or failed before, and only once
+    /// at a time. False if it is being sent, was sent or was discarded.
+    pub async fn claim_held(&self, owner: &str, id: Uuid) -> Result<bool> {
+        let done = sqlx::query(
+            "UPDATE held_calls SET status = 'sending' WHERE id = ? AND owner = ? AND status IN ('pending', 'failed')",
+        )
+        .bind(id.to_string())
+        .bind(owner)
+        .execute(&self.pool)
+        .await?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// What became of a claimed call: `sent` or `failed`, with the input it was made with and
+    /// what the tool said.
+    pub async fn settle_held(&self, id: Uuid, status: &str, input: &Value, edited: bool, output: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE held_calls SET status = ?, input = ?, edited = ?, output = ?, decided_at = ? WHERE id = ? AND status = 'sending'",
+        )
+        .bind(status)
+        .bind(serde_json::to_string(input)?)
+        .bind(edited as i64)
+        .bind(output)
+        .bind(now_ms())
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Drop a held call without making it. False unless it was waiting (or had failed).
+    pub async fn discard_held(&self, owner: &str, id: Uuid) -> Result<bool> {
+        let done = sqlx::query(
+            "UPDATE held_calls SET status = 'discarded', decided_at = ? WHERE id = ? AND owner = ? AND status IN ('pending', 'failed')",
+        )
+        .bind(now_ms())
+        .bind(id.to_string())
+        .bind(owner)
+        .execute(&self.pool)
+        .await?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// Calls that were being sent when cedar stopped: whether they went out is unknown, so they
+    /// are marked failed with a note saying so, and the owner decides. Returns how many.
+    pub async fn fail_interrupted_held(&self) -> Result<u64> {
+        let done = sqlx::query(
+            "UPDATE held_calls SET status = 'failed', decided_at = ?, output = ? WHERE status = 'sending'",
+        )
+        .bind(now_ms())
+        .bind("cedar stopped while this was being sent, so it may or may not have gone out. Check before sending it again.")
+        .execute(&self.pool)
+        .await?;
+        Ok(done.rows_affected())
+    }
+
+    /// The model a run with `model_auto` goes on with (see [`crate::routing`]), and the
+    /// reasoning level it is sent.
+    pub async fn set_run_model(&self, id: Uuid, model_id: &str, model: &str, reasoning: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE runs SET model_id = ?, model = ?, reasoning = ? WHERE id = ?")
+            .bind(model_id)
+            .bind(model)
+            .bind(reasoning)
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn record_turn(&self, id: Uuid, turns: u32, usage: Usage) -> Result<()> {
         sqlx::query(
             "UPDATE runs SET turns = ?, input_tokens = input_tokens + ?, output_tokens = output_tokens + ? WHERE id = ?",
@@ -563,18 +831,22 @@ impl Store {
 
     // -- notifications ----------------------------------------------------------------------
 
-    /// An owner's notifications with `id > after`, oldest first. Deleted runs' are gone.
+    /// An owner's notifications with `id > after`, oldest first. Deleted runs' are gone. With
+    /// `users`, those of every user a service key acted for as well: their owner is a UUID
+    /// (36 characters), where a key's is its 16-character hash.
     pub async fn notifications_after(
         &self,
         owner: &str,
+        users: bool,
         after: i64,
         limit: u32,
     ) -> Result<Vec<Notification>> {
         let rows = sqlx::query(&format!(
             "SELECT {NOTIFICATION_COLS} FROM run_notifications n JOIN runs r ON r.id = n.run_id \
-             WHERE n.owner = ? AND n.id > ? ORDER BY n.id LIMIT ?"
+             WHERE (n.owner = ? OR (? AND length(n.owner) = 36)) AND n.id > ? ORDER BY n.id LIMIT ?"
         ))
         .bind(owner)
+        .bind(users)
         .bind(after)
         .bind(limit as i64)
         .fetch_all(&self.pool)
@@ -1033,12 +1305,12 @@ impl Store {
         }
         sqlx::query(
             "INSERT INTO models (id, label, model, base_url, reasoning_levels, default_reasoning, \
-             multimodal, max_tokens, context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, \
+             multimodal, video, max_tokens, context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, \
              position, listed_models, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT (id) DO UPDATE SET label = excluded.label, model = excluded.model, \
              base_url = excluded.base_url, reasoning_levels = excluded.reasoning_levels, \
-             default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, \
+             default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, video = excluded.video, \
              max_tokens = excluded.max_tokens, context_window = excluded.context_window, is_default = excluded.is_default, price_input_usd_per_m = excluded.price_input_usd_per_m, \
              price_output_usd_per_m = excluded.price_output_usd_per_m, listed_models = excluded.listed_models, \
              updated_at = excluded.updated_at",
@@ -1050,6 +1322,7 @@ impl Store {
         .bind(serde_json::to_string(&entry.reasoning_levels)?)
         .bind(&entry.default_reasoning)
         .bind(entry.multimodal)
+        .bind(entry.video)
         .bind(i64::from(entry.max_tokens))
         .bind(entry.context_window.map(i64::from))
         .bind(is_default)
@@ -1194,8 +1467,12 @@ mod tests {
             callback_secret: None,
             plan: PlanMode::Off,
             interactive: false,
+            hold_writes: false,
             locale: "en".into(),
+            timezone: None,
             import_attachments: false,
+            model_auto: false,
+            private: false,
         }
     }
 
@@ -1315,12 +1592,12 @@ mod tests {
             None
         );
         // The notification is in the owner's stream, and nothing is queued for delivery.
-        let notes = store.notifications_after("a", 0, 10).await.unwrap();
+        let notes = store.notifications_after("a", false, 0, 10).await.unwrap();
         assert_eq!(notes.len(), 1);
         assert_eq!((notes[0].id, notes[0].run_id, notes[0].seq), (finished.notification, run.id, 2));
         assert_eq!((notes[0].kind, notes[0].stop_reason.as_deref()), ("run.completed", Some("end_turn")));
-        assert!(store.notifications_after("a", finished.notification, 10).await.unwrap().is_empty());
-        assert!(store.notifications_after("b", 0, 10).await.unwrap().is_empty());
+        assert!(store.notifications_after("a", false, finished.notification, 10).await.unwrap().is_empty());
+        assert!(store.notifications_after("b", false, 0, 10).await.unwrap().is_empty());
         assert!(store.due_deliveries(10).await.unwrap().is_empty());
         assert_eq!(store.next_delivery_at().await.unwrap(), None);
 
@@ -1389,7 +1666,7 @@ mod tests {
         store.finish_run(own.id, completed("ok")).await.unwrap();
         assert!(store.delete_finished_run(own.id).await.unwrap());
         assert_eq!(store.delivery_status(own.id).await.unwrap(), None);
-        assert_eq!(store.notifications_after("a", 0, 10).await.unwrap().len(), 2);
+        assert_eq!(store.notifications_after("a", false, 0, 10).await.unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -1565,8 +1842,12 @@ mod tests {
             attachments: files.clone(),
             plan: PlanMode::Off,
             interactive: false,
+            hold_writes: false,
             locale: "en".into(),
+            timezone: None,
             import_attachments: false,
+            model_auto: false,
+            private: false,
             ..new_run("a")
         };
         let run = store.insert_run_limited(&new, 5).await.unwrap().unwrap();

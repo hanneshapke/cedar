@@ -55,8 +55,10 @@ async fn bash_runs_the_command_as_given_and_lists_the_files_it_changed() {
         max_output: 1000,
         model: None,
         locale: "en".into(),
+        timezone: None,
         memory: None,
         records: None,
+        actions: None,
     };
 
     let msg = Bash

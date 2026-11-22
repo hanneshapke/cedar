@@ -1,5 +1,6 @@
 //! The HTTP API.
 
+use crate::actions::{self, ActionInput, Actions, Recording};
 use crate::agent::AgentEnv;
 use crate::auth::{self, Admin, AuthKeys, Owner};
 use crate::browser::{BrowserFactory, DockerBrowserFactory};
@@ -11,15 +12,18 @@ use crate::error::AppError;
 use crate::events::EventHub;
 use crate::images;
 use crate::locale;
+use crate::timezone;
 use crate::integrations::{Integrations, ModelSpec, ServerModelsQuery};
 use crate::llm::LlmRouter;
 use crate::manager::{self, RunManager};
 use crate::marketplace::{InstallRequest, Marketplace};
 use crate::memory::{self, Actor, Memories, Refused};
 use crate::records::{self, Records, SaveOptions};
+use crate::routing;
 use crate::polls::{self, Polls};
 use crate::models::{
-    Attachment, CreateRunRequest, ModelEntry, NewRun, Rating, Run, RunStatus, StoredMessage,
+    Attachment, CreateRunRequest, HeldCall, ModelEntry, NewRun, Rating, Run, RunStatus,
+    StoredMessage,
     ALLOWED_ATTACHMENT_TYPES,
 };
 use crate::sandbox::{
@@ -56,6 +60,10 @@ pub const MAX_ATTACHMENT_BYTES: usize = 20 << 20;
 pub const MAX_ATTACHMENTS_TOTAL_BYTES: usize = 32 << 20;
 const MAX_RUN_BODY_BYTES: usize = 48 << 20;
 const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
+/// A screen recording for `POST /v1/actions/draft`: its frames and video as base64, with room
+/// for the rest of the request (see [`actions::MAX_FRAMES_TOTAL_BYTES`] and
+/// [`actions::MAX_VIDEO_BYTES`]).
+const MAX_RECORDING_BODY_BYTES: usize = 40 << 20;
 const DEFAULT_PAGE: u32 = 20;
 const MAX_PAGE: u32 = 100;
 /// Largest workspace file that can be downloaded. It is read into memory before being sent.
@@ -87,6 +95,9 @@ pub struct AppState {
     /// What owners keep as records across conversations. There even with `RECORDS=off`, so
     /// people can still see and delete what was saved before.
     pub records: Records,
+    /// What owners showed the agent how to do. There even with `ACTIONS=off`, so people can
+    /// still see and delete what was saved before.
+    pub actions: Actions,
     /// Tool calls outside a run (`POST /v1/tools/{name}/call`).
     pub polls: Arc<Polls>,
 }
@@ -154,13 +165,14 @@ impl AppState {
             },
         );
         let records = Records::new(store.clone(), cfg.records_max_sets, cfg.records_max_items);
+        let actions = Actions::new(store.clone(), cfg.secret_key.as_ref());
         let env = AgentEnv {
             llm: llm.clone(),
             sandbox: cfg.sandbox.clone(),
             approvals: cfg.tool_approvals.clone(),
             approval_timeout: cfg.approval_timeout,
+            always_allow_after: cfg.always_allow_after,
             waits: Arc::default(),
-            tools: integrations.tools(),
             store: store.clone(),
             tool_timeout: cfg.tool_timeout,
             tool_output_max_bytes: cfg.tool_output_max_bytes,
@@ -172,6 +184,7 @@ impl AppState {
             memory_experience: cfg.memory_experience,
             memory_consolidate_after: if cfg.memory_consolidate { cfg.memory_consolidate_after } else { 0 },
             records: cfg.records.then(|| records.clone()),
+            actions: cfg.actions.then(|| actions.clone()),
         };
         let manager = RunManager::new(
             store.clone(),
@@ -183,7 +196,7 @@ impl AppState {
             cfg.max_concurrent_runs,
             cfg.run_timeout,
         );
-        let auth = AuthKeys::with_admins(&cfg.api_keys, &cfg.admin_keys);
+        let auth = AuthKeys::with_roles(&cfg.api_keys, &cfg.admin_keys, &cfg.service_keys);
         let webhooks = Arc::new(Webhooks::new(
             store.clone(),
             hub.clone(),
@@ -210,12 +223,25 @@ impl AppState {
             marketplace,
             memories,
             records,
+            actions,
             polls,
         })
     }
 }
 
 pub fn router(state: AppState) -> Router {
+    router_with(state, Router::new(), Router::new())
+}
+
+/// [`router`] plus routes a downstream build adds (see [`crate::server::Extensions`]).
+/// `extra_v1` is nested under `/v1` behind the same authentication as cedar's own routes;
+/// `extra_public` is mounted at the top level without it (health checks, SSO callbacks).
+/// A path that is already taken panics when the router is built, at startup.
+pub fn router_with(
+    state: AppState,
+    extra_v1: Router<AppState>,
+    extra_public: Router<AppState>,
+) -> Router {
     let v1 = Router::new()
         // Only this route takes attachments, so only it gets the room for them.
         .route(
@@ -232,11 +258,16 @@ pub fn router(state: AppState) -> Router {
         .route("/runs/{id}/feedback", post(run_feedback))
         .route("/runs/{id}/plan", post(answer_plan))
         .route("/runs/{id}/approvals/{approval_id}", post(decide_approval))
+        .route("/held", get(list_held))
+        .route("/held/{id}", get(get_held).post(decide_held))
         .route("/runs/{id}/files", get(list_files))
         .route("/runs/{id}/files/{*path}", get(download_file))
         .route("/events", get(stream_notifications))
         .route("/compact", post(compact_conversation))
         .route("/tools", get(list_tools))
+        .route("/google", get(get_own_google).delete(delete_own_google))
+        .route("/google/authorize", post(authorize_own_google))
+        .route("/google/callback", post(own_google_callback))
         .route("/tools/{name}/call", post(call_tool))
         .route("/models", get(list_models))
         .route("/defaults", get(defaults))
@@ -246,6 +277,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/memory/profile", get(get_profile).put(set_profile))
         .route("/memory/export", get(export_memory))
+        .route("/memory/graph", get(memory_graph))
         .route("/memory/import", post(import_memory))
         .route("/memory/{id}", get(get_memory).patch(edit_memory).delete(forget_memory))
         .route("/memory/{id}/history", get(memory_history))
@@ -254,6 +286,13 @@ pub fn router(state: AppState) -> Router {
             "/records/{name}",
             get(get_records).post(save_records).delete(drop_records),
         )
+        .route("/actions", get(list_actions).post(save_action))
+        // A recording is the one other body with room for media.
+        .route(
+            "/actions/draft",
+            post(draft_action).layer(DefaultBodyLimit::max(MAX_RECORDING_BODY_BYTES)),
+        )
+        .route("/actions/{id}", get(get_action).put(update_action).delete(delete_action))
         .route("/admin/integrations", get(get_integrations))
         .route("/admin/models", get(get_models))
         .route("/admin/server-models", post(list_server_models))
@@ -304,6 +343,8 @@ pub fn router(state: AppState) -> Router {
             axum::routing::delete(uninstall_tool),
         )
         .route("/admin/marketplace/{name}/install", post(install_tool))
+        // Before `route_layer`, so the added routes need a key like the rest.
+        .merge(extra_v1)
         .route_layer(middleware::from_fn_with_state(
             state.auth.clone(),
             auth::require_auth,
@@ -313,6 +354,7 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .nest("/v1", v1)
+        .merge(extra_public)
         .fallback(|| async { AppError::NotFound("no such route") })
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(TraceLayer::new_for_http())
@@ -429,6 +471,37 @@ fn resolve_model(
     })
 }
 
+/// The model cedar chooses for a request that named none while `model_selection` is off (see
+/// [`routing`]): the smallest registered one, or with `big` the biggest, at its default
+/// reasoning level. With `images`, among the models that take images when there are any.
+fn routed_model(models: &[ModelEntry], images: bool, big: bool) -> Result<ResolvedModel, AppError> {
+    let tiers = routing::Tiers::pick(models, images).ok_or_else(|| {
+        AppError::Conflict(
+            "no model is registered; an admin adds one under Settings or with PUT /v1/admin/models/{id}"
+                .into(),
+        )
+    })?;
+    let entry = if big { tiers.big } else { tiers.small };
+    Ok(ResolvedModel {
+        id: entry.id,
+        name: entry.model,
+        reasoning: entry.default_reasoning,
+        multimodal: entry.multimodal,
+        max_tokens: entry.max_tokens,
+    })
+}
+
+/// Whether a request left the choice of model to cedar: it named no model and no reasoning level
+/// (which belongs to a model), and users don't choose models here (`model_selection` is off).
+async fn leaves_model_to_cedar(
+    state: &AppState,
+    model: Option<&str>,
+    reasoning: Option<&str>,
+) -> Result<bool, AppError> {
+    let named = |v: Option<&str>| v.is_some_and(|s| !s.trim().is_empty());
+    Ok(!named(model) && !named(reasoning) && !routing::selection_on(&state.store).await?)
+}
+
 /// Check the files sent with a prompt: count, name, media type, that `data` is real base64, and
 /// the decoded sizes. The base64 is kept as sent; decoding here only validates it.
 fn validate_attachments(attachments: &[Attachment]) -> Result<(), AppError> {
@@ -511,14 +584,35 @@ async fn create_run(
             _ => return Err(AppError::NotFound("parent run not found")),
         },
     };
-    let model = resolve_model(
-        &state.integrations.models(),
-        req.model.as_deref(),
-        req.reasoning.as_deref(),
-        parent.as_ref(),
-    )?;
+    // Once private, a conversation stays so: what was said in it must not reach memory later.
+    let private = req.private.unwrap_or(false) || parent.as_ref().is_some_and(|p| p.private);
+    let has_images = attachments.iter().any(Attachment::is_image);
+    // Without a model named, and unless users choose models here, cedar chooses as the run goes
+    // (see `routing`); this is the model it starts with.
+    let model_auto =
+        leaves_model_to_cedar(&state, req.model.as_deref(), req.reasoning.as_deref()).await?;
+    // A run that plans first starts on the biggest model.
+    let plan_first = crate::plan::wanted(req.plan.unwrap_or(cfg.plan), &req.prompt);
+    let model = if model_auto {
+        routed_model(&state.integrations.models(), has_images, plan_first)?
+    } else {
+        resolve_model(
+            &state.integrations.models(),
+            req.model.as_deref(),
+            req.reasoning.as_deref(),
+            parent.as_ref(),
+        )?
+    };
     // PDFs are fine for any model: they are saved in the workspace for the agent to read.
-    if attachments.iter().any(Attachment::is_image) && !model.multimodal {
+    if has_images && !model.multimodal && model_auto {
+        return Err(AppError::BadRequest(
+            "no registered model accepts images (an admin registers one as accepting them under \
+             Settings, or with \"multimodal\": true on PUT /v1/admin/models/{id}); PDFs can be \
+             attached for any model"
+                .into(),
+        ));
+    }
+    if has_images && !model.multimodal {
         return Err(AppError::BadRequest(format!(
             "model {:?} does not accept images (an admin registers it as accepting them under \
              Settings, or with \"multimodal\": true on PUT /v1/admin/models/{{id}}); PDFs can be \
@@ -547,11 +641,17 @@ async fn create_run(
             .map_or_else(|| cfg.default_locale.clone(), |p| p.locale.clone()),
         Some(l) => locale::normalize(l).map_err(AppError::BadRequest)?,
     };
+    let timezone = match req.timezone.as_deref().map(str::trim).filter(|z| !z.is_empty()) {
+        None => parent
+            .as_ref()
+            .map_or_else(|| cfg.default_timezone.clone(), |p| p.timezone.clone()),
+        Some(z) => Some(timezone::normalize(z).map_err(AppError::BadRequest)?),
+    };
 
     let tools = match req.tools {
         None => parent.as_ref().and_then(|p| p.tools.clone()),
         Some(mut tools) => {
-            let current = state.integrations.tools().load_full();
+            let current = state.integrations.tools_for(&owner.0).await;
             current
                 .validate_selection(&tools)
                 .map_err(AppError::BadRequest)?;
@@ -573,6 +673,11 @@ async fn create_run(
         .as_deref()
         .map(str::trim)
         .filter(|u| !u.is_empty());
+    if private && callback_url.is_some() {
+        return Err(AppError::BadRequest(
+            "a private run calls no webhook: leave out callback_url, or private".into(),
+        ));
+    }
     let callback_secret = match req.callback_secret.filter(|s| !s.is_empty()) {
         None => None,
         Some(_) if callback_url.is_none() => {
@@ -604,6 +709,7 @@ async fn create_run(
         model_id: model.id,
         model: model.name,
         reasoning: model.reasoning,
+        model_auto,
         max_turns,
         parent_id: req.parent_id,
         tools,
@@ -612,8 +718,11 @@ async fn create_run(
         callback_secret,
         plan: req.plan.unwrap_or(cfg.plan),
         interactive: req.interactive.unwrap_or(false),
+        hold_writes: req.hold_writes.unwrap_or(false),
         locale,
-        import_attachments: cfg.records && req.import_attachments.unwrap_or(cfg.records_import_attachments),
+        timezone,
+        import_attachments: !private && cfg.records && req.import_attachments.unwrap_or(cfg.records_import_attachments),
+        private,
     };
     let run = state.store.insert_run(&new, cfg.max_active_runs_per_key).await?.map_err(|refused| match refused {
         InsertRefused::TooManyActive => AppError::TooManyRequests(format!(
@@ -634,8 +743,11 @@ async fn create_run(
 // -- tools and integrations -----------------------------------------------------------------
 
 /// The tool groups a run can switch on or off, with what this server offers in each.
-async fn list_tools(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let tools = state.integrations.tools().load_full();
+async fn list_tools(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Json<serde_json::Value> {
+    let tools = state.integrations.tools_for(&owner.0).await;
     let mut catalog = tools.catalog(&state.integrations.unavailable_reasons());
     // What can be called outside a run besides the tools marked `pollable`.
     catalog["sources"] = match state.cfg.web_fetch {
@@ -664,7 +776,7 @@ async fn call_tool(
     if !body.input.is_object() && !body.input.is_null() {
         return Err(AppError::BadRequest("input must be an object".into()));
     }
-    let tools = state.integrations.tools().load_full();
+    let tools = state.integrations.tools_for(&owner.0).await;
     let called = state
         .polls
         .call(
@@ -694,7 +806,15 @@ async fn list_models(State(state): State<AppState>) -> Json<serde_json::Value> {
         .iter()
         .map(ModelEntry::public)
         .collect();
-    Json(json!({ "models": models }))
+    // Whether users choose among them; off, cedar chooses for the runs that name none.
+    let model_selection = match routing::selection_on(&state.store).await {
+        Ok(on) => on,
+        Err(e) => {
+            tracing::warn!(error = %format!("{e:#}"), "could not read model_selection; taking it as off");
+            false
+        }
+    };
+    Json(json!({ "models": models, "model_selection": model_selection }))
 }
 
 /// What a run gets when it doesn't say: for clients that show the defaults.
@@ -704,12 +824,15 @@ async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Valu
     Ok(Json(json!({
         "model": default.as_ref().map(|m| m.model.clone()),
         "model_id": default.as_ref().map(|m| m.id.clone()),
+        "model_selection": routing::selection_on(&state.store).await?,
         "system": cfg.default_system_prompt,
         "locale": cfg.default_locale,
+        "timezone": cfg.default_timezone,
         "locales": locale::LANGUAGES.iter().chain(locale::REGIONS).collect::<Vec<_>>(),
         "max_turns_cap": cfg.max_turns_cap,
         "plan": cfg.plan,
         "tool_approvals": !cfg.tool_approvals.is_empty(),
+        "always_allow_after": cfg.always_allow_after,
         "attachments": {
             "max_count": MAX_ATTACHMENTS,
             "max_bytes": MAX_ATTACHMENT_BYTES,
@@ -845,6 +968,27 @@ async fn edit_memory(
         Ok(None) => Err(AppError::NotFound("memory not found")),
         Err(r) => Err(refused(r)),
     }
+}
+
+#[derive(Deserialize, Default)]
+struct GraphQuery {
+    /// Archived and superseded rows too, with the edges to what replaced them.
+    #[serde(default)]
+    archived: bool,
+    /// The most nodes; the highest-ranked rows are kept.
+    limit: Option<usize>,
+}
+
+/// The caller's memory as a network (see [`memory::graph`]): `{nodes, edges, total, left_out}`,
+/// each node a memory with its `rank` and `degree`, each edge `{source, target, kind, weight,
+/// topics?}`.
+async fn memory_graph(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    axum::extract::Query(q): axum::extract::Query<GraphQuery>,
+) -> Result<Json<memory::graph::Graph>, AppError> {
+    let limit = q.limit.unwrap_or(memory::graph::DEFAULT_NODES);
+    Ok(Json(state.memories.graph(&owner.0, q.archived, limit).await?))
 }
 
 /// A memory's versions and audit rows: `{versions: [...], ops: [...]}`.
@@ -1051,6 +1195,163 @@ async fn drop_all_records(
     Ok(StatusCode::NO_CONTENT)
 }
 
+// -- actions --------------------------------------------------------------------------------
+
+fn action_refused(r: actions::Refused) -> AppError {
+    match r {
+        actions::Refused::Full | actions::Refused::NoStorage => AppError::Conflict(r.to_string()),
+        _ => AppError::BadRequest(r.to_string()),
+    }
+}
+
+fn action_id(raw: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(raw).map_err(|_| AppError::NotFound("action not found"))
+}
+
+/// The registered model a recording goes to: the one named, else one that takes video when
+/// there is a video, else one that takes images when there are frames; the default model first
+/// among those that can. The flag says whether it gets the video.
+fn recording_model(models: &[ModelEntry], recording: &Recording) -> Result<(ModelEntry, bool), AppError> {
+    let has_video = recording.video.is_some();
+    let has_frames = !recording.frames.is_empty();
+    let suits = |m: &ModelEntry| (has_video && m.video) || (has_frames && m.multimodal);
+    if let Some(wanted) = recording.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+        let entry = models
+            .iter()
+            .find(|m| m.id == wanted)
+            .ok_or_else(|| AppError::BadRequest(format!("model {wanted:?} is not registered")))?;
+        if !suits(entry) {
+            return Err(AppError::Conflict(format!(
+                "model {wanted:?} takes neither the video nor the frames of a recording; an admin marks what a model takes under Settings, or with \"video\" and \"multimodal\" on PUT /v1/admin/models/{{id}}"
+            )));
+        }
+        return Ok((entry.clone(), has_video && entry.video));
+    }
+    let pick = |can: &dyn Fn(&ModelEntry) -> bool| {
+        models.iter().find(|m| m.is_default && can(m)).or_else(|| models.iter().find(|m| can(m))).cloned()
+    };
+    if has_video {
+        if let Some(entry) = pick(&|m| m.video) {
+            return Ok((entry, true));
+        }
+    }
+    if has_frames {
+        if let Some(entry) = pick(&|m| m.multimodal) {
+            return Ok((entry, false));
+        }
+    }
+    Err(AppError::Conflict(if has_frames {
+        "no registered model takes video or images, so nothing here can watch a recording; an admin marks a model that does under Settings, or with \"video\" or \"multimodal\" on PUT /v1/admin/models/{id}".into()
+    } else {
+        "no registered model takes video; send the recording's frames too, for a model that takes images".into()
+    }))
+}
+
+/// The caller's saved actions, oldest first, with what a recording may carry and whether this
+/// server can watch one and keep a password.
+async fn list_actions(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let models = state.integrations.models();
+    Ok(Json(json!({
+        "actions": state.actions.list(&owner.0).await?,
+        "limits": state.actions.limits(),
+        "enabled": state.cfg.actions,
+        "recording": {
+            "video": models.iter().any(|m| m.video),
+            "frames": models.iter().any(|m| m.multimodal),
+            "video_types": actions::VIDEO_TYPES,
+        },
+        "secrets": state.actions.stores_secrets(),
+        "browser": state.cfg.browser.enabled,
+    })))
+}
+
+async fn get_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<actions::Action>, AppError> {
+    state
+        .actions
+        .get(&owner.0, action_id(&id)?)
+        .await?
+        .map(Json)
+        .ok_or(AppError::NotFound("action not found"))
+}
+
+/// Turn a screen recording into steps for the agent: one call to a model that can watch it.
+/// Nothing is saved; the caller shows the draft to the user and saves what they make of it.
+async fn draft_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(recording): ApiJson<Recording>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    recording.check().map_err(action_refused)?;
+    let (model, as_video) = recording_model(&state.integrations.models(), &recording)?;
+    let llm = state.llm.client_for(&model.id).ok_or_else(|| {
+        AppError::Conflict(format!("model {:?} is no longer registered", model.id))
+    })?;
+    // The steps are written for the tools this owner's runs have.
+    let tools: Vec<(String, String)> = state
+        .integrations
+        .tools_for(&owner.0)
+        .await
+        .definitions()
+        .iter()
+        .filter_map(|d| Some((d["name"].as_str()?.to_string(), d["description"].as_str()?.to_string())))
+        .collect();
+    let (draft, usage) = actions::draft(llm.as_ref(), &model.model, model.max_tokens, &recording, as_video, &tools)
+        .await
+        .map_err(|e| AppError::BadGateway(format!("could not turn the recording into steps: {e:#}")))?;
+    Ok(Json(json!({
+        "draft": draft,
+        "model": model.model,
+        "model_id": model.id,
+        "watched": if as_video { "video" } else { "frames" },
+        "usage": usage,
+    })))
+}
+
+/// Save an action: the steps as the user approved them, and the passwords they chose to keep.
+async fn save_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(input): ApiJson<ActionInput>,
+) -> Result<(StatusCode, Json<actions::Action>), AppError> {
+    let saved = state.actions.save(&owner.0, &input).await?.map_err(action_refused)?;
+    Ok((StatusCode::CREATED, Json(saved)))
+}
+
+/// Change an action. A secret sent without a value keeps its saved one; one left out is forgotten.
+async fn update_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+    ApiJson(input): ApiJson<ActionInput>,
+) -> Result<Json<actions::Action>, AppError> {
+    state
+        .actions
+        .update(&owner.0, action_id(&id)?, &input)
+        .await?
+        .ok_or(AppError::NotFound("action not found"))?
+        .map(Json)
+        .map_err(action_refused)
+}
+
+/// Delete an action and the secrets kept with it. Another owner's looks like a missing one.
+async fn delete_action(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, AppError> {
+    if !state.actions.delete(&owner.0, action_id(&id)?).await? {
+        return Err(AppError::NotFound("action not found"));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 fn require_admin(admin: Admin) -> Result<(), AppError> {
     if admin.0 {
         Ok(())
@@ -1091,6 +1392,10 @@ struct SettingsBody {
     /// computer cedar runs on). Unset: `COMPUTER_RUNTIME`.
     #[serde(default, deserialize_with = "crate::integrations::present")]
     computer_runtime: Option<Option<String>>,
+    /// Whether users choose the model of a run themselves. Off (the default), cedar chooses
+    /// among the registered models by their size (see [`crate::routing`]).
+    #[serde(default, deserialize_with = "crate::integrations::present")]
+    model_selection: Option<Option<bool>>,
 }
 
 async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> {
@@ -1104,6 +1409,7 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
         // drive the computer it runs on (built with the `native-computer` feature).
         "computer_enabled": state.computers.is_some(),
         "native_computer_supported": state.computers.as_ref().is_some_and(|c| c.native_supported()),
+        "model_selection": routing::selection_on(&state.store).await?,
         // Where OpenShell can't run (Windows), sandboxes always run on Docker.
         "openshell_supported": sandbox::OPENSHELL_SUPPORTED,
         // The OS cedar runs on (`linux`, `macos`, `windows`), for the steps that set OpenShell up.
@@ -1121,6 +1427,7 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
             "run_timeout_secs": state.cfg.run_timeout.as_secs(),
             "min_run_timeout_secs": manager::MIN_RUN_TIMEOUT_SECS,
             "max_run_timeout_secs": manager::MAX_RUN_TIMEOUT_SECS,
+            "model_selection": false,
         },
     }))
 }
@@ -1208,6 +1515,9 @@ async fn put_settings(
     }
     if let Some(secs) = body.run_timeout_secs {
         manager::set_run_timeout_secs(&state.store, secs).await?;
+    }
+    if let Some(on) = body.model_selection {
+        routing::set_selection(&state.store, on.unwrap_or(false)).await?;
     }
     if let Some(runtime) = runtime {
         // Docker is the default, so it is saved as no setting at all.
@@ -1497,8 +1807,67 @@ async fn authorize_google(
     ApiJson(body): ApiJson<AuthorizeBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_admin(admin)?;
-    let url = state.integrations.google_authorize(&body.redirect_uri)?;
+    let url = state.integrations.google_authorize(&body.redirect_uri, None)?;
     Ok(Json(json!({ "url": url })))
+}
+
+/// `GET /v1/google`: the caller's own Google account, the one their runs act for.
+async fn get_own_google(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    Ok(Json(state.integrations.google_status_for(&owner.0).await?))
+}
+
+/// Only a user a service key acts for has an account of their own; a key's runs use the
+/// server's, which the admin routes manage.
+fn own_account(owner: &Owner) -> Result<&str, AppError> {
+    if Owner::is_user(&owner.0) {
+        Ok(&owner.0)
+    } else {
+        Err(AppError::Conflict(
+            "this key's runs use the server's Google account; an admin connects it (/v1/admin/integrations/google)".into(),
+        ))
+    }
+}
+
+/// `POST /v1/google/authorize`: start connecting the user's own Google account.
+async fn authorize_own_google(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiJson(body): ApiJson<AuthorizeBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user = own_account(&owner)?;
+    let url = state
+        .integrations
+        .google_authorize(&body.redirect_uri, Some(user))?;
+    Ok(Json(json!({ "url": url })))
+}
+
+/// `POST /v1/google/callback`: finish a sign-in with what Google sent back. The `state` names
+/// whose account it is, so the service in front can carry it back without knowing who that is
+/// (the browser comes back from Google without the user's token). The server's account still
+/// takes an admin key.
+async fn own_google_callback(
+    State(state): State<AppState>,
+    Extension(admin): Extension<Admin>,
+    ApiJson(body): ApiJson<CallbackBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    Ok(Json(
+        state
+            .integrations
+            .google_callback(&body.state, &body.code, admin.0)
+            .await?,
+    ))
+}
+
+/// `DELETE /v1/google`: disconnect the user's own Google account.
+async fn delete_own_google(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+) -> Result<StatusCode, AppError> {
+    state.integrations.remove_google_for(own_account(&owner)?).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -1517,7 +1886,7 @@ async fn google_callback(
     Ok(Json(
         state
             .integrations
-            .google_callback(&body.state, &body.code)
+            .google_callback(&body.state, &body.code, true)
             .await?,
     ))
 }
@@ -1600,6 +1969,9 @@ async fn get_trace(
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let run = owned_run(&state, &owner, &id).await?;
+    if run.private {
+        return Err(AppError::NotFound("a private run keeps no trace"));
+    }
     Ok(Json(crate::trace::build(&state.store, &run).await?))
 }
 
@@ -1668,6 +2040,139 @@ async fn decide_approval(
     Ok((StatusCode::ACCEPTED, Json(answer)))
 }
 
+// -- the outbox -----------------------------------------------------------------------------
+
+/// At most this many held calls in one listing.
+const MAX_HELD_LISTED: u32 = 200;
+/// The largest input an edited held call may be sent with.
+const MAX_HELD_INPUT_BYTES: usize = 256 * 1024;
+
+#[derive(Deserialize, Default)]
+struct HeldQuery {
+    /// `pending`, `sent`, `failed`, `discarded` or `sending`; absent for all.
+    status: Option<String>,
+    run_id: Option<Uuid>,
+}
+
+/// `GET /v1/held`: the calls waiting in the caller's outbox (or, by `status`, what became of
+/// earlier ones), newest first.
+async fn list_held(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    ApiQuery(q): ApiQuery<HeldQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let status = q.status.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    if let Some(s) = status {
+        if !matches!(s, "pending" | "sending" | "sent" | "failed" | "discarded") {
+            return Err(AppError::BadRequest(
+                "status must be pending, sending, sent, failed or discarded".into(),
+            ));
+        }
+    }
+    let held = state.store.list_held(&owner.0, status, q.run_id, MAX_HELD_LISTED).await?;
+    Ok(Json(json!({ "held": held })))
+}
+
+fn held_id(raw: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(raw).map_err(|_| AppError::NotFound("no such held call"))
+}
+
+async fn get_held(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<HeldCall>, AppError> {
+    let held = state.store.get_held(&owner.0, held_id(&id)?).await?;
+    Ok(Json(held.ok_or(AppError::NotFound("no such held call"))?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeldDecision {
+    /// `approve` or `discard`.
+    decision: String,
+    /// For `approve`: the input to make the call with instead of the one the model wrote.
+    input: Option<serde_json::Value>,
+}
+
+/// `POST /v1/held/{id}`: decide about a held call. `approve` makes the call now, exactly as it
+/// was written or with the `input` given instead, and answers with what became of it (`sent`,
+/// or `failed` with the tool's error, which can be approved again); `discard` drops it. No
+/// model is involved either way. `409` for a call that was already sent or discarded, or is
+/// being sent right now.
+async fn decide_held(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<HeldDecision>,
+) -> Result<Json<HeldCall>, AppError> {
+    let id = held_id(&id)?;
+    let held = state
+        .store
+        .get_held(&owner.0, id)
+        .await?
+        .ok_or(AppError::NotFound("no such held call"))?;
+    let settled = || AppError::Conflict(format!("this call is already {}", held.status));
+    match body.decision.as_str() {
+        "discard" => {
+            if body.input.is_some() {
+                return Err(AppError::BadRequest("input goes with approve, not discard".into()));
+            }
+            if !state.store.discard_held(&owner.0, id).await? {
+                return Err(settled());
+            }
+        }
+        "approve" => {
+            let edited = body.input.as_ref().is_some_and(|input| *input != held.input);
+            let input = body.input.unwrap_or_else(|| held.input.clone());
+            if !input.is_object() {
+                return Err(AppError::BadRequest("input must be an object".into()));
+            }
+            if input.to_string().len() > MAX_HELD_INPUT_BYTES {
+                return Err(AppError::BadRequest(format!(
+                    "input is larger than {} KiB",
+                    MAX_HELD_INPUT_BYTES / 1024
+                )));
+            }
+            // The owner's tools as they are now: an account disconnected since can't send.
+            let tools = state.integrations.tools_for(&owner.0).await;
+            let Some(tool) = tools.get(&held.tool).filter(|t| {
+                crate::tools::ACCOUNT_GROUPS.contains(&tools.group(t.name()))
+                    && crate::tools::holdable(t.name())
+            }) else {
+                return Err(AppError::Conflict(format!(
+                    "{} is not available any more (is the account still connected?); the call stays in the outbox",
+                    held.tool
+                )));
+            };
+            if !state.store.claim_held(&owner.0, id).await? {
+                return Err(settled());
+            }
+            let started = chrono::Utc::now();
+            let clock = std::time::Instant::now();
+            let result = polls::call_without_run(&state.cfg, tool, &input).await;
+            let error = result.as_ref().err().map(|e| format!("{e:#}"));
+            tracing::info!(owner = %owner.0, tool = %held.tool, held = %id, edited,
+                failed = error.is_some(), "held call approved and made");
+            if let Err(e) = state
+                .store
+                .record_tool_call(&owner.0, &held.tool, started, clock.elapsed(), error.as_deref(), polls::KEEP_CALLS)
+                .await
+            {
+                tracing::warn!(error = %format!("{e:#}"), "could not record a tool call");
+            }
+            let (status, output) = match (result, error) {
+                (Ok(output), _) => ("sent", output),
+                (Err(_), error) => ("failed", error.unwrap_or_default()),
+            };
+            state.store.settle_held(id, status, &input, edited, &output).await?;
+        }
+        _ => return Err(AppError::BadRequest("decision must be approve or discard".into())),
+    }
+    let held = state.store.get_held(&owner.0, id).await?;
+    Ok(Json(held.ok_or(AppError::NotFound("no such held call"))?))
+}
+
 async fn delete_run(
     State(state): State<AppState>,
     Extension(owner): Extension<Owner>,
@@ -1693,6 +2198,8 @@ async fn delete_run(
 #[derive(Deserialize)]
 struct EventsParams {
     after: Option<i64>,
+    /// `all`, from a service key: the finished runs of every user it may act for, and its own.
+    users: Option<String>,
 }
 
 async fn stream_events(
@@ -1723,13 +2230,25 @@ async fn stream_events(
 }
 
 /// `GET /v1/events`: the key's finished runs as Server-Sent Events, from after `after` (or the
-/// `Last-Event-ID` header) onwards, live. See [`sse::notification_stream`].
+/// `Last-Event-ID` header) onwards, live. See [`sse::notification_stream`]. With `?users=all`, a
+/// service key gets its users' as well, in one stream.
 async fn stream_notifications(
     State(state): State<AppState>,
     Extension(owner): Extension<Owner>,
+    Extension(service): Extension<crate::auth::Service>,
     ApiQuery(params): ApiQuery<EventsParams>,
     headers: HeaderMap,
-) -> Sse<impl Stream<Item = Result<axum::response::sse::Event, Infallible>>> {
+) -> Result<Sse<impl Stream<Item = Result<axum::response::sse::Event, Infallible>>>, AppError> {
+    let users = match params.users.as_deref() {
+        None => false,
+        Some("all") if service.0 => true,
+        Some("all") => {
+            return Err(AppError::Forbidden(
+                "this API key may not follow users' runs (see CEDAR_SERVICE_KEYS)",
+            ))
+        }
+        Some(_) => return Err(AppError::BadRequest("users must be \"all\"".into())),
+    };
     let after = params
         .after
         .or_else(|| {
@@ -1740,7 +2259,13 @@ async fn stream_notifications(
         })
         .unwrap_or(0)
         .max(0);
-    sse::notification_stream(state.store.clone(), state.hub.clone(), owner.0, after)
+    Ok(sse::notification_stream(
+        state.store.clone(),
+        state.hub.clone(),
+        owner.0,
+        users,
+        after,
+    ))
 }
 
 // -- compaction -----------------------------------------------------------------------------
@@ -1798,13 +2323,18 @@ async fn compact_conversation(
             ))
         }
     };
-    // Compaction takes no reasoning level: one plain call is enough.
-    let model = resolve_model(
-        &state.integrations.models(),
-        req.model.as_deref(),
-        Some(""),
-        run.as_ref(),
-    )
+    // Compaction takes no reasoning level: one plain call is enough. Reviewing a whole
+    // conversation is for the biggest model when cedar chooses (see `routing`).
+    let model = if leaves_model_to_cedar(&state, req.model.as_deref(), None).await? {
+        routed_model(&state.integrations.models(), false, true)
+    } else {
+        resolve_model(
+            &state.integrations.models(),
+            req.model.as_deref(),
+            Some(""),
+            run.as_ref(),
+        )
+    }
     .map(|m| ResolvedModel {
         reasoning: None,
         ..m

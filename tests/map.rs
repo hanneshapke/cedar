@@ -220,7 +220,7 @@ async fn by_default_the_tool_is_offered_after_the_weather_tool() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     assert_eq!(
-        &names[names.len() - 15..],
+        &names[names.len() - 17..],
         [
             "weather_forecast",
             "show_map",
@@ -229,6 +229,7 @@ async fn by_default_the_tool_is_offered_after_the_weather_tool() {
             "compare_stocks",
             "suggest_follow_up",
             "ask_user",
+            "report_limitation",
             "remember",
             "forget",
             "recall",
@@ -236,7 +237,8 @@ async fn by_default_the_tool_is_offered_after_the_weather_tool() {
             "records_describe",
             "records_save",
             "records_lookup",
-            "records_drop"
+            "records_drop",
+            "saved_actions"
         ]
     );
 }

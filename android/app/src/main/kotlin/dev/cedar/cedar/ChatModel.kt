@@ -17,6 +17,10 @@ import dev.cedar.core.ClarifyAnswer
 import dev.cedar.core.FollowUpSuggestion
 import dev.cedar.core.Followup
 import dev.cedar.core.FollowupChoice
+import dev.cedar.core.Feedback
+import dev.cedar.core.FeedbackChoice
+import dev.cedar.core.LimitationReport
+import dev.cedar.core.OutboxItem
 import dev.cedar.core.Notice
 import dev.cedar.core.OutgoingAttachment
 import dev.cedar.core.Plan
@@ -45,6 +49,12 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
     var turns by mutableStateOf<List<TurnTranscript>>(emptyList())
         private set
 
+    /**
+     * A private chat: in no list, not remembered, and deleted when it is left (see
+     * [AppModel.left]). Chosen before the first message; after that it is what the server says.
+     */
+    var isPrivate by mutableStateOf(false)
+
     /** The agent whose run this conversation is, once the server said. */
     var agent by mutableStateOf<AgentRef?>(null)
         private set
@@ -58,6 +68,14 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
     /** The suggestions a decision is on its way for, and why the last one for each failed. */
     private var decidingFollowups by mutableStateOf<Set<String>>(emptySet())
     private var followupErrors by mutableStateOf<Map<String, String>>(emptyMap())
+
+    /**
+     * What was decided about what the turns reported they could not do, by turn and tool call
+     * ([limitation]); a report without an entry is still open.
+     */
+    private var limitations by mutableStateOf<Map<String, Feedback>>(emptyMap())
+    private var decidingLimitations by mutableStateOf<Set<String>>(emptySet())
+    private var limitationErrors by mutableStateOf<Map<String, String>>(emptyMap())
 
     /** The message being sent, shown until the server accepts it, and the files that went with it. */
     var pendingPrompt by mutableStateOf<String?>(null)
@@ -82,9 +100,13 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
     val isActive: Boolean get() = pendingPrompt != null || turns.any { it.isActive }
     val canSend: Boolean get() = !isActive && !isAddingAttachments && draft.isNotBlank()
 
-    /** Whether the model new messages go to takes images: the one picked in Settings, or the server's default. PDFs go with any model. */
+    /**
+     * Whether the model new messages go to takes images: the one picked in Settings, or the server's default; while the
+     * server picks the model, whether any model does (an image then goes to one that takes it). PDFs go with any model.
+     */
     val acceptsImages: Boolean
         get() {
+            if (!app.modelSelection) return app.models.any { it.multimodal }
             val model = if (app.settings.model.isEmpty()) app.models.firstOrNull { it.isDefault } else app.models.firstOrNull { it.id == app.settings.model }
             return model?.multimodal ?: false
         }
@@ -116,9 +138,11 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
         val client = client ?: return
         try {
             val detail = client.conversation(id)
+            isPrivate = detail.conversation.isPrivate
             app.remember(detail.conversation)
             agent = detail.agent
             followups = detail.followups.associateBy { followupKey(it.turnId, it.callId) }
+            limitations = detail.limitations.filter { it.turnId != null }.associateBy { followupKey(it.turnId.orEmpty(), it.callId) }
             sync(detail.turns)
             errorMessage = null
         } catch (e: CancellationException) {
@@ -288,17 +312,23 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
         errorMessage = null
         val settings = app.settings
         try {
-            val id = conversationId ?: client.createConversation().id.also {
-                conversationId = it
-                app.chatDidStart(this, it)
+            val id = conversationId ?: client.createConversation(private = isPrivate).let { created ->
+                conversationId = created.id
+                // No list will have a private chat: its screen knows it from here.
+                if (created.isPrivate) app.remember(created)
+                app.chatDidStart(this, created.id)
+                created.id
             }
             val turn = client.send(id, ChatClient.SendMessage(
                 content = text,
-                model = settings.model.ifEmpty { null },
-                reasoning = settings.reasoning.ifEmpty { null },
+                // While the server picks the model, a pick saved earlier is not sent.
+                model = settings.model.ifEmpty { null }.takeIf { app.modelSelection },
+                reasoning = settings.reasoning.ifEmpty { null }.takeIf { app.modelSelection },
                 plan = settings.plan.ifEmpty { null },
                 // The agent answers, and formats, in the user's locale.
                 locale = app.locale,
+                // "Today" and "tomorrow" are the user's, not the server's.
+                timezone = java.util.TimeZone.getDefault().id,
                 attachments = files.takeIf { it.isNotEmpty() }?.map {
                     ChatClient.SendMessage.Upload(it.name, it.mediaType, Base64.encodeToString(it.data, Base64.NO_WRAP))
                 },
@@ -349,6 +379,53 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
             }
         }
     }
+
+    // What Cedar could not do, and what waits for approval
+
+    /** What was decided about a report a turn's tool call made; `null` while it is open. */
+    fun limitation(turnId: String, callId: String): Feedback? = limitations[followupKey(turnId, callId)]
+
+    fun isDecidingLimitation(turnId: String, callId: String): Boolean = followupKey(turnId, callId) in decidingLimitations
+
+    fun limitationError(turnId: String, callId: String): String? = limitationErrors[followupKey(turnId, callId)]
+
+    /**
+     * Sends a report as feedback, which keeps it on the person's server, or dismisses it. The
+     * first decision stands, so the answer may be one made on another device.
+     */
+    fun decideLimitation(turnId: String, callId: String, report: LimitationReport, send: Boolean, comment: String) {
+        val client = client ?: return
+        val key = followupKey(turnId, callId)
+        if (key in decidingLimitations || key in limitations) return
+        decidingLimitations = decidingLimitations + key
+        limitationErrors = limitationErrors - key
+        val choice = if (send) FeedbackChoice.Send(report, comment) else FeedbackChoice.Dismiss
+        app.scope.launch {
+            try {
+                limitations = limitations + (key to client.decideLimitation(turnId, callId, choice).feedback)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                limitationErrors = limitationErrors + (key to app.describe(e))
+            } finally {
+                decidingLimitations = decidingLimitations - key
+            }
+        }
+    }
+
+    /** A call one of the turns had held, as the outbox has it now; asked for the first time it is drawn. */
+    fun heldCall(id: String): OutboxItem? {
+        app.loadHeldCall(id)
+        return app.heldCall(id)
+    }
+
+    fun isHeldCallGone(id: String): Boolean = app.isHeldCallGone(id)
+
+    fun isDecidingHeldCall(id: String): Boolean = app.isDecidingHeldCall(id)
+
+    fun heldCallError(id: String): String? = app.heldCallError(id)
+
+    fun decideHeldCall(id: String, approve: Boolean) = app.decideHeldCall(id, approve)
 
     // Follow-ups
 

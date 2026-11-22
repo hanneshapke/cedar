@@ -1,7 +1,7 @@
 //! End-to-end tests of the chat API against a fake cedar server on a local port.
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, Method, Request, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -35,6 +35,8 @@ struct FakeCedar {
     refuse_runs: Mutex<Option<(StatusCode, &'static str)>>,
     /// Every `POST /v1/runs` body.
     bodies: Mutex<Vec<Value>>,
+    /// cedar's `model_selection` setting, once set; a cedar from before it reports none.
+    model_selection: Mutex<Option<bool>>,
     /// Admin calls: (route, body).
     admin_calls: Mutex<Vec<(String, Value)>>,
     /// When set, the admin routes refuse the key, as cedar does for a key not in CEDAR_ADMIN_KEYS.
@@ -60,6 +62,11 @@ struct FakeCedar {
     /// The record sets cedar keeps (`/v1/records`), each `{set, records}`; unset, the routes are
     /// unknown, as on a cedar from before records.
     records: Mutex<Option<Vec<Value>>>,
+    /// The actions cedar keeps (`/v1/actions`); unset, the routes are unknown, as on a cedar
+    /// from before actions. `action_calls` is every request that reached them: (method, path
+    /// or what it was, whose it was, body).
+    actions: Mutex<Option<Vec<Value>>>,
+    action_calls: Mutex<Vec<(String, String, Value)>>,
     /// The fake corpus: every bundle it took, the chat version header each came with, and
     /// every withdrawal (receipt id, Authorization header).
     ingested: Mutex<Vec<Value>>,
@@ -70,6 +77,34 @@ struct FakeCedar {
     /// is not offered, as Gmail isn't before Google is connected.
     tool_answers: Mutex<HashMap<String, VecDeque<Value>>>,
     tool_calls: Mutex<Vec<(String, Value)>>,
+    /// Who each `POST /v1/runs` was for (`X-Cedar-User`; `None`: the key itself).
+    run_users: Mutex<Vec<Option<String>>>,
+    /// When set, the key may not act for users, as on a cedar without it in CEDAR_SERVICE_KEYS.
+    not_service: Mutex<bool>,
+    /// Every query `GET /v1/events` was opened with.
+    stream_queries: Mutex<Vec<String>>,
+    /// The users who connected a Google account of their own (`/v1/google`).
+    google_accounts: Mutex<Vec<String>>,
+    /// Whose memories and records were deleted for good (`DELETE /v1/memory`, `/v1/records`).
+    wiped: Mutex<Vec<(&'static str, Option<String>)>>,
+    /// The outbox (`/v1/held`): the calls runs had held, and every decision made about one,
+    /// `(id, body)`.
+    held: Mutex<Vec<Value>>,
+    held_decisions: Mutex<Vec<(String, Value)>>,
+}
+
+fn user_of(headers: &HeaderMap) -> Option<String> {
+    headers.get("x-cedar-user").and_then(|v| v.to_str().ok()).map(String::from)
+}
+
+/// As cedar does: a key that is not a service key is refused when it names a user.
+fn refused_user(s: &Shared, headers: &HeaderMap) -> Option<axum::response::Response> {
+    (user_of(headers).is_some() && *s.not_service.lock().unwrap())
+        .then(|| cedar_error(StatusCode::FORBIDDEN, "forbidden", "this API key may not act for users (see CEDAR_SERVICE_KEYS)"))
+}
+
+async fn list_runs(State(s): State<Shared>, headers: HeaderMap) -> axum::response::Response {
+    refused_user(&s, &headers).unwrap_or_else(|| Json(json!({ "runs": [], "next_before": null })).into_response())
 }
 
 type Shared = Arc<FakeCedar>;
@@ -85,6 +120,9 @@ fn cedar_error(status: StatusCode, code: &str, message: &str) -> axum::response:
 async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Json<Value>) -> axum::response::Response {
     if !authorized(&headers) {
         return cedar_error(StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid API key");
+    }
+    if let Some(refused) = refused_user(&s, &headers) {
+        return refused;
     }
     let prompt = body["prompt"].as_str().unwrap().to_string();
     if prompt.contains("TOO MANY") {
@@ -117,6 +155,7 @@ async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Jso
     let id = Uuid::new_v4();
     let run = json!({ "id": id, "status": "queued", "prompt": prompt, "model": body["model"], "final_text": null, "error": null });
     s.prompts.lock().unwrap().push(prompt);
+    s.run_users.lock().unwrap().push(user_of(&headers));
     s.parents.lock().unwrap().push(parent);
     s.runs.lock().unwrap().insert(id, run.clone());
     (StatusCode::ACCEPTED, Json(run)).into_response()
@@ -310,7 +349,12 @@ async fn notifications(State(s): State<Shared>, headers: HeaderMap, axum::extrac
     if !authorized(&headers) {
         return cedar_error(StatusCode::UNAUTHORIZED, "unauthorized", "missing or invalid API key");
     }
-    let after: i64 = q.as_deref().and_then(|q| q.strip_prefix("after=")).and_then(|n| n.parse().ok()).unwrap_or(0);
+    let q = q.unwrap_or_default();
+    s.stream_queries.lock().unwrap().push(q.clone());
+    if q.split('&').any(|p| p == "users=all") && *s.not_service.lock().unwrap() {
+        return cedar_error(StatusCode::FORBIDDEN, "forbidden", "this API key may not follow users' runs (see CEDAR_SERVICE_KEYS)");
+    }
+    let after: i64 = q.split('&').find_map(|p| p.strip_prefix("after=")).and_then(|n| n.parse().ok()).unwrap_or(0);
     let mut body = String::from(": keep-alive\n\n");
     for n in s.notifications.lock().unwrap().iter().filter(|n| n["id"].as_i64().unwrap() > after) {
         body.push_str(&format!("id: {}\nevent: {}\ndata: {n}\n\n", n["id"], n["type"].as_str().unwrap()));
@@ -318,7 +362,65 @@ async fn notifications(State(s): State<Shared>, headers: HeaderMap, axum::extrac
     ([("content-type", "text/event-stream")], body).into_response()
 }
 
-async fn events(Path(id): Path<Uuid>, axum::extract::RawQuery(q): axum::extract::RawQuery) -> impl IntoResponse {
+/// The outbox as cedar serves it: a listing by status and run, one call, and a decision that
+/// "makes" an approved call (with the edited input, if one came) or discards it.
+async fn list_held(State(s): State<Shared>, axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>) -> Json<Value> {
+    let held: Vec<Value> = s
+        .held
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|h| q.get("status").is_none_or(|st| h["status"] == st.as_str()))
+        .filter(|h| q.get("run_id").is_none_or(|r| h["run_id"] == r.as_str()))
+        .cloned()
+        .collect();
+    Json(json!({ "held": held }))
+}
+
+async fn get_held(State(s): State<Shared>, Path(id): Path<String>) -> axum::response::Response {
+    match s.held.lock().unwrap().iter().find(|h| h["id"] == id.as_str()) {
+        Some(held) => Json(held.clone()).into_response(),
+        None => cedar_error(StatusCode::NOT_FOUND, "not_found", "no such held call"),
+    }
+}
+
+async fn decide_held(State(s): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> axum::response::Response {
+    s.held_decisions.lock().unwrap().push((id.clone(), body.clone()));
+    let mut held = s.held.lock().unwrap();
+    let Some(call) = held.iter_mut().find(|h| h["id"] == id.as_str()) else {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "no such held call");
+    };
+    if call["status"] != "pending" {
+        return cedar_error(StatusCode::CONFLICT, "conflict", "this call is already sent");
+    }
+    match body["decision"].as_str() {
+        Some("approve") => {
+            if let Some(input) = body.get("input") {
+                call["edited"] = json!(*input != call["input"]);
+                call["input"] = input.clone();
+            }
+            call["status"] = json!("sent");
+            call["output"] = json!("ok");
+        }
+        _ => call["status"] = json!("discarded"),
+    }
+    call["decided_at"] = json!("2026-10-17T10:00:00Z");
+    Json(call.clone()).into_response()
+}
+
+/// A run's events. One whose prompt says `NEEDS OK` asks for an approval and goes on waiting; one
+/// that says `ANSWERED OK` asks, is answered and ends.
+async fn events(State(s): State<Shared>, Path(id): Path<Uuid>, axum::extract::RawQuery(q): axum::extract::RawQuery) -> impl IntoResponse {
+    let prompt = s.runs.lock().unwrap().get(&id).and_then(|r| r["prompt"].as_str().map(String::from)).unwrap_or_default();
+    let asks = "id: 1\nevent: approval.required\ndata: {\"seq\":1,\"type\":\"approval.required\",\"data\":{\"id\":\"a1\",\"tool\":\"gmail_send_message\",\"rule\":\"email\",\"reason\":\"Send message in your Gmail to a@x.org.\",\"scope\":null}}\n\n";
+    if prompt.contains("NEEDS OK") {
+        return ([("content-type", "text/event-stream")], asks.to_string());
+    }
+    if prompt.contains("ANSWERED OK") {
+        let rest = "id: 2\nevent: approval.resolved\ndata: {\"seq\":2,\"type\":\"approval.resolved\",\"data\":{\"id\":\"a1\",\"decision\":\"allow\",\"by\":\"user\"}}\n\n\
+                    id: 3\nevent: run.completed\ndata: {\"seq\":3,\"type\":\"run.completed\",\"data\":{}}\n\n";
+        return ([("content-type", "text/event-stream")], format!("{asks}{rest}"));
+    }
     let body = format!(
         "id: 1\nevent: assistant.text\ndata: {{\"seq\":1,\"type\":\"assistant.text\",\"data\":{{\"text\":\"for {id} {}\"}}}}\n\n\
          id: 2\nevent: run.completed\ndata: {{\"seq\":2,\"type\":\"run.completed\",\"data\":{{}}}}\n\n",
@@ -444,8 +546,12 @@ fn registry() -> Vec<Value> {
     ]
 }
 
-async fn models() -> Json<Value> {
-    Json(json!({ "models": registry() }))
+async fn models(State(s): State<Shared>) -> Json<Value> {
+    let mut body = json!({ "models": registry() });
+    if let Some(on) = *s.model_selection.lock().unwrap() {
+        body["model_selection"] = json!(on);
+    }
+    Json(body)
 }
 
 async fn tools() -> Json<Value> {
@@ -485,6 +591,16 @@ async fn list_memory(State(s): State<Shared>) -> axum::response::Response {
     }
 }
 
+/// cedar's graph of the memories: every one a node, and an edge between the first two.
+async fn memory_graph(State(s): State<Shared>, Query(q): Query<HashMap<String, String>>) -> axum::response::Response {
+    let Some(items) = s.memory.lock().unwrap().clone() else { return no_route() };
+    let edges: Vec<Value> = match items.as_slice() {
+        [a, b, ..] => vec![json!({ "source": a["id"], "target": b["id"], "kind": "topic", "weight": 1, "topics": ["travel"] })],
+        _ => vec![],
+    };
+    Json(json!({ "nodes": items, "edges": edges, "total": items.len(), "left_out": 0, "asked": q })).into_response()
+}
+
 async fn add_memory(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
     let mut memory = s.memory.lock().unwrap();
     let Some(items) = memory.as_mut() else { return no_route() };
@@ -504,13 +620,70 @@ async fn forget_memory(State(s): State<Shared>, Path(id): Path<String>) -> axum:
     StatusCode::NO_CONTENT.into_response()
 }
 
-async fn forget_all_memory(State(s): State<Shared>) -> axum::response::Response {
+async fn forget_all_memory(State(s): State<Shared>, headers: HeaderMap) -> axum::response::Response {
+    s.wiped.lock().unwrap().push(("memory", user_of(&headers)));
     match s.memory.lock().unwrap().as_mut() {
         Some(items) => {
             items.clear();
             StatusCode::NO_CONTENT.into_response()
         }
         None => no_route(),
+    }
+}
+
+async fn list_actions(State(s): State<Shared>) -> axum::response::Response {
+    match &*s.actions.lock().unwrap() {
+        Some(actions) => Json(json!({ "actions": actions, "limits": { "frames": 40 }, "recording": { "video": false, "frames": true },
+                                      "secrets": true, "enabled": true, "browser": true })).into_response(),
+        None => no_route(),
+    }
+}
+
+/// Keeps what was sent as the action, without a secret's value, as cedar would.
+async fn save_action(State(s): State<Shared>, headers: HeaderMap, Json(mut body): Json<Value>) -> axum::response::Response {
+    let mut actions = s.actions.lock().unwrap();
+    let Some(actions) = actions.as_mut() else { return no_route() };
+    s.action_calls.lock().unwrap().push(("save".into(), user_of(&headers).unwrap_or_default(), body.clone()));
+    if body["steps"].as_array().is_none_or(|steps| steps.is_empty()) {
+        return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "give at least one step");
+    }
+    for secret in body["secrets"].as_array_mut().into_iter().flatten() {
+        let saved = secret["value"].is_string();
+        secret.as_object_mut().unwrap().remove("value");
+        secret["saved"] = json!(saved);
+    }
+    body["id"] = json!(Uuid::new_v4());
+    body["name"] = json!("an_action");
+    actions.push(body.clone());
+    (StatusCode::CREATED, Json(body)).into_response()
+}
+
+async fn draft_action(State(s): State<Shared>, headers: HeaderMap, Json(body): Json<Value>) -> axum::response::Response {
+    if s.actions.lock().unwrap().is_none() {
+        return no_route();
+    }
+    s.action_calls.lock().unwrap().push(("draft".into(), user_of(&headers).unwrap_or_default(), body));
+    Json(json!({ "draft": { "title": "Get the invoice", "summary": "", "site": "portal.example.com", "steps": ["Open the portal"], "secrets": [], "notes": "" },
+                 "model": "watcher", "model_id": "watcher", "watched": "frames", "usage": {} })).into_response()
+}
+
+async fn one_action(State(s): State<Shared>, method: Method, headers: HeaderMap, Path(id): Path<String>, body: Option<Json<Value>>) -> axum::response::Response {
+    let mut actions = s.actions.lock().unwrap();
+    let Some(actions) = actions.as_mut() else { return no_route() };
+    let Some(at) = actions.iter().position(|a| a["id"] == id.as_str()) else {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "action not found");
+    };
+    s.action_calls.lock().unwrap().push((method.to_string(), user_of(&headers).unwrap_or_default(), body.as_ref().map(|b| b.0.clone()).unwrap_or(Value::Null)));
+    match (method, body) {
+        (Method::DELETE, _) => {
+            actions.remove(at);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        (Method::PUT, Some(Json(body))) => {
+            actions[at]["title"] = body["title"].clone();
+            Json(actions[at].clone()).into_response()
+        }
+        _ => Json(actions[at].clone()).into_response(),
     }
 }
 
@@ -544,7 +717,8 @@ async fn drop_record_set(State(s): State<Shared>, Path(name): Path<String>) -> a
     StatusCode::NO_CONTENT.into_response()
 }
 
-async fn drop_all_records(State(s): State<Shared>) -> axum::response::Response {
+async fn drop_all_records(State(s): State<Shared>, headers: HeaderMap) -> axum::response::Response {
+    s.wiped.lock().unwrap().push(("records", user_of(&headers)));
     match s.records.lock().unwrap().as_mut() {
         Some(sets) => {
             sets.clear();
@@ -614,7 +788,41 @@ async fn authorize(State(s): State<Shared>, Json(body): Json<Value>) -> axum::re
     Json(json!({ "url": format!("https://accounts.example/auth?state=st-1&redirect_uri={}", body["redirect_uri"].as_str().unwrap()) })).into_response()
 }
 
+/// A user's own Google account (`/v1/google`): the key itself has none, its runs use the server's.
+async fn own_google(State(s): State<Shared>, headers: HeaderMap) -> Json<Value> {
+    match user_of(&headers) {
+        None => Json(json!({ "available": false, "server": true, "services": ["gmail"], "connected": false })),
+        Some(user) => {
+            let connected = s.google_accounts.lock().unwrap().contains(&user);
+            Json(json!({ "available": true, "server": false, "services": ["gmail"], "connected": connected, "account": connected.then_some("ada@example.com") }))
+        }
+    }
+}
+
+async fn authorize_own(headers: HeaderMap, Json(body): Json<Value>) -> axum::response::Response {
+    match user_of(&headers) {
+        None => cedar_error(StatusCode::CONFLICT, "conflict", "this key's runs use the server's Google account"),
+        Some(user) => Json(json!({ "url": format!("https://accounts.example/auth?state=own-{user}&redirect_uri={}", body["redirect_uri"].as_str().unwrap()) })).into_response(),
+    }
+}
+
+async fn delete_own_google(State(s): State<Shared>, headers: HeaderMap) -> axum::response::Response {
+    let user = user_of(&headers).unwrap_or_default();
+    let mut accounts = s.google_accounts.lock().unwrap();
+    let before = accounts.len();
+    accounts.retain(|u| *u != user);
+    if accounts.len() == before {
+        return cedar_error(StatusCode::NOT_FOUND, "not_found", "no Google account is connected");
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
 async fn callback(State(s): State<Shared>, Json(body): Json<Value>) -> axum::response::Response {
+    // A user's own sign-in: the state says whose, and nobody has to be an admin.
+    if let Some(user) = body["state"].as_str().and_then(|st| st.strip_prefix("own-")) {
+        s.google_accounts.lock().unwrap().push(user.to_string());
+        return Json(json!({ "account": "ada@example.com", "own": true })).into_response();
+    }
     if let Some(refused) = admin(&s, "callback", body.clone()).await {
         return refused;
     }
@@ -634,7 +842,7 @@ impl Harness {
     async fn new(extra: &[(&str, &str)]) -> Self {
         let cedar = Shared::default();
         let fake = Router::new()
-            .route("/v1/runs", post(create_run))
+            .route("/v1/runs", post(create_run).get(list_runs))
             .route("/v1/runs/{id}", get(get_run).delete(delete_run))
             .route("/v1/runs/{id}/cancel", post(cancel_run))
             .route(
@@ -648,6 +856,8 @@ impl Harness {
                 }),
             )
             .route("/v1/runs/{id}/events", get(events))
+            .route("/v1/held", get(list_held))
+            .route("/v1/held/{id}", get(get_held).post(decide_held))
             .route("/v1/events", get(notifications))
             .route("/v1/runs/{id}/files", get(list_files))
             .route("/v1/runs/{id}/trace", get(trace))
@@ -657,7 +867,11 @@ impl Harness {
             .route("/v1/tools/{name}/call", post(call_tool))
             .route("/v1/models", get(models))
             .route("/v1/memory", get(list_memory).post(add_memory).delete(forget_all_memory))
+            .route("/v1/memory/graph", get(memory_graph))
             .route("/v1/memory/{id}", axum::routing::delete(forget_memory))
+            .route("/v1/actions", get(list_actions).post(save_action))
+            .route("/v1/actions/draft", post(draft_action))
+            .route("/v1/actions/{id}", get(one_action).put(one_action).delete(one_action))
             .route("/v1/records", get(list_records).delete(drop_all_records))
             .route("/v1/records/{name}", get(get_record_set).delete(drop_record_set))
             .route("/v1/defaults", get(|| async { Json(json!({ "model": "org/model-a", "model_id": "model-a", "system": "You are helpful.", "max_turns_cap": 25 })) }))
@@ -707,6 +921,10 @@ impl Harness {
                     if body["max_image_side"] == 1 {
                         return cedar_error(StatusCode::BAD_REQUEST, "bad_request", "max_image_side must be between 256 and 8192");
                     }
+                    if let Some(on) = body["model_selection"].as_bool() {
+                        *s.model_selection.lock().unwrap() = Some(on);
+                        return Json(json!({ "model_selection": on })).into_response();
+                    }
                     Json(json!({ "max_image_side": body["max_image_side"], "defaults": { "max_image_side": 1568 } })).into_response()
                 }),
             )
@@ -742,6 +960,9 @@ impl Harness {
             )
             .route("/v1/admin/integrations/google/authorize", post(authorize))
             .route("/v1/admin/integrations/google/callback", post(callback))
+            .route("/v1/google/callback", post(callback))
+            .route("/v1/google/authorize", post(authorize_own))
+            .route("/v1/google", get(own_google).delete(delete_own_google))
             .route(
                 "/v1/admin/marketplace/{name}/install",
                 post(|State(s): State<Shared>, Path(name): Path<String>, Json(body): Json<Value>| async move {
@@ -1190,7 +1411,8 @@ async fn validation_and_upstream_errors() {
     assert_eq!(status, StatusCode::CREATED);
 
     let (_, cfg) = h.json(Method::GET, "/api/config", None).await;
-    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models_access": "users", "memory": true, "records": true, "contributions": false }));
+    assert_eq!(cfg["feedback_issues_url"], "https://github.com/hanneshapke/cedar/issues/new", "where a report can be filed as an issue");
+    assert_eq!(cfg, json!({ "auth_required": false, "admin_enabled": false, "models_access": "users", "memory": true, "records": true, "contributions": false, "private_chats": true, "feedback_issues_url": "https://github.com/hanneshapke/cedar/issues/new" }));
     // The pickers take cedar's registry, relayed.
     let (status, listed) = h.json(Method::GET, "/api/models", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1341,6 +1563,8 @@ async fn both_uis_are_served() {
             assert!(page.contains("<script src=\"/clarify-view.js\">"), "{uri} loads the question form");
             assert!(page.contains("href=\"/clarify-view.css\""), "{uri} loads the question form styles");
             assert!(page.contains("<script src=\"/followup-view.js\">") && page.contains("href=\"/followup-view.css\""), "{uri} loads the follow-up card");
+            assert!(page.contains("<script src=\"/handover-view.js\">") && page.contains("href=\"/handover-view.css\""), "{uri} loads the feedback and outbox cards");
+            assert!(page.find("/handover-view.js") < page.find("src=\"/agents.js\""), "{uri} loads the outbox before the Agents page that shows it");
             assert!(page.find("/map-view.js") < page.find("/transit-view.js"), "{uri} loads the trip view after the map view it draws with");
             assert!(page.contains("href=\"/transit-view.css\""), "{uri} loads the trip styles");
             assert!(page.contains("<script src=\"/stock-view.js\">"), "{uri} loads the stock view");
@@ -1366,6 +1590,10 @@ async fn both_uis_are_served() {
             assert!(
                 page.find("src=\"/settings-shell.js\"") < page.find("src=\"/memory.js\""),
                 "{uri} loads the Memory page after the Settings frame it registers with"
+            );
+            assert!(
+                page.find("src=\"/memory-graph.js\"") < page.find("src=\"/memory.js\"") && page.contains("href=\"/memory-graph.css\""),
+                "{uri} loads the memory graph before the Memory page that draws it"
             );
             assert!(page.contains("id=\"reasoning\""), "{uri} has a reasoning picker");
             assert!(page.contains("href=\"/models.css\""), "{uri} loads the send menu styles");
@@ -1425,6 +1653,8 @@ async fn both_uis_are_served() {
         ("/clarify-view.css", "text/css; charset=utf-8", ".cedar-clarify"),
         ("/followup-view.js", "text/javascript; charset=utf-8", "cedarFollowUp"),
         ("/followup-view.css", "text/css; charset=utf-8", ".cedar-followup"),
+        ("/handover-view.js", "text/javascript; charset=utf-8", "cedarHandover"),
+        ("/handover-view.css", "text/css; charset=utf-8", ".cedar-handover"),
         ("/transit-view.js", "text/javascript; charset=utf-8", "cedarTransit"),
         ("/transit-view.css", "text/css; charset=utf-8", ".cedar-trip"),
         ("/stock-view.js", "text/javascript; charset=utf-8", "cedarStocks"),
@@ -1446,6 +1676,8 @@ async fn both_uis_are_served() {
         ("/star.css", "text/css; charset=utf-8", ".cedar-star"),
         ("/settings-shell.js", "text/javascript; charset=utf-8", "cedarSettingsShell"),
         ("/memory.js", "text/javascript; charset=utf-8", "id: 'memory'"),
+        ("/memory-graph.js", "text/javascript; charset=utf-8", "cedarMemoryGraph"),
+        ("/memory-graph.css", "text/css; charset=utf-8", ".cedar-mgraph"),
         ("/settings.js", "text/javascript; charset=utf-8", "cedarSettings"),
         ("/settings.css", "text/css; charset=utf-8", ".settings-dialog"),
         ("/attach.js", "text/javascript; charset=utf-8", "cedarAttach"),
@@ -1986,6 +2218,32 @@ async fn the_language_goes_with_messages_schedules_and_notifications() {
 }
 
 #[tokio::test]
+async fn the_devices_time_zone_goes_with_messages_and_is_kept_for_later_runs() {
+    let h = Harness::new(&[]).await;
+    let (cid, _) = h.finished_conversation("first", "ok").await;
+    let first = h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+    assert!(first.get("timezone").is_none(), "no zone known: cedar's default");
+
+    let msgs = format!("/api/conversations/{cid}/messages");
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "tomorrow?", "timezone": " America/Los_Angeles " }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap()["timezone"], "America/Los_Angeles");
+    // It is kept, for the runs nobody sends a message for, and saving settings keeps it.
+    let (_, got) = h.json(Method::GET, "/api/settings", None).await;
+    assert_eq!(got["timezone"], "America/Los_Angeles");
+    let (_, prefs) = h.json(Method::PUT, "/api/settings", Some(json!({ "system": "be brief" }))).await;
+    assert_eq!(prefs["timezone"], "America/Los_Angeles");
+    // A message without one uses the kept one.
+    let (_, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "and after?" }))).await;
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("ok"));
+    assert_eq!(h.cedar.bodies.lock().unwrap().last().unwrap()["timezone"], "America/Los_Angeles");
+
+    let (status, _) = h.json(Method::POST, &msgs, Some(json!({ "content": "x", "timezone": "Mars/Base" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
     let h = Harness::new(&[]).await;
 
@@ -2007,7 +2265,7 @@ async fn runs_get_the_default_settings_and_a_conversations_own_tools() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{prefs}");
-    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7, "plan": "off", "locale": null }));
+    assert_eq!(prefs, json!({ "tools": ["weather", "web_search"], "model": "model-b", "system": "be brief", "max_turns": 7, "plan": "off", "locale": null, "timezone": null }));
     let (status, _) = h.json(Method::PUT, "/api/settings", Some(json!({ "plan": "sometimes" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let (_, got) = h.json(Method::GET, "/api/settings", None).await;
@@ -2127,6 +2385,55 @@ async fn admin_call(h: &Harness, method: Method, uri: &str, admin: Option<&str>,
     .unwrap();
     let (status, _, text) = h.call_full(req).await;
     (status, serde_json::from_str(&text).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn while_model_selection_is_off_cedar_chooses_the_model() {
+    let h = Harness::new(&[]).await;
+    // A cedar from before the setting: users choose, and the pickers are there.
+    let (_, listed) = h.json(Method::GET, "/api/models", None).await;
+    assert_eq!(listed["selection"], true);
+    let (status, _) = h.json(Method::PUT, "/api/settings", Some(json!({ "model": "model-b" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, conversation) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let msgs = format!("/api/conversations/{}/messages", conversation["id"].as_str().unwrap());
+    let last_body = || h.cedar.bodies.lock().unwrap().last().cloned().unwrap();
+
+    // Whoever may manage the models may turn choosing them off (no admin token is set up here).
+    let (status, saved) = h.json(Method::PUT, "/api/integrations/model-selection", Some(json!({ "enabled": false }))).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved, json!({ "selection": false }));
+    assert_eq!(h.json(Method::GET, "/api/models", None).await.1["selection"], false);
+
+    // Neither what a message names nor the saved default reaches cedar: it chooses.
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "hi", "model": "model-a", "reasoning": "high" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    assert_eq!((turn["model"].clone(), turn["reasoning"].clone()), (Value::Null, Value::Null));
+    let sent = last_body();
+    assert!(sent.get("model").is_none() && sent.get("reasoning").is_none(), "{sent}");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("hello"));
+    let (status, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "more" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    assert!(last_body().get("model").is_none(), "the saved default is not named either");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("more"));
+
+    // On again, the saved default and a message's own choice go through as before.
+    let (_, saved) = h.json(Method::PUT, "/api/integrations/model-selection", Some(json!({ "enabled": true }))).await;
+    assert_eq!(saved, json!({ "selection": true }));
+    let (_, turn) = h.json(Method::POST, &msgs, Some(json!({ "content": "again" }))).await;
+    assert_eq!(last_body()["model"], "model-b");
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("again"));
+    h.json(Method::POST, &msgs, Some(json!({ "content": "and again", "model": "model-a", "reasoning": "high" }))).await;
+    assert_eq!((last_body()["model"].clone(), last_body()["reasoning"].clone()), (json!("model-a"), json!("high")));
+
+    let (status, _) = h.json(Method::PUT, "/api/integrations/model-selection", Some(json!({ "enabled": "yes" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // CHAT_MODELS_ACCESS=admins: the switch needs the admin token like the models do.
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin"), ("CHAT_MODELS_ACCESS", "admins")]).await;
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/model-selection", None, Some(json!({ "enabled": true }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = admin_call(&h, Method::PUT, "/api/integrations/model-selection", Some("admin"), Some(json!({ "enabled": true }))).await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
@@ -3410,6 +3717,9 @@ async fn memory_is_relayed_with_the_conversation_it_came_from() {
     let (status, body) = h.json(Method::GET, "/api/memory", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({ "supported": false, "items": [], "profile": null, "limits": null }));
+    let (status, body) = h.json(Method::GET, "/api/memory/graph", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "supported": false, "nodes": [], "edges": [], "total": 0, "left_out": 0 }));
 
     let (cid, run_id) = h.finished_conversation("I prefer metric units", "Noted.").await;
     let other_run = Uuid::new_v4().to_string();
@@ -3429,6 +3739,18 @@ async fn memory_is_relayed_with_the_conversation_it_came_from() {
     assert_eq!(items.len(), 3);
     assert_eq!(items[0]["conversation_id"], json!(cid));
     assert_eq!(items[0]["title"], "I prefer metric units");
+    // The graph's nodes get the same, its edges come as cedar sent them, and only the
+    // archive and the limit are passed on.
+    let (status, graph) = h.json(Method::GET, "/api/memory/graph?archived=true&limit=50&kind=fact", None).await;
+    assert_eq!(status, StatusCode::OK, "{graph}");
+    assert_eq!(graph["supported"], true);
+    assert_eq!(graph["asked"], json!({ "archived": "true", "limit": "50" }));
+    assert_eq!(graph["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(graph["nodes"][0]["conversation_id"], json!(cid));
+    assert_eq!(graph["nodes"][0]["title"], "I prefer metric units");
+    assert_eq!(graph["nodes"][1]["conversation_id"], Value::Null);
+    assert_eq!(graph["edges"], json!([{ "source": a, "target": b, "kind": "topic", "weight": 1, "topics": ["travel"] }]));
+    assert_eq!(graph["total"], 3);
     // A run this chat doesn't know, and a memory without a run, have no conversation.
     assert_eq!((&items[1]["conversation_id"], &items[1]["title"]), (&Value::Null, &Value::Null));
     assert_eq!(items[2]["conversation_id"], Value::Null);
@@ -3450,6 +3772,60 @@ async fn memory_is_relayed_with_the_conversation_it_came_from() {
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (_, body) = h.json(Method::GET, "/api/memory", None).await;
     assert_eq!(body["items"], json!([]));
+}
+
+#[tokio::test]
+async fn actions_are_relayed_to_cedar_and_a_recording_gets_room() {
+    let h = Harness::new(&[]).await;
+    // A cedar from before actions: the page says so instead of failing.
+    let (status, body) = h.json(Method::GET, "/api/actions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({ "supported": false, "actions": [] }));
+
+    *h.cedar.actions.lock().unwrap() = Some(vec![]);
+    let (status, body) = h.json(Method::GET, "/api/actions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["supported"], true);
+    assert_eq!(body["recording"], json!({ "video": false, "frames": true }));
+    assert_eq!(body["secrets"], true);
+
+    // A recording is far larger than any other body this server takes, and goes on as it is.
+    let frame = "A".repeat(600 * 1024);
+    let recording = json!({ "goal": "Getting my invoice", "frames": [{ "at_ms": 0, "media_type": "image/jpeg", "data": frame }] });
+    let (status, drafted) = h.json(Method::POST, "/api/actions/draft", Some(recording.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{drafted}");
+    assert_eq!(drafted["draft"]["steps"], json!(["Open the portal"]));
+    assert_eq!(drafted["watched"], "frames");
+    assert_eq!(h.cedar.action_calls.lock().unwrap()[0].2, recording);
+    assert!(h.cedar.actions.lock().unwrap().as_ref().unwrap().is_empty(), "a draft saves nothing");
+
+    let action = json!({ "title": "Get the invoice", "summary": "", "site": "portal.example.com", "steps": ["Open the portal"],
+                         "secrets": [{ "name": "password", "label": "Portal", "value": "hunter22" }] });
+    let (status, saved) = h.json(Method::POST, "/api/actions", Some(action.clone())).await;
+    assert_eq!(status, StatusCode::CREATED, "{saved}");
+    assert_eq!(saved["secrets"], json!([{ "name": "password", "label": "Portal", "saved": true }]));
+    let id = saved["id"].as_str().unwrap().to_string();
+
+    let (status, got) = h.json(Method::GET, &format!("/api/actions/{id}"), None).await;
+    assert_eq!((status, &got["title"]), (StatusCode::OK, &json!("Get the invoice")));
+    let mut edit = action.clone();
+    edit["title"] = json!("Fetch the invoice");
+    let (status, edited) = h.json(Method::PUT, &format!("/api/actions/{id}"), Some(edit)).await;
+    assert_eq!((status, &edited["title"]), (StatusCode::OK, &json!("Fetch the invoice")));
+
+    // cedar's refusals come back as they are; an id that is none never reaches it.
+    let (status, err) = h.json(Method::POST, "/api/actions", Some(json!({ "title": "x", "steps": [] }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"]["message"], "give at least one step");
+    let calls = h.cedar.action_calls.lock().unwrap().len();
+    let (status, _) = h.call(Method::DELETE, "/api/actions/not-an-id", None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(h.cedar.action_calls.lock().unwrap().len(), calls);
+
+    let (status, _) = h.call(Method::DELETE, &format!("/api/actions/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = h.call(Method::DELETE, &format!("/api/actions/{id}"), None, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -4329,4 +4705,521 @@ async fn a_suggested_follow_up_becomes_an_agent_only_when_accepted() {
     assert_eq!(h.json(Method::DELETE, &format!("/api/agents/{}", agent["id"].as_str().unwrap()), None).await.0, StatusCode::NO_CONTENT);
     let (_, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
     assert_eq!(detail["followups"][0]["agent_id"], Value::Null);
+}
+
+// -- handing over: the outbox, feedback, and being told a response waits ------------------------
+
+/// A call a run had held, as cedar lists it.
+fn held_call(id: &str, run_id: &str) -> Value {
+    json!({
+        "id": id, "run_id": run_id, "call_id": "t1", "tool": "gmail_send_message",
+        "input": { "to": "ana@example.com", "subject": "Digest", "body": "Three things today." },
+        "reason": "Send message in your Gmail to ana@example.com: \"Digest\".", "why": "unattended",
+        "status": "pending", "edited": false, "output": null, "created_at": "2026-10-17T09:30:00Z", "decided_at": null,
+    })
+}
+
+#[tokio::test]
+async fn what_an_agents_run_would_send_waits_in_the_outbox_until_approved() {
+    let h = Harness::new(&[]).await;
+    // A new agent holds what it would send, and says so to cedar with every run.
+    let (status, agent) = h.json(Method::POST, "/api/agents", Some(agent_body(json!({ "kind": "interval", "every_minutes": 90 })))).await;
+    assert_eq!(status, StatusCode::CREATED, "{agent}");
+    assert_eq!(agent["hold_writes"], true);
+    let id = agent["id"].as_str().unwrap().to_string();
+    let (status, run) = h.json(Method::POST, &format!("/api/agents/{id}/run"), None).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{run}");
+    let (_, request) = h.last_run_request();
+    assert_eq!(request["hold_writes"], true);
+    assert!(request.get("interactive").is_none(), "nobody reads along: {request}");
+    let detail = h.agent(&id).await;
+    let conversation = detail["runs"][0]["conversation_id"].as_str().unwrap().to_string();
+    let turn = Uuid::parse_str(detail["runs"][0]["turn_id"].as_str().unwrap()).unwrap();
+    let run_id = h.state.store.get_turn(turn).await.unwrap().unwrap().run_id.to_string();
+
+    // The run ends with a mail it wanted to send: it is in the outbox, with where it came from.
+    let (_, empty) = h.json(Method::GET, "/api/outbox", None).await;
+    assert_eq!(empty["items"], json!([]));
+    let held_id = Uuid::new_v4().to_string();
+    h.cedar.held.lock().unwrap().push(held_call(&held_id, &run_id));
+    h.cedar.held.lock().unwrap().push(held_call(&Uuid::new_v4().to_string(), &Uuid::new_v4().to_string()));
+    let (status, outbox) = h.json(Method::GET, "/api/outbox", None).await;
+    assert_eq!(status, StatusCode::OK, "{outbox}");
+    let items = outbox["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["id"], held_id.as_str());
+    assert_eq!(items[0]["conversation_id"], conversation.as_str());
+    assert_eq!(items[0]["agent"], json!({ "id": id, "title": "Watcher" }));
+    assert!(items[1].get("conversation_id").is_none(), "a run this chat doesn't know is listed as it is: {}", items[1]);
+    assert_eq!(h.json(Method::GET, "/api/outbox?status=nope", None).await.0, StatusCode::BAD_REQUEST);
+
+    // The finished run is announced as waiting for approval, whatever the scope.
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover", "pushover": { "token": "t", "user": "u" } }))).await;
+    h.finish_with(&run_id, "completed", Some("The digest is ready to send."), Some("end_turn"));
+    h.sync().await;
+    let outcome = cedar_chat::channels::dispatch(&h.state, turn).await.unwrap().expect("sent");
+    assert!(outcome.is_ok(), "{outcome:?}");
+    let pushed = h.cedar.pushover.lock().unwrap().last().unwrap().clone();
+    assert!(pushed["title"].ends_with(": waiting for your approval"), "{}", pushed["title"]);
+    assert!(pushed["message"].contains("has something waiting for your approval"), "{}", pushed["message"]);
+
+    // Deciding: only approve or discard; an edit goes to cedar as the input to send.
+    let uri = format!("/api/outbox/{held_id}");
+    assert_eq!(h.json(Method::POST, &uri, Some(json!({ "decision": "send" }))).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(h.json(Method::POST, &format!("/api/outbox/{}", Uuid::new_v4()), Some(json!({ "decision": "approve" }))).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(h.json(Method::GET, "/api/outbox/not-an-id", None).await.0, StatusCode::NOT_FOUND);
+    assert!(h.cedar.held_decisions.lock().unwrap().len() == 1, "a bad decision never reaches cedar");
+    let edited = json!({ "to": "ana@example.com", "subject": "Digest", "body": "Two things today." });
+    let (status, sent) = h.json(Method::POST, &uri, Some(json!({ "decision": "approve", "input": edited }))).await;
+    assert_eq!(status, StatusCode::OK, "{sent}");
+    assert_eq!((sent["status"].as_str(), sent["edited"].as_bool()), (Some("sent"), Some(true)));
+    assert_eq!(sent["agent"]["title"], "Watcher");
+    assert_eq!(h.cedar.held_decisions.lock().unwrap().last().unwrap().1, json!({ "decision": "approve", "input": edited }));
+    assert_eq!(h.json(Method::POST, &uri, Some(json!({ "decision": "discard" }))).await.0, StatusCode::CONFLICT);
+    let (_, left) = h.json(Method::GET, "/api/outbox", None).await;
+    assert_eq!(left["items"].as_array().unwrap().len(), 1);
+    let (_, all) = h.json(Method::GET, "/api/outbox?status=all", None).await;
+    assert_eq!(all["items"].as_array().unwrap().len(), 2);
+    let (_, one) = h.json(Method::GET, &uri, None).await;
+    assert_eq!(one["status"], "sent");
+    // With nothing left of this run in the outbox, it is an agent's run like any other.
+    cedar_chat::channels::dispatch(&h.state, turn).await.unwrap();
+    assert!(h.cedar.pushover.lock().unwrap().last().unwrap()["title"].ends_with(": finished"));
+
+    // An agent told to act on its own says nothing to cedar, and one from before keeps doing so.
+    let (status, changed) = h.json(Method::PATCH, &format!("/api/agents/{id}"), Some(json!({ "hold_writes": false }))).await;
+    assert_eq!(status, StatusCode::OK, "{changed}");
+    assert_eq!(changed["hold_writes"], false);
+    let (status, _) = h.json(Method::POST, &format!("/api/agents/{id}/run"), None).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert!(h.last_run_request().1.get("hold_writes").is_none());
+}
+
+#[tokio::test]
+async fn what_cedar_could_not_do_is_kept_as_feedback_only_when_sent() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin")]).await;
+    let (_, made) = as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": "Ada" }))).await;
+    let ada = made["token"].as_str().unwrap().to_string();
+    let (_, conv) = as_user(&h, Method::POST, "/api/conversations", &ada, false, Some(json!({}))).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let (_, turn) = as_user(&h, Method::POST, &format!("/api/conversations/{cid}/messages"), &ada, false, Some(json!({ "content": "book a table" }))).await;
+    h.finish(turn["run_id"].as_str().unwrap(), "completed", Some("I can't book tables here."));
+    let turn = turn["id"].as_str().unwrap().to_string();
+    let (_, detail) = as_user(&h, Method::GET, &format!("/api/conversations/{cid}"), &ada, false, None).await;
+    assert_eq!(detail["limitations"], json!([]), "a report nobody decided on is not listed");
+
+    let uri = format!("/api/turns/{turn}/limitations/call_1");
+    let send = json!({ "decision": "send", "summary": "  Could not book a table:\n no booking tool ", "category": "missing_tool", "needed": "a booking tool", "comment": "I ask for this every week." });
+    for (body, status) in [
+        (json!({ "decision": "later" }), StatusCode::BAD_REQUEST),
+        (json!({ "decision": "send" }), StatusCode::BAD_REQUEST),
+        (json!({ "decision": "send", "summary": "x", "category": "nope" }), StatusCode::BAD_REQUEST),
+        (json!({ "decision": "send", "summary": "x".repeat(301) }), StatusCode::BAD_REQUEST),
+    ] {
+        assert_eq!(as_user(&h, Method::PUT, &uri, &ada, false, Some(body)).await.0, status);
+    }
+    // Someone else's turn is not there to report on.
+    assert_eq!(as_user(&h, Method::PUT, &uri, "access", false, Some(send.clone())).await.0, StatusCode::NOT_FOUND);
+    let (status, done) = as_user(&h, Method::PUT, &uri, &ada, false, Some(send)).await;
+    assert_eq!(status, StatusCode::OK, "{done}");
+    let sent = &done["feedback"];
+    assert_eq!((sent["status"].as_str(), sent["summary"].as_str(), sent["category"].as_str()), (Some("sent"), Some("Could not book a table: no booking tool"), Some("missing_tool")));
+    assert_eq!(sent["comment"], "I ask for this every week.");
+    // The first decision stands.
+    let (_, late) = as_user(&h, Method::PUT, &uri, &ada, false, Some(json!({ "decision": "dismiss" }))).await;
+    assert_eq!(late["feedback"]["status"], "sent");
+    // A dismissed report keeps nothing of what it said.
+    let (_, gone) = as_user(&h, Method::PUT, &format!("/api/turns/{turn}/limitations/call_2"), &ada, false, Some(json!({ "decision": "dismiss" }))).await;
+    assert_eq!((gone["feedback"]["status"].as_str(), gone["feedback"]["summary"].is_null()), (Some("dismissed"), true));
+    let (_, detail) = as_user(&h, Method::GET, &format!("/api/conversations/{cid}"), &ada, false, None).await;
+    assert_eq!(detail["limitations"].as_array().unwrap().len(), 2);
+
+    // Ada lists hers; the primary user has none; whoever runs the server sees everyone's.
+    let (status, hers) = as_user(&h, Method::GET, "/api/feedback", &ada, false, None).await;
+    assert_eq!(status, StatusCode::OK, "{hers}");
+    assert_eq!(hers["feedback"].as_array().unwrap().len(), 1, "only what was sent");
+    assert!(hers["feedback"][0].get("user_name").is_none());
+    assert_eq!(hers["by_category"], json!([{ "category": "missing_tool", "count": 1 }]));
+    assert_eq!(as_user(&h, Method::GET, "/api/feedback", "access", false, None).await.1["feedback"], json!([]));
+    assert_eq!(as_user(&h, Method::GET, "/api/feedback?users=all", "access", false, None).await.0, StatusCode::FORBIDDEN);
+    let (status, all) = as_user(&h, Method::GET, "/api/feedback?users=all", "access", true, None).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    assert_eq!(all["feedback"][0]["user_name"], "Ada");
+    let fid = all["feedback"][0]["id"].as_str().unwrap().to_string();
+
+    // The report outlives its conversation, and its sender (or an admin) can take it back.
+    assert_eq!(as_user(&h, Method::DELETE, &format!("/api/conversations/{cid}"), &ada, false, None).await.0, StatusCode::NO_CONTENT);
+    let (_, kept) = as_user(&h, Method::GET, "/api/feedback", &ada, false, None).await;
+    assert_eq!((kept["feedback"].as_array().unwrap().len(), kept["feedback"][0]["turn_id"].is_null()), (1, true));
+    assert_eq!(as_user(&h, Method::DELETE, &format!("/api/feedback/{fid}"), "access", false, None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(as_user(&h, Method::DELETE, &format!("/api/feedback/{fid}"), &ada, false, None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(as_user(&h, Method::GET, "/api/feedback", &ada, false, None).await.1["feedback"], json!([]));
+}
+
+#[tokio::test]
+async fn a_response_that_waits_for_an_ok_is_announced_when_nobody_answers() {
+    let h = Harness::new(&[("CHAT_ATTENTION_DELAY_SECS", "0")]).await;
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover", "pushover": { "token": "t", "user": "u" } }))).await;
+    let pushed = || h.cedar.pushover.lock().unwrap().clone();
+
+    // Asked and answered while someone was looking: nothing goes out.
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({ "title": "Quick" }))).await;
+    let (status, _) = h.json(Method::POST, &format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap()), Some(json!({ "content": "ANSWERED OK" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(pushed().is_empty(), "{:?}", pushed());
+
+    // Asked, and nobody answers: the person is told what is waiting, once.
+    let mut notices = h.notice_stream().await;
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({ "title": "Invoice" }))).await;
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let (_, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "NEEDS OK" }))).await;
+    for _ in 0..100 {
+        if !pushed().is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    }
+    let sent = pushed();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0]["title"], "Invoice: needs your OK");
+    assert_eq!(sent[0]["message"], "Cedar is waiting in \"Invoice\":\nSend message in your Gmail to a@x.org.");
+    assert!(sent[0]["url"].ends_with(&format!("/#/c/{cid}")));
+    // The open tabs heard of it at once.
+    let frame = tokio::time::timeout(std::time::Duration::from_secs(2), notices.frame()).await.unwrap().unwrap().unwrap();
+    let text = String::from_utf8(frame.into_data().unwrap().to_vec()).unwrap();
+    assert!(text.contains("\"type\":\"turn.waiting\"") && text.contains(turn["id"].as_str().unwrap()), "{text}");
+    // The stream is reopened while the run goes on; the same wait is not announced again.
+    tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
+    assert_eq!(pushed().len(), 1);
+}
+
+// -- users ------------------------------------------------------------------------------------
+
+/// One request as whoever `token` belongs to, with the admin token when `admin`.
+async fn as_user(h: &Harness, method: Method, uri: &str, token: &str, admin: bool, body: Option<Value>) -> (StatusCode, Value) {
+    let mut req = Request::builder().method(method).uri(uri).header("authorization", format!("Bearer {token}"));
+    if admin {
+        req = req.header("x-admin-token", "admin");
+    }
+    let req = match body {
+        Some(b) => req.header("content-type", "application/json").body(Body::from(b.to_string())),
+        None => req.body(Body::empty()),
+    }
+    .unwrap();
+    let (status, _, text) = h.call_full(req).await;
+    (status, serde_json::from_str(&text).unwrap_or(Value::Null))
+}
+
+#[tokio::test]
+async fn each_user_has_their_own_conversations_agents_settings_and_cedar_owner() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin")]).await;
+
+    // The server starts with its primary user: whoever has the shared access token.
+    let (status, me) = as_user(&h, Method::GET, "/api/me", "access", false, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!((me["primary"].as_bool(), me["has_token"].as_bool()), (Some(true), Some(false)));
+
+    // Users are managed with the admin token; a new one's token is shown once.
+    let (status, _) = as_user(&h, Method::POST, "/api/users", "access", false, Some(json!({ "name": "Ada" }))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": " " }))).await.0, StatusCode::BAD_REQUEST);
+    let (status, made) = as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": "Ada" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{made}");
+    let ada = made["token"].as_str().unwrap().to_string();
+    let ada_id = made["user"]["id"].as_str().unwrap().to_string();
+    assert_eq!(ada.len(), 64);
+    let (_, me) = as_user(&h, Method::GET, "/api/me", &ada, false, None).await;
+    assert_eq!((me["id"].as_str(), me["name"].as_str(), me["primary"].as_bool()), (Some(ada_id.as_str()), Some("Ada"), Some(false)));
+    let (_, list) = as_user(&h, Method::GET, "/api/users", &ada, true, None).await;
+    assert_eq!(list["users"].as_array().unwrap().len(), 2);
+    assert!(!list.to_string().contains(&ada), "the token is never listed");
+    assert_eq!(as_user(&h, Method::GET, "/api/me", "someone-else", false, None).await.0, StatusCode::UNAUTHORIZED);
+
+    // Each sends a message: the primary user's run is the key's own in cedar, Ada's is hers.
+    let (_, mine) = as_user(&h, Method::POST, "/api/conversations", "access", false, Some(json!({}))).await;
+    let mine = mine["id"].as_str().unwrap().to_string();
+    let (status, _) = as_user(&h, Method::POST, &format!("/api/conversations/{mine}/messages"), "access", false, Some(json!({ "content": "the owner's question" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (_, hers) = as_user(&h, Method::POST, "/api/conversations", &ada, false, Some(json!({}))).await;
+    let hers = hers["id"].as_str().unwrap().to_string();
+    let (status, turn) = as_user(&h, Method::POST, &format!("/api/conversations/{hers}/messages"), &ada, false, Some(json!({ "content": "Ada's question" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    let (hers_turn, hers_run) = (turn["id"].as_str().unwrap().to_string(), turn["run_id"].as_str().unwrap().to_string());
+    assert_eq!(*h.cedar.run_users.lock().unwrap(), [None, Some(ada_id.clone())]);
+
+    // Neither sees, finds or changes the other's.
+    let titles = |list: &Value| list["conversations"].as_array().unwrap().iter().map(|c| c["title"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+    assert_eq!(titles(&as_user(&h, Method::GET, "/api/conversations", "access", false, None).await.1), ["the owner's question"]);
+    assert_eq!(titles(&as_user(&h, Method::GET, "/api/conversations", &ada, false, None).await.1), ["Ada's question"]);
+    for (method, uri, body) in [
+        (Method::GET, format!("/api/conversations/{hers}"), None),
+        (Method::PATCH, format!("/api/conversations/{hers}"), Some(json!({ "title": "Taken" }))),
+        (Method::DELETE, format!("/api/conversations/{hers}"), None),
+        (Method::POST, format!("/api/conversations/{hers}/messages"), Some(json!({ "content": "let me in" }))),
+        (Method::PUT, format!("/api/conversations/{hers}/star"), None),
+        (Method::GET, format!("/api/turns/{hers_turn}/trace"), None),
+        (Method::POST, format!("/api/turns/{hers_turn}/cancel"), None),
+    ] {
+        let (status, _) = as_user(&h, method.clone(), &uri, "access", false, body).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{method} {uri}");
+    }
+    let (_, found) = as_user(&h, Method::GET, "/api/conversations/search?q=question", "access", false, None).await;
+    assert_eq!(found["conversations"].as_array().unwrap().len(), 1, "{found}");
+
+    // Pairing a phone hands out the caller's own token, never the shared one to someone else.
+    let (_, pairing) = as_user(&h, Method::GET, "/api/pairing", &ada, false, None).await;
+    assert_eq!(pairing["access_token"], ada.as_str());
+    assert!(!pairing.to_string().contains("\"access\""), "{pairing}");
+    assert_eq!(as_user(&h, Method::GET, "/api/pairing", "access", false, None).await.1["access_token"], "access");
+
+    // Settings are a person's own.
+    let (status, _) = as_user(&h, Method::PUT, "/api/settings/locale", &ada, false, Some(json!({ "locale": "de" }))).await;
+    assert!(status.is_success(), "{status}");
+    assert_eq!(as_user(&h, Method::GET, "/api/settings", &ada, false, None).await.1["locale"], "de");
+    assert_eq!(as_user(&h, Method::GET, "/api/settings", "access", false, None).await.1["locale"], Value::Null);
+
+    // Ada's response finishes: cedar's one stream of everyone's runs tells this server, and
+    // only her inbox has it.
+    h.finish_with(&hers_run, "completed", Some("an answer for Ada"), Some("end_turn"));
+    assert_eq!(h.sync().await, 1);
+    assert!(h.cedar.stream_queries.lock().unwrap().last().unwrap().contains("users=all"));
+    assert_eq!(as_user(&h, Method::GET, "/api/inbox", &ada, false, None).await.1["unread"], 1);
+    assert_eq!(as_user(&h, Method::GET, "/api/inbox", "access", false, None).await.1["unread"], 0);
+
+    // A new token replaces the old one.
+    let (status, rotated) = as_user(&h, Method::POST, &format!("/api/users/{ada_id}/token"), "access", true, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let ada_new = rotated["token"].as_str().unwrap().to_string();
+    assert_eq!(as_user(&h, Method::GET, "/api/me", &ada, false, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(as_user(&h, Method::GET, "/api/me", &ada_new, false, None).await.0, StatusCode::OK);
+
+    // Removing her takes her conversations here and her runs, memories and records in cedar;
+    // the primary user can't be removed.
+    let primary = me_id(&h, "access").await;
+    assert_eq!(as_user(&h, Method::DELETE, &format!("/api/users/{primary}"), "access", true, None).await.0, StatusCode::CONFLICT);
+    assert_eq!(as_user(&h, Method::DELETE, &format!("/api/users/{ada_id}"), "access", true, None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(as_user(&h, Method::GET, "/api/me", &ada_new, false, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(*h.cedar.deleted.lock().unwrap(), [Uuid::parse_str(&hers_run).unwrap()]);
+    assert_eq!(*h.cedar.wiped.lock().unwrap(), [("memory", Some(ada_id.clone())), ("records", Some(ada_id))]);
+    assert_eq!(titles(&as_user(&h, Method::GET, "/api/conversations", "access", false, None).await.1), ["the owner's question"]);
+}
+
+async fn me_id(h: &Harness, token: &str) -> String {
+    as_user(h, Method::GET, "/api/me", token, false, None).await.1["id"].as_str().unwrap().to_string()
+}
+
+/// A scheduled agent runs as the user who made it, whoever the scheduler itself runs as.
+#[tokio::test]
+async fn an_agent_runs_as_its_owner() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin")]).await;
+    let (_, made) = as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": "Ada" }))).await;
+    let (ada, ada_id) = (made["token"].as_str().unwrap().to_string(), made["user"]["id"].as_str().unwrap().to_string());
+    let body = json!({ "title": "Morning", "prompt": "what is new?", "frequency": "daily", "time": "08:00", "timezone": "UTC" });
+    let (status, schedule) = as_user(&h, Method::POST, "/api/schedules", &ada, false, Some(body)).await;
+    assert_eq!(status, StatusCode::CREATED, "{schedule}");
+    let id = schedule["id"].as_str().unwrap();
+    assert!(as_user(&h, Method::GET, "/api/schedules", "access", false, None).await.1["schedules"].as_array().unwrap().is_empty());
+    assert_eq!(as_user(&h, Method::GET, &format!("/api/schedules/{id}"), "access", false, None).await.0, StatusCode::NOT_FOUND);
+
+    let started = schedule::tick(&h.state, Utc::now() + chrono::Duration::days(2)).await.unwrap();
+    assert_eq!(started, 1);
+    assert_eq!(*h.cedar.run_users.lock().unwrap(), [Some(ada_id)]);
+    let (_, detail) = as_user(&h, Method::GET, &format!("/api/schedules/{id}"), &ada, false, None).await;
+    assert_eq!(detail["runs"].as_array().unwrap().len(), 1, "{detail}");
+}
+
+/// A cedar that doesn't count this service among its service keys: the server works as before
+/// for its one user, and says what to change when a second is added.
+#[tokio::test]
+async fn without_a_service_key_there_is_only_the_primary_user() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin")]).await;
+    *h.cedar.not_service.lock().unwrap() = true;
+    let (status, err) = as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": "Ada" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(err["error"]["message"].as_str().unwrap().contains("CEDAR_SERVICE_KEYS"), "{err}");
+    assert_eq!(as_user(&h, Method::GET, "/api/users", "access", true, None).await.1["users"].as_array().unwrap().len(), 1);
+
+    // The primary user's finished runs still arrive, over the key's own stream.
+    let (_, conv) = as_user(&h, Method::POST, "/api/conversations", "access", false, Some(json!({}))).await;
+    let (_, turn) = as_user(&h, Method::POST, &format!("/api/conversations/{}/messages", conv["id"].as_str().unwrap()), "access", false, Some(json!({ "content": "hello" }))).await;
+    h.finish_with(turn["run_id"].as_str().unwrap(), "completed", Some("hi"), Some("end_turn"));
+    assert_eq!(h.sync().await, 1);
+    assert_eq!(*h.cedar.run_users.lock().unwrap(), [None]);
+    assert_eq!(as_user(&h, Method::GET, "/api/inbox", "access", false, None).await.1["unread"], 1);
+}
+
+/// A user connects a Google account of their own, without the admin token; the primary user's
+/// is the server's.
+#[tokio::test]
+async fn a_user_connects_their_own_google_account() {
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin"), ("CHAT_PUBLIC_URL", "https://chat.example")]).await;
+    let (_, made) = as_user(&h, Method::POST, "/api/users", "access", true, Some(json!({ "name": "Ada" }))).await;
+    let (ada, ada_id) = (made["token"].as_str().unwrap().to_string(), made["user"]["id"].as_str().unwrap().to_string());
+
+    let (status, own) = as_user(&h, Method::GET, "/api/google", "access", false, None).await;
+    assert_eq!((status, own["server"].as_bool()), (StatusCode::OK, Some(true)));
+    assert_eq!(as_user(&h, Method::POST, "/api/google/connect", "access", false, None).await.0, StatusCode::CONFLICT);
+    let (_, own) = as_user(&h, Method::GET, "/api/google", &ada, false, None).await;
+    assert_eq!((own["server"].as_bool(), own["connected"].as_bool()), (Some(false), Some(false)));
+
+    let (status, connect) = as_user(&h, Method::POST, "/api/google/connect", &ada, false, None).await;
+    assert_eq!(status, StatusCode::OK, "{connect}");
+    let url = connect["url"].as_str().unwrap();
+    assert!(url.ends_with("redirect_uri=https://chat.example/api/oauth/google/callback"), "{url}");
+    // Google sends the browser back with no token; the state is hers.
+    let req = Request::builder().uri(format!("/api/oauth/google/callback?state=own-{ada_id}&code=c")).body(Body::empty()).unwrap();
+    let (status, headers, _) = h.call_full(req).await;
+    assert_eq!(status, StatusCode::SEE_OTHER);
+    assert_eq!(headers["location"], "/?integrations=connected&own=1");
+    let (_, own) = as_user(&h, Method::GET, "/api/google", &ada, false, None).await;
+    assert_eq!((own["connected"].as_bool(), own["account"].as_str()), (Some(true), Some("ada@example.com")));
+
+    assert_eq!(as_user(&h, Method::DELETE, "/api/google", &ada, false, None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(as_user(&h, Method::GET, "/api/google", &ada, false, None).await.1["connected"], false);
+
+    // Removing a user disconnects the account they had connected.
+    let req = Request::builder().uri(format!("/api/oauth/google/callback?state=own-{ada_id}&code=c")).body(Body::empty()).unwrap();
+    h.call_full(req).await;
+    assert_eq!(as_user(&h, Method::DELETE, &format!("/api/users/{ada_id}"), "access", true, None).await.0, StatusCode::NO_CONTENT);
+    assert!(h.cedar.google_accounts.lock().unwrap().is_empty());
+}
+
+// -- private conversations ------------------------------------------------------------------
+
+/// A private conversation with one message sent; returns its id, the turn's id and the run's.
+async fn private_conversation(h: &Harness, prompt: &str) -> (String, String, String) {
+    let (status, conv) = h.json(Method::POST, "/api/conversations", Some(json!({ "private": true }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{conv}");
+    assert_eq!(conv["private"], true);
+    let cid = conv["id"].as_str().unwrap().to_string();
+    let (status, turn) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": prompt }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{turn}");
+    (cid, turn["id"].as_str().unwrap().to_string(), turn["run_id"].as_str().unwrap().to_string())
+}
+
+#[tokio::test]
+async fn a_private_conversation_is_in_no_list_search_or_inbox() {
+    let h = Harness::new(&[]).await;
+    let (open, _) = h.finished_conversation("open zebra question", "an open answer").await;
+    let (cid, _, run) = private_conversation(&h, "private zebra question").await;
+    // Its runs are cedar's private runs; an open conversation's say nothing of it.
+    let bodies = h.cedar.bodies.lock().unwrap().clone();
+    assert_eq!(bodies[0].get("private"), None);
+    assert_eq!(bodies[1]["private"], true);
+    h.finish_with(&run, "completed", Some("a private zebra answer"), Some("end_turn"));
+    h.sync().await;
+
+    // It can be opened by whoever has its id, and says what it is.
+    let (status, detail) = h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(detail["conversation"]["private"], true);
+    assert_eq!(detail["conversation"]["unread"], false);
+    assert_eq!(detail["turns"][0]["final_text"], "a private zebra answer");
+    assert_eq!(detail["turns"][0]["seen"], true);
+
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    let ids: Vec<&str> = list["conversations"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, [open.as_str()]);
+    assert_eq!(list["conversations"][0]["private"], false);
+    let (_, found) = h.json(Method::GET, "/api/conversations/search?q=zebra", None).await;
+    let ids: Vec<&str> = found["conversations"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, [open.as_str()]);
+    let (_, inbox) = h.json(Method::GET, "/api/inbox", None).await;
+    assert!(inbox["items"].as_array().unwrap().iter().all(|i| i["conversation_id"] != cid.as_str()), "{inbox}");
+
+    // It can't be starred or contributed, and has no trace to show.
+    let (status, err) = h.json(Method::PUT, &format!("/api/conversations/{cid}/star"), None).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{err}");
+    let (_, starred) = h.json(Method::GET, "/api/starred", None).await;
+    assert!(starred["conversations"].as_array().unwrap().is_empty());
+    let (status, _) = h.json(Method::GET, &format!("/api/conversations/{cid}/contribution"), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let turn = detail["turns"][0]["id"].as_str().unwrap();
+    let (status, err) = h.json(Method::GET, &format!("/api/turns/{turn}/trace"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(err["error"]["message"].as_str().unwrap().contains("private"), "{err}");
+
+    // A follow-up continues the run, and is private too.
+    let (status, _) = h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "and then?" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let bodies = h.cedar.bodies.lock().unwrap().clone();
+    assert_eq!((bodies[2]["private"].as_bool(), bodies[2]["parent_id"].as_str()), (Some(true), Some(run.as_str())));
+}
+
+#[tokio::test]
+async fn nothing_about_a_private_conversation_is_announced() {
+    let h = Harness::new(&[]).await;
+    h.json(Method::PUT, "/api/notifications", Some(json!({ "default_method": "pushover", "scope": "all", "pushover": { "token": "t", "user": "u" } }))).await;
+    let mut notices = h.notice_stream().await;
+
+    // A private response that fails, which would otherwise be worth a push under any scope.
+    let (_, turn, run) = private_conversation(&h, "between us").await;
+    h.finish_with(&run, "failed", None, None);
+    assert_eq!(h.sync().await, 1);
+    let turn = Uuid::parse_str(&turn).unwrap();
+    // The turn was brought up to date, and that is all.
+    assert_eq!(h.state.store.get_turn(turn).await.unwrap().unwrap().status, "failed");
+    assert_eq!(cedar_chat::channels::dispatch(&h.state, turn).await.unwrap(), None);
+    assert!(h.cedar.pushover.lock().unwrap().is_empty());
+
+    // An open one after it is announced as ever, and is the first notice the tabs hear of.
+    let open = ended_turn(&h, "Open", "failed", None).await;
+    let notice = next_notice(&mut notices).await;
+    assert_eq!(notice["turn_id"], open.to_string());
+    assert!(cedar_chat::channels::dispatch(&h.state, open).await.unwrap().is_some());
+    assert_eq!(h.cedar.pushover.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn leaving_a_private_conversation_ends_it_even_mid_response() {
+    let h = Harness::new(&[]).await;
+    let (cid, _, run) = private_conversation(&h, "between us").await;
+    let run_id = Uuid::parse_str(&run).unwrap();
+    // An open conversation refuses to go while its response is being written.
+    let (_, conv) = h.json(Method::POST, "/api/conversations", Some(json!({}))).await;
+    let open = conv["id"].as_str().unwrap();
+    h.json(Method::POST, &format!("/api/conversations/{open}/messages"), Some(json!({ "content": "hi" }))).await;
+    assert_eq!(h.json(Method::DELETE, &format!("/api/conversations/{open}"), None).await.0, StatusCode::CONFLICT);
+
+    // The private one stops its run and goes at once.
+    assert_eq!(h.json(Method::DELETE, &format!("/api/conversations/{cid}"), None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(h.cedar.runs.lock().unwrap()[&run_id]["status"], "cancelled");
+    // Its run is deleted on cedar in the background.
+    for _ in 0..200 {
+        if h.cedar.deleted.lock().unwrap().contains(&run_id) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(*h.cedar.deleted.lock().unwrap(), [run_id]);
+}
+
+#[tokio::test]
+async fn a_private_conversation_nobody_ended_is_deleted_once_idle() {
+    // With the default of a day, one in use is left alone.
+    let h = Harness::new(&[]).await;
+    let (cid, _, _) = private_conversation(&h, "between us").await;
+    assert_eq!(cedar_chat::private::sweep(&h.state).await.unwrap(), 0);
+    assert_eq!(h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await.0, StatusCode::OK);
+
+    // With no time allowed at all, it is idle at once; an open conversation as old stays.
+    let h = Harness::new(&[("CHAT_PRIVATE_TTL_SECS", "0")]).await;
+    let (open, _) = h.finished_conversation("open", "answer").await;
+    let (cid, _, run) = private_conversation(&h, "between us").await;
+    h.finish(&run, "completed", Some("ok"));
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    assert_eq!(cedar_chat::private::sweep(&h.state).await.unwrap(), 1);
+    assert_eq!(h.json(Method::GET, &format!("/api/conversations/{cid}"), None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(h.json(Method::GET, &format!("/api/conversations/{open}"), None).await.0, StatusCode::OK);
+    let run_id = Uuid::parse_str(&run).unwrap();
+    for _ in 0..200 {
+        if h.cedar.deleted.lock().unwrap().contains(&run_id) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(*h.cedar.deleted.lock().unwrap(), [run_id]);
+    assert_eq!(cedar_chat::private::sweep(&h.state).await.unwrap(), 0);
 }

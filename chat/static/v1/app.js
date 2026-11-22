@@ -384,7 +384,9 @@ function setHeader() {
   els.filesBtn.hidden = !c;
   cedarAgents.badge(els.agentBadge, c, c?.agent);
   cedarStar.setCurrent(c);
-  cedarNotify.setTitle(c?.title ? `${c.title} – Cedar` : 'Cedar');
+  cedarPrivate.setCurrent(c);
+  // A private chat's title stays out of the tab and the browser's history.
+  cedarNotify.setTitle(c?.private ? `${tr('private.title')} – Cedar` : c?.title ? `${c.title} – Cedar` : 'Cedar');
 }
 
 /** The open conversation has been looked at: nothing in it is unread any more. */
@@ -438,6 +440,7 @@ async function openConversation(id) {
   state.current.agent = detail.agent;
   // What was already decided about the follow-ups suggested in it: their cards say so.
   cedarFollowUp.known(detail.followups);
+  cedarHandover.known(detail.limitations);
   cedarSettings.conversationChanged();
   cedarAttach.clear();
   setHeader();
@@ -487,7 +490,8 @@ document.addEventListener('cedar-models-changed', loadModels);
 
 function route() {
   // The Agents page has the hash to itself (agents.js); everything else is a conversation.
-  if (cedarAgents.route()) {
+  // (So has the Actions page, actions.js; both are asked, so each can close when it isn't its turn.)
+  if ([cedarAgents.route(), cedarActions.route()].some(Boolean)) {
     toggleSidebar(false);
     return;
   }
@@ -517,7 +521,7 @@ function addTurn(turn) {
   const bubble = h('div', 'bubble');
   if (turn.attachments?.length) bubble.append(cedarAttach.chips(turn.attachments));
   bubble.append(document.createTextNode(turn.prompt));
-  user.append(cedarTrace.button(turn.id), bubble);
+  user.append(cedarActions.button(turn), cedarTrace.button(turn.id), bubble);
   const body = h('div', 'assistant');
   const thinking = h('div', 'thinking', `${ICONS.logo}<span>${escapeHtml(tr('v1.thinking'))}</span>`);
   body.append(thinking);
@@ -887,6 +891,20 @@ function toolResult(view, d) {
       scrollToBottom(false);
     }
   }
+  // Something Cedar could not do is a card that offers to send it as feedback; a call that was
+  // held for approval instead of made is a card with what would go out and the buttons for it.
+  if (!d.is_error) {
+    const limitation = details.dataset.tool === 'report_limitation' && cedarHandover.limitation.parse(text);
+    const held = !limitation && cedarHandover.held.parse(text);
+    if (limitation) {
+      const card = cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: d.id });
+      details.after(card);
+      // Once the reply is written this goes below it (see finishTurn), where it is seen.
+      (view.limitCards ||= []).push(card);
+    }
+    if (held) details.after(cedarHandover.held.element(held));
+    if (limitation || held) scrollToBottom(false);
+  }
   // The images a call produced (a picture it saved, or one a command or script wrote) are shown
   // with the reply, once each: see finishTurn. A chart drawn as a card isn't shown again.
   if (!d.is_error && !carded) {
@@ -940,6 +958,10 @@ function finishTurn(view, event) {
     view.body.append(box);
   }
 
+  // What Cedar couldn't do, with its buttons, belongs after what it says about it: left where
+  // the call was made, the answer written afterwards pushes it out of sight.
+  for (const card of view.limitCards || []) view.body.append(card);
+
   const footer = h('div', 'turn-footer');
   if (view.texts.length) {
     const copy = h('button', 'copy-btn', `${ICONS.copy}${escapeHtml(tr('v1.copy'))}`);
@@ -956,7 +978,8 @@ function finishTurn(view, event) {
   if (footer.childElementCount) view.body.append(footer);
   view.lastEvent = event.type;
 
-  if (state.activeTurn === view) {
+  const watched = state.activeTurn === view;
+  if (watched) {
     state.activeTurn = null;
     renderSidebar();
     // Watched to the end: not news. Hidden tabs leave it unread, for the inbox and the title.
@@ -964,7 +987,11 @@ function finishTurn(view, event) {
   }
   updateComposer();
   if (els.filesDialog.open) loadFiles(); // the response may have added or changed files
-  scrollToBottom(false);
+  // A reply that says what Cedar couldn't do ends on the card that offers what to do about it:
+  // that is brought into view, wherever the person had scrolled to while it was written.
+  const card = watched && view.limitCards?.at(-1);
+  if (card) card.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  else scrollToBottom(false);
 }
 
 // -- workspace files ---------------------------------------------------------------------------
@@ -1140,13 +1167,14 @@ async function sendMessage(answer) {
   try {
     let conversation = state.current;
     if (!conversation) {
-      conversation = await api('POST', '/conversations', {});
+      // A private chat (private.js) is in no list, here as on the server.
+      conversation = await api('POST', '/conversations', cedarPrivate.wanted() ? { private: true } : {});
       state.current = conversation;
-      state.conversations.unshift(conversation);
+      if (!conversation.private) state.conversations.unshift(conversation);
       await cedarSettings.beforeSend(conversation);
       history.pushState(null, '', `#/c/${conversation.id}`);
     }
-    const body = { content, locale: cedarI18n.locale };
+    const body = { content, locale: cedarI18n.locale, timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch { return undefined; } })() };
     if (els.model.value) body.model = els.model.value;
     if (els.reasoning.value) body.reasoning = els.reasoning.value;
     const attachments = typed ? cedarAttach.payload() : [];
@@ -1159,7 +1187,7 @@ async function sendMessage(answer) {
     }
     if (token !== state.loadToken) return true; // the user navigated away meanwhile
     if (!conversation.title) conversation.title = turn.prompt.split('\n').find((l) => l.trim())?.trim().slice(0, 60);
-    state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
+    if (!conversation.private) state.conversations = [conversation, ...state.conversations.filter((c) => c.id !== conversation.id)];
     setHeader();
     addTurn(turn);
     scrollToBottom(true);
@@ -1254,6 +1282,7 @@ async function init() {
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarAgents.init({ api, toast, renderMarkdown });
+  cedarActions.init({ api, toast });
   cedarFollowUp.init({ api, toast });
   cedarStar.init({ api, toast, onOpen: () => toggleSidebar(false) });
   cedarSearch.init({ api, onOpen: () => toggleSidebar(false), reveal: () => toggleSidebar(true) });
@@ -1272,6 +1301,8 @@ async function init() {
     before: els.composer.querySelector('.composer-row'),
     toast,
   });
+  // The Private button goes after the paperclip; its note sits above the message box.
+  cedarPrivate.init({ api, toast, form: els.composer, anchor: els.reasoning, before: els.input });
   try {
     const res = await fetch('/api/config');
     state.config = await res.json();
@@ -1281,10 +1312,12 @@ async function init() {
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: () => { loadConversations(); cedarAgents.refresh(); } });
   cedarPairing.init({ api, toast });
+  cedarSlack.init({ api, toast, authHeaders });
   if (state.config.auth_required && !memoryToken) await askToken(false);
   await loadModels();
   cedarSettings.start();
   cedarAgents.start();
+  cedarActions.start();
   cedarStar.start();
   await loadConversations();
   route();

@@ -15,6 +15,12 @@ pub const SERPAPI_API_KEY: &str = "serpapi_api_key";
 /// A Slack app's bot token; the metadata names the workspace and the app's user.
 pub const SLACK_BOT_TOKEN: &str = "slack_bot_token";
 pub const GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
+/// A user's own Google account (see [`google_refresh_token_of`]): the refresh token, with the
+/// account's address and the granted scopes as metadata.
+pub const GOOGLE_USER_PREFIX: &str = "google_refresh_token:";
+pub fn google_refresh_token_of(user: &str) -> String {
+    format!("{GOOGLE_USER_PREFIX}{user}")
+}
 /// The Google OAuth client an admin saved: the value is the client secret, the metadata holds
 /// the client ID (which identifies the deployment and is not secret).
 pub const GOOGLE_CLIENT: &str = "google_client";
@@ -29,6 +35,13 @@ pub fn tool_secret(tool: &str, name: &str) -> String {
     format!("{TOOL_SECRET_PREFIX}{tool}:{name}")
 }
 pub const TOOL_SECRET_PREFIX: &str = "tool_secret:";
+
+/// Where a secret kept with a saved action is (see [`crate::actions`]): a password the user
+/// stored for the agent to type on that action's site.
+pub fn action_secret(action: uuid::Uuid, name: &str) -> String {
+    format!("{ACTION_SECRET_PREFIX}{action}:{name}")
+}
+pub const ACTION_SECRET_PREFIX: &str = "action_secret:";
 
 /// Where a registered model's API key is kept.
 pub fn model_api_key(model_id: &str) -> String {

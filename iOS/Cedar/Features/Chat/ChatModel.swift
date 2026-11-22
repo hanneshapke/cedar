@@ -19,6 +19,9 @@ final class ChatModel {
     private(set) var isLoading = false
     var errorMessage: String?
     var draft = ""
+    /// A private chat: in no list, not remembered, and deleted when it is left (see
+    /// `AppModel.left`). Chosen before the first message; after that it is what the server says.
+    var isPrivate = false
     /// Files picked to go with the next message.
     private(set) var attachments: [OutgoingAttachment] = []
     /// Picked files still being read.
@@ -26,6 +29,9 @@ final class ChatModel {
     /// What was decided about the follow-ups suggested here, by `FollowUpDecision.key`; a
     /// suggestion without one is still open.
     private(set) var followUpDecisions: [String: FollowUpDecision] = [:]
+    /// What was decided about what the runs here reported they could not do, by
+    /// `FeedbackDecision.key`; a report without one is still open.
+    private(set) var feedbackDecisions: [String: FeedbackDecision] = [:]
 
     @ObservationIgnored private weak var app: AppModel?
     @ObservationIgnored private var followers: [String: Task<Void, Never>] = [:]
@@ -45,9 +51,11 @@ final class ChatModel {
     }
 
     /// Whether the model new messages go to takes images: the one picked in Settings, or the
-    /// server's default. PDFs go with any model.
+    /// server's default; while the server picks the model, whether any model does (an image then
+    /// goes to one that takes it). PDFs go with any model.
     var acceptsImages: Bool {
         guard let app else { return false }
+        guard app.modelSelection else { return app.models.contains(where: \.multimodal) }
         let model = app.settings.model.isEmpty
             ? app.models.first(where: \.isDefault)
             : app.models.first(where: { $0.id == app.settings.model })
@@ -82,10 +90,14 @@ final class ChatModel {
         guard let conversationId, let client else { return }
         do {
             let detail = try await client.conversation(id: conversationId)
+            isPrivate = detail.conversation.isPrivate
             app?.remember(detail.conversation, agent: detail.agent)
             // Decisions are never taken back, so the server's only add to the ones known here.
             for decision in detail.followups {
                 followUpDecisions[decision.key] = decision
+            }
+            for decision in detail.limitations where decision.turnId != nil {
+                feedbackDecisions[decision.key] = decision
             }
             sync(with: detail.turns)
             errorMessage = nil
@@ -290,20 +302,25 @@ final class ChatModel {
             if let conversationId {
                 id = conversationId
             } else {
-                id = try await client.createConversation().id
+                let created = try await client.createConversation(isPrivate: isPrivate)
+                id = created.id
                 conversationId = id
+                if created.isPrivate { app.remember(created) }
                 app.chatDidStart(self, conversationId: id)
             }
             let turn = try await client.send(conversationId: id, .init(
                 content: text,
-                model: settings.model.isEmpty ? nil : settings.model,
-                reasoning: settings.reasoning.isEmpty ? nil : settings.reasoning,
+                // While the server picks the model, a pick saved earlier is not sent.
+                model: settings.model.isEmpty || !app.modelSelection ? nil : settings.model,
+                reasoning: settings.reasoning.isEmpty || !app.modelSelection ? nil : settings.reasoning,
                 attachments: attachments.isEmpty ? nil : attachments.map {
                     .init(name: $0.name, mediaType: $0.mediaType, data: $0.data.base64EncodedString())
                 },
                 plan: settings.plan.isEmpty ? nil : settings.plan,
                 // The reply comes in the interface language.
-                locale: LanguageStore.shared.effectiveTag
+                locale: LanguageStore.shared.effectiveTag,
+                // "Today" and "tomorrow" are the user's.
+                timezone: TimeZone.current.identifier
             ))
             turns.append(TurnTranscript(turn: turn))
             follow(turnId: turn.id)
@@ -355,6 +372,24 @@ final class ChatModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    // MARK: What Cedar could not do, and what waits for approval
+
+    /// What was decided about the report `call` made in `turn`; `nil` while it is open.
+    func feedbackDecision(for call: ToolCall, in turn: TurnTranscript) -> FeedbackDecision? {
+        feedbackDecisions[FeedbackDecision.key(turnId: turn.id, callId: call.id)]
+    }
+
+    /// Sends the report `call` made as feedback, which keeps it on the person's server, or
+    /// dismisses it. Throws the server's reason when it refuses, for the card to show. The
+    /// answer is the decision that stands, which is an earlier one when another device was first.
+    func decideLimitation(_ call: ToolCall, in turn: TurnTranscript, send: Bool, comment: String) async throws {
+        guard let report = call.limitation else { return }
+        guard let client else { throw ChatError.notConfigured }
+        let body = send ? FeedbackBody.send(report, comment: comment) : FeedbackBody.dismiss
+        let answer = try await client.decideLimitation(turnId: turn.id, callId: call.id, body)
+        feedbackDecisions[FeedbackDecision.key(turnId: turn.id, callId: call.id)] = answer.feedback
     }
 
     // MARK: Follow-ups

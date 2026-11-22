@@ -5,6 +5,7 @@
 //! context), and relays the run's event stream to the page.
 
 pub mod api;
+pub mod attention;
 pub mod cedar;
 pub mod channels;
 pub mod config;
@@ -14,8 +15,10 @@ pub mod i18n;
 pub mod notify;
 pub mod pairing;
 pub mod poll;
+pub mod private;
 pub mod prompt;
 pub mod schedule;
+pub mod slack;
 pub mod store;
 pub mod trigger;
 pub mod update;
