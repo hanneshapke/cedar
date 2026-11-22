@@ -272,16 +272,23 @@ pub fn present(win: &WebviewWindow) -> Result<()> {
 
 /// Takes the window out of the way without closing anything, as closing it does (see main.rs):
 /// the app is a menu bar app again until [`present`]. For a screen recording, which should show
-/// what the person does and not Cedar.
-pub fn hide(app: &AppHandle) {
+/// what the person does and not Cedar, and so starts only once the window is gone: this returns
+/// when it is hidden (or after a second, should the main thread be busy). Not for the main
+/// thread itself, which it would wait on.
+pub fn hide_and_wait(app: &AppHandle) {
+    let (done, hidden) = std::sync::mpsc::channel();
     let handle = app.clone();
-    let _ = app.run_on_main_thread(move || {
+    let asked = app.run_on_main_thread(move || {
         if let Ok(win) = main_window(&handle) {
             let _ = win.hide();
         }
         #[cfg(target_os = "macos")]
         let _ = handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        let _ = done.send(());
     });
+    if asked.is_ok() {
+        let _ = hidden.recv_timeout(std::time::Duration::from_secs(1));
+    }
 }
 
 /// Brings the window back as it is, on whatever page it shows.

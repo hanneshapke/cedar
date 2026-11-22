@@ -72,6 +72,9 @@ mod capture {
 
 /// The URL scheme recordings are handed to the page through.
 pub const SCHEME: &str = "cedarrec";
+/// How long after Cedar's window has gone the recording starts: long enough for macOS to have
+/// drawn the screen without it, so the first frame shows what the person sees and not Cedar.
+const AFTER_HIDING: Duration = Duration::from_millis(200);
 /// The longest recording when the page names none, and the longest it may name, in seconds.
 const DEFAULT_MAX_SECS: u64 = 600;
 const LIMIT_MAX_SECS: u64 = 1800;
@@ -218,13 +221,15 @@ pub fn start(app: &AppHandle, max_secs: Option<u64>, display: Option<u32>) {
         let state = app.state::<AppState>();
         let recorder = state.recorder();
         let mut started = None;
+        // The recording should show what the person does, not Cedar: the window goes out of the
+        // way first, and the recording starts once the screen shows what was behind it. A red
+        // light in the menu bar is there to stop it by. Both are undone when the recording
+        // ends, however it ends.
+        crate::window::hide_and_wait(&app);
+        std::thread::sleep(AFTER_HIDING);
         let outcome = capture::record(&path, display, Duration::from_secs(max_secs), stopped, || {
             started = Some(Instant::now());
             push(&app, json!({ "state": "recording" }));
-            // The recording should show what the person does, not Cedar: the window goes out
-            // of the way, and a red light in the menu bar is there to stop it by. Both are
-            // undone when the recording ends, however it ends.
-            crate::window::hide(&app);
             crate::tray::show_recording(&app);
         });
         recorder.active.lock().unwrap().take();

@@ -567,8 +567,8 @@ there the app records for the page (`src/recorder.rs`):
   at most 1600 pixels a side, without sound, so the file stays small. Writing the file this way
   takes macOS 15; on an older macOS the page offers to take a video file instead, as it does
   in a browser that can't record.
-- While it records, Cedar's window hides, so the recording shows what you do and not Cedar, and
-  a red light appears in the menu bar. A click on the light (or **Stop Recording** in its menu)
+- While it records, Cedar's window hides, so the recording shows what you do and not Cedar (the
+  recording starts 200 ms after the window is gone), and a red light appears in the menu bar. A click on the light (or **Stop Recording** in its menu)
   stops the recording, as the page's **Stop** does; the window then comes back and shows the
   recording being finished.
 - macOS asks once whether Cedar may record the screen. Until Cedar is switched on under **System
