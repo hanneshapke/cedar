@@ -178,19 +178,26 @@ pub fn start(app: &AppHandle, max_secs: Option<u64>) {
     let max_secs = max_secs.unwrap_or(DEFAULT_MAX_SECS).clamp(5, LIMIT_MAX_SECS);
     let token = token();
     let path = std::env::temp_dir().join(format!("cedar-recording-{token}.mov"));
-    let child = match spawn(Path::new(SCREENCAPTURE), &capture_args(&path, max_secs)) {
-        Ok(child) => child,
-        Err(e) => return failed(app, "unavailable", Some(format!("{e:#}"))),
-    };
     let (stop, stopped) = oneshot::channel();
     *recorder.active.lock().unwrap() = Some(stop);
-    push(app, json!({ "state": "recording" }));
     let app = app.clone();
+    // This is called from the window's navigation handler, on the main thread, which is no
+    // part of the async runtime. The recorder is a tokio child process, and tokio can only
+    // start one from inside its runtime (it panics otherwise, which there aborts the app), so
+    // everything from starting it on happens in a task.
     tauri::async_runtime::spawn(async move {
-        let started = Instant::now();
-        let outcome = run(child, stopped, &path).await;
         let state = app.state::<AppState>();
         let recorder = state.recorder();
+        let child = match spawn(Path::new(SCREENCAPTURE), &capture_args(&path, max_secs)).await {
+            Ok(child) => child,
+            Err(e) => {
+                recorder.active.lock().unwrap().take();
+                return failed(&app, "unavailable", Some(format!("{e:#}")));
+            }
+        };
+        push(&app, json!({ "state": "recording" }));
+        let started = Instant::now();
+        let outcome = run(child, stopped, &path).await;
         recorder.active.lock().unwrap().take();
         match outcome {
             Outcome::Recorded => {
@@ -222,7 +229,9 @@ pub fn cancel(app: &AppHandle) {
     }
 }
 
-fn spawn(program: &Path, args: &[String]) -> Result<(Child, ChildStdin)> {
+/// Start the recorder. Async although nothing in it waits: a tokio child process can only be
+/// started inside the runtime, and this way it can't be called from anywhere else.
+async fn spawn(program: &Path, args: &[String]) -> Result<(Child, ChildStdin)> {
     let mut child = Command::new(program)
         .args(args)
         // The recorder stops at a key on its input, so it gets a pipe to be told through.
@@ -376,13 +385,13 @@ mod tests {
         let args = capture_args(&file, 60);
 
         let (stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &args).unwrap();
+        let child = spawn(&program, &args).await.unwrap();
         stop.send(End::Keep).unwrap();
         assert_eq!(run(child, stopped, &file).await, Outcome::Recorded);
         assert!(file.exists());
 
         let (stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &args).unwrap();
+        let child = spawn(&program, &args).await.unwrap();
         stop.send(End::Discard).unwrap();
         assert_eq!(run(child, stopped, &file).await, Outcome::Discarded);
         assert!(!file.exists());
@@ -394,7 +403,7 @@ mod tests {
         // Reads nothing; finishes its file on an interrupt only.
         let (program, file) = fake_recorder("trap 'echo movie > \"$f\"; exit 0' INT; while :; do sleep 0.1; done");
         let (stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &capture_args(&file, 60)).unwrap();
+        let child = spawn(&program, &capture_args(&file, 60)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(300)).await;
         stop.send(End::Keep).unwrap();
         assert_eq!(run(child, stopped, &file).await, Outcome::Recorded);
@@ -405,13 +414,13 @@ mod tests {
     async fn a_recording_ends_by_itself_and_one_that_wrote_nothing_is_empty() {
         let (program, file) = fake_recorder("echo movie > \"$f\"");
         let (_stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &capture_args(&file, 60)).unwrap();
+        let child = spawn(&program, &capture_args(&file, 60)).await.unwrap();
         assert_eq!(run(child, stopped, &file).await, Outcome::Recorded, "its time limit ended it");
 
         // What the system does to a recorder it keeps from the screen: no file.
         let (program, file) = fake_recorder("exit 1");
         let (_stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &capture_args(&file, 60)).unwrap();
+        let child = spawn(&program, &capture_args(&file, 60)).await.unwrap();
         assert_eq!(run(child, stopped, &file).await, Outcome::Empty);
     }
 }
