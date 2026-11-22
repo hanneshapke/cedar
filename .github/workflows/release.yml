@@ -363,10 +363,21 @@ jobs:
         # Tried up to three times: on GitHub's macOS runners `hdiutil create` now and then fails
         # with "Resource busy" while the DMG is packed, and the same command passes when run
         # again. A further try compiles nothing; it signs and notarizes the app once more.
+        #
+        # With CI set, tauri-bundler skips the Finder script that lays out the DMG's window (its
+        # size, the large icons, Cedar on the left and Applications on the right), and the DMG
+        # opens as a plain Finder window. TAURI_BUNDLER_DMG_IGNORE_CI keeps the script, so the
+        # DMG looks like one built on a Mac. The last try drops it, so a Finder that won't
+        # answer the script costs the layout, not the release.
         working-directory: desktop
         run: |
           set -u
           for try in 1 2 3; do
+            export TAURI_BUNDLER_DMG_IGNORE_CI=true
+            if [ "$try" -eq 3 ]; then
+              echo "::warning::last try: packing the DMG without the Finder window layout"
+              export TAURI_BUNDLER_DMG_IGNORE_CI=false
+            fi
             if cargo tauri build --ci --target ${{ matrix.target }} --bundles app,dmg --config tauri.release.conf.json --config "$UPDATER_PUBKEY_CONF"; then
               exit 0
             fi
