@@ -505,6 +505,11 @@ pub struct Preferences {
     /// one (scheduled runs) and for notifications. `None` leaves it to cedar (`DEFAULT_LOCALE`).
     #[serde(default)]
     pub locale: Option<String>,
+    /// The user's time zone (an IANA name such as `America/Los_Angeles`), as the page or app
+    /// last sent it with a message: for runs that don't name one (scheduled runs, Slack).
+    /// `None` leaves it to cedar (`DEFAULT_TIMEZONE`, else unknown).
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 fn conversation_from_row(r: &SqliteRow) -> Result<Conversation> {
@@ -2427,6 +2432,7 @@ mod tests {
         assert_eq!(store.preferences().await.unwrap(), Preferences::default());
         let prefs = Preferences {
             tools: Some(vec!["maps".into()]),
+            timezone: Some("Europe/Zurich".into()),
             model: Some("m".into()),
             system: Some("be brief".into()),
             max_turns: Some(5),

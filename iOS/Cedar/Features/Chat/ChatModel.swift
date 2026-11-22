@@ -318,7 +318,9 @@ final class ChatModel {
                 },
                 plan: settings.plan.isEmpty ? nil : settings.plan,
                 // The reply comes in the interface language.
-                locale: LanguageStore.shared.effectiveTag
+                locale: LanguageStore.shared.effectiveTag,
+                // "Today" and "tomorrow" are the user's.
+                timezone: TimeZone.current.identifier
             ))
             turns.append(TurnTranscript(turn: turn))
             follow(turnId: turn.id)

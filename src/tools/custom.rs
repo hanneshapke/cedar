@@ -563,6 +563,9 @@ impl Tool for PythonTool {
             "CEDAR_LANGUAGE".into(),
             crate::locale::language(&ctx.locale).into(),
         ));
+        if let Some(tz) = &ctx.timezone {
+            env.push(("CEDAR_TIMEZONE".into(), tz.clone()));
+        }
         let call = ToolRun {
             name: &self.name,
             dir: &self.dir,

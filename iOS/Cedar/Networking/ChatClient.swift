@@ -405,6 +405,9 @@ struct ChatClient: Sendable {
         var plan: String?
         /// The interface language (`de-CH`), which the reply is written in.
         var locale: String?
+        /// The device's time zone (`America/Los_Angeles`), so "today" and "tomorrow" are the
+        /// user's, not the server's.
+        var timezone: String? = nil
 
         struct Upload: Encodable {
             var name: String

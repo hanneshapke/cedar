@@ -106,6 +106,9 @@ pub struct ToolContext {
     pub model: Option<Arc<ToolModel>>,
     /// The run's locale (see [`crate::locale`]), which personal tools see as `CEDAR_LOCALE`.
     pub locale: String,
+    /// The run's time zone (see [`crate::timezone`]), which personal tools see as
+    /// `CEDAR_TIMEZONE`; `None` when it isn't known.
+    pub timezone: Option<String>,
     /// The run owner's memory, for `remember` and `forget`. `None` when memory is turned off, or
     /// outside a run.
     pub memory: Option<MemoryContext>,
