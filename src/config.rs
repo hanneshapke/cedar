@@ -369,6 +369,9 @@ pub struct Config {
     /// The locale of a run that doesn't name one (`DEFAULT_LOCALE`, `en` by default); see
     /// [`crate::locale`].
     pub default_locale: String,
+    /// The time zone of a run that doesn't name one (`DEFAULT_TIMEZONE`, an IANA name; unset by
+    /// default, and such a run is told the date is UTC's); see [`crate::timezone`].
+    pub default_timezone: Option<String>,
     pub max_turns_cap: u32,
 
     pub max_concurrent_runs: usize,
@@ -719,6 +722,14 @@ impl Config {
                 None => "en".into(),
                 Some(v) => crate::locale::normalize(&v)
                     .map_err(|e| anyhow!("invalid DEFAULT_LOCALE: {e}"))?,
+            },
+            default_timezone: match get("DEFAULT_TIMEZONE") {
+                None => None,
+                Some(v) if v.trim().is_empty() => None,
+                Some(v) => Some(
+                    crate::timezone::normalize(&v)
+                        .map_err(|e| anyhow!("invalid DEFAULT_TIMEZONE: {e}"))?,
+                ),
             },
             max_turns_cap: parse("MAX_TURNS_CAP", get("MAX_TURNS_CAP"), 25)?,
 

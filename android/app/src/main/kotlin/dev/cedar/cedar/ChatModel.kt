@@ -327,6 +327,8 @@ class ChatModel(private val app: AppModel, conversationId: String? = null) {
                 plan = settings.plan.ifEmpty { null },
                 // The agent answers, and formats, in the user's locale.
                 locale = app.locale,
+                // "Today" and "tomorrow" are the user's, not the server's.
+                timezone = java.util.TimeZone.getDefault().id,
                 attachments = files.takeIf { it.isNotEmpty() }?.map {
                     ChatClient.SendMessage.Upload(it.name, it.mediaType, Base64.encodeToString(it.data, Base64.NO_WRAP))
                 },

@@ -555,6 +555,7 @@ async fn invalid_requests_are_rejected_with_json_errors() {
         (json!({ "prompt": "x", "reasoning": "max" }), "not offered"),
         (json!({ "prompt": "x", "bogus": 1 }), "bogus"),
         (json!({ "prompt": "x", "locale": "de CH" }), "not a language tag"),
+        (json!({ "prompt": "x", "timezone": "Pacific/Nowhere" }), "not a time zone"),
         (json!({ "nothing": "here" }), "prompt"),
         (json!({ "prompt": "x".repeat(100_001) }), "prompt is longer"),
         (
@@ -915,6 +916,43 @@ async fn the_locale_reaches_the_model_and_continuations_keep_it() {
         .create_run_with(KEY_A, json!({ "prompt": "x", "locale": "pt-BR" }))
         .await;
     assert_eq!(portuguese["locale"], "en");
+}
+
+#[tokio::test]
+async fn the_users_time_zone_sets_the_date_and_continuations_keep_it() {
+    let app = TestApp::new(vec![
+        Step::Reply(text("a")),
+        Step::Reply(text("b")),
+        Step::Reply(text("c")),
+    ])
+    .await;
+    // Without a zone the date is UTC's, and the model is told the user's may differ.
+    let plain = app.create_run(KEY_A, "x").await;
+    assert_eq!(plain["timezone"], Value::Null);
+    app.wait_status(KEY_A, &id_of(&plain), "completed").await;
+
+    let portland = app
+        .create_run_with(
+            KEY_A,
+            json!({ "prompt": "When is the concert starting tomorrow?", "timezone": " America/Los_Angeles " }),
+        )
+        .await;
+    assert_eq!(portland["timezone"], "America/Los_Angeles");
+    app.wait_status(KEY_A, &id_of(&portland), "completed").await;
+    let child = app
+        .create_run_with(KEY_A, json!({ "prompt": "and after?", "parent_id": id_of(&portland) }))
+        .await;
+    assert_eq!(child["timezone"], "America/Los_Angeles", "a continuation keeps its parent's zone");
+    app.wait_status(KEY_A, &id_of(&child), "completed").await;
+
+    let requests = app.llm.requests();
+    let system = |i: usize| requests[i]["system"].as_str().unwrap().to_string();
+    assert!(system(0).contains("time zone is not known"), "{}", system(0));
+    for i in [1, 2] {
+        let s = system(i);
+        assert!(s.contains("the user's local time is") && s.contains("(America/Los_Angeles, UTC-0"), "{s}");
+        assert!(!s.contains("time zone is not known"), "{s}");
+    }
 }
 
 // -- ownership, listing, deletion -------------------------------------------------------------
@@ -1784,6 +1822,7 @@ async fn runs_left_over_from_a_previous_process_are_failed_on_startup() {
         interactive: false,
         hold_writes: false,
         locale: "en".into(),
+        timezone: None,
         import_attachments: false,
         model_auto: false,
         private: false,

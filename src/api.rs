@@ -10,6 +10,7 @@ use crate::error::AppError;
 use crate::events::EventHub;
 use crate::images;
 use crate::locale;
+use crate::timezone;
 use crate::integrations::{Integrations, ModelSpec, ServerModelsQuery};
 use crate::llm::LlmRouter;
 use crate::manager::{self, RunManager};
@@ -607,6 +608,12 @@ async fn create_run(
             .map_or_else(|| cfg.default_locale.clone(), |p| p.locale.clone()),
         Some(l) => locale::normalize(l).map_err(AppError::BadRequest)?,
     };
+    let timezone = match req.timezone.as_deref().map(str::trim).filter(|z| !z.is_empty()) {
+        None => parent
+            .as_ref()
+            .map_or_else(|| cfg.default_timezone.clone(), |p| p.timezone.clone()),
+        Some(z) => Some(timezone::normalize(z).map_err(AppError::BadRequest)?),
+    };
 
     let tools = match req.tools {
         None => parent.as_ref().and_then(|p| p.tools.clone()),
@@ -680,6 +687,7 @@ async fn create_run(
         interactive: req.interactive.unwrap_or(false),
         hold_writes: req.hold_writes.unwrap_or(false),
         locale,
+        timezone,
         import_attachments: !private && cfg.records && req.import_attachments.unwrap_or(cfg.records_import_attachments),
         private,
     };
@@ -786,6 +794,7 @@ async fn defaults(State(state): State<AppState>) -> Result<Json<serde_json::Valu
         "model_selection": routing::selection_on(&state.store).await?,
         "system": cfg.default_system_prompt,
         "locale": cfg.default_locale,
+        "timezone": cfg.default_timezone,
         "locales": locale::LANGUAGES.iter().chain(locale::REGIONS).collect::<Vec<_>>(),
         "max_turns_cap": cfg.max_turns_cap,
         "plan": cfg.plan,
