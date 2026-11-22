@@ -559,12 +559,12 @@ The chat's [Actions](../chat/README.md#actions) page turns a screen recording in
 can follow. A browser records the screen itself; the app's window on a Mac (WKWebView) can't, so
 there the app records for the page (`src/recorder.rs`):
 
-- It runs macOS's own recorder, `/usr/sbin/screencapture -v -k -x -V <seconds>`, as a child
-  process: the entire main screen, with clicks shown, until it is stopped or the time limit.
-  The recorder only saves when a key stops it, and it takes that key from a terminal, so the app
-  runs it through `/usr/bin/script`, which gives it one; stopping writes a key there, and the
-  recorder then gets up to two minutes to write the file. (An interrupt ends it without a file,
-  and a key on a plain pipe is ignored: both seen on macOS 26.)
+- It records with macOS's ScreenCaptureKit (`src/recorder/capture.rs`): a stream of the main
+  screen, with the pointer and your clicks shown, that the system writes into a movie file as
+  it goes, until the app stops it or the time limit. It is recorded at five frames a second and
+  at most 1600 pixels a side, without sound, so the file stays small. Writing the file this way
+  takes macOS 15; on an older macOS the page offers to take a video file instead, as it does
+  in a browser that can't record.
 - While it records, Cedar's window hides, so the recording shows what you do and not Cedar, and
   a red light appears in the menu bar. A click on the light (or **Stop Recording** in its menu)
   stops the recording, as the page's **Stop** does; the window then comes back and shows the
