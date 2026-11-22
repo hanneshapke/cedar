@@ -16,14 +16,16 @@
 //! and hears back as `cedar-recorder` events on its window, each with a `detail`:
 //!
 //!   {"state": "recording"}
-//!   {"state": "done", "url": "cedarrec://localhost/<token>", "seconds": 42, "media_type": "video/quicktime"}
+//!   {"state": "done", "url": "cedarrec://localhost/<token>", "bytes": 1234567, "seconds": 42, "media_type": "video/quicktime"}
 //!   {"state": "failed", "reason": "permission" | "empty" | "unavailable" | "busy", "message"?}
 //!   {"state": "cancelled"}
 //!
-//! The page fetches `url` once: the app serves the file through its own URL scheme (see
-//! [`serve`]) and deletes it. The address holds a random token, so only the page that was told it
-//! can read the recording, and nothing of it is kept. The page then makes the recording small
-//! and sends its key frames to cedar, as it does with one it recorded itself.
+//! The page plays `url` in a video element: the app serves the file through its own URL scheme
+//! (see [`serve`]), in ranges, since a recording of the whole screen is far too large to hand
+//! over in one piece. The address holds a random token, so only the page that was told it can
+//! read the recording. The page picks the recording's key frames from it and sends those to
+//! cedar, as it does with one it recorded itself, and says `record/cancel` when it is done,
+//! which deletes the file; so does the next recording.
 
 use crate::app::AppState;
 use anyhow::{Context, Result};
@@ -45,7 +47,10 @@ const SCREENCAPTURE: &str = "/usr/sbin/screencapture";
 const DEFAULT_MAX_SECS: u64 = 600;
 const LIMIT_MAX_SECS: u64 = 1800;
 /// How long the recorder gets to finish its file after each way of telling it to stop.
-const AFTER_KEY: Duration = Duration::from_secs(3);
+/// A key is what makes it save: it then writes the file out, which takes longer the longer the
+/// recording was. An interrupt ends it at once and WITHOUT a file (seen on macOS 26), so that
+/// comes only when the key got no answer for a long time, to not leave a recorder running.
+const AFTER_KEY: Duration = Duration::from_secs(if cfg!(test) { 1 } else { 120 });
 const AFTER_SIGNAL: Duration = Duration::from_secs(15);
 /// How long the file may take to appear once the recorder has exited.
 const FILE_WAIT: Duration = Duration::from_secs(if cfg!(test) { 1 } else { 5 });
@@ -203,10 +208,11 @@ pub fn start(app: &AppHandle, max_secs: Option<u64>) {
         recorder.active.lock().unwrap().take();
         match outcome {
             Outcome::Recorded => {
+                let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
                 *recorder.finished.lock().unwrap() = Some(Finished { token: token.clone(), path });
                 push(
                     &app,
-                    json!({ "state": "done", "url": format!("{SCHEME}://localhost/{token}"),
+                    json!({ "state": "done", "url": format!("{SCHEME}://localhost/{token}"), "bytes": bytes,
                             "seconds": started.elapsed().as_secs(), "media_type": "video/quicktime" }),
                 );
             }
@@ -274,9 +280,9 @@ fn collect(stream: Option<impl tokio::io::AsyncRead + Unpin + Send + 'static>) -
 }
 
 /// Wait for the recording to end, by itself (its time limit) or because it was told to, and say
-/// what there is. To stop, the recorder is first given a key, as someone at a terminal would
-/// press one, then an interrupt, which it also finishes its file on, and killed only if it
-/// answers neither.
+/// what there is. To stop, the recorder is given a key, as someone at a terminal would press
+/// one, and the time to write its file. Only one that doesn't react to that is interrupted
+/// (which loses the recording) and then killed.
 async fn run((mut child, stdin): (Child, ChildStdin), stopped: oneshot::Receiver<End>, file: &Path) -> Outcome {
     let mut stdin = Some(stdin);
     let started = Instant::now();
@@ -346,36 +352,86 @@ fn interrupt(child: &Child) {
     let _ = child;
 }
 
-/// What the app's URL scheme answers `path` (`/<token>`) with: the finished recording when the
-/// token is its own, once, after which the file is gone; `None` for anything else.
-fn take(recorder: &Recorder, path: &str) -> Option<Vec<u8>> {
+/// The most of a recording one answer carries. A recording of the whole screen runs to megabytes
+/// a second, so the page's video element reads it in ranges, as it would from a web server,
+/// and nothing ever holds all of it in memory.
+const MAX_PART: u64 = 8 << 20;
+
+/// A part of the finished recording: its bytes, where they start, and how long the whole is.
+#[derive(Debug, PartialEq)]
+struct Part {
+    bytes: Vec<u8>,
+    start: u64,
+    total: u64,
+    /// Whether a range was asked for (the answer is then a 206).
+    ranged: bool,
+}
+
+/// The first and last byte a `Range` header asks for (`bytes=100-`, `bytes=0-1`), within a file
+/// of `total` bytes and at most [`MAX_PART`] long. `None`: not a range this understands, or one
+/// outside the file.
+fn byte_range(header: &str, total: u64) -> Option<(u64, u64)> {
+    let (from, to) = header.trim().strip_prefix("bytes=")?.split_once('-')?;
+    let last = total.checked_sub(1)?;
+    let (start, end) = match (from.trim(), to.trim()) {
+        // The last so many bytes.
+        ("", n) => (total.saturating_sub(n.parse::<u64>().ok()?), last),
+        (s, "") => (s.parse().ok()?, last),
+        (s, e) => (s.parse().ok()?, e.parse::<u64>().ok()?.min(last)),
+    };
+    (start <= end && start <= last).then(|| (start, end.min(start + MAX_PART - 1)))
+}
+
+/// What the app's URL scheme answers `path` (`/<token>`) with: the finished recording, or the
+/// `range` of it asked for, when the token is its own; `None` for anything else. The file stays
+/// until the page says it is done with it (`record/cancel`) or another recording starts.
+fn part(recorder: &Recorder, path: &str, range: Option<&str>) -> Option<Part> {
+    use std::io::{Read, Seek, SeekFrom};
     let asked = path.trim_start_matches('/');
-    let mut finished = recorder.finished.lock().unwrap();
-    if asked.is_empty() || finished.as_ref().is_none_or(|f| f.token != asked) {
-        return None;
-    }
-    let file = finished.take()?.path;
-    let bytes = std::fs::read(&file).ok();
-    let _ = std::fs::remove_file(&file);
-    bytes
+    let finished = recorder.finished.lock().unwrap();
+    let file = &finished.as_ref().filter(|f| !asked.is_empty() && f.token == asked)?.path;
+    let mut file = std::fs::File::open(file).ok()?;
+    let total = file.metadata().ok()?.len();
+    let (start, end, ranged) = match range {
+        Some(header) => {
+            let (start, end) = byte_range(header, total)?;
+            (start, end, true)
+        }
+        None => (0, total.checked_sub(1)?, false),
+    };
+    let mut bytes = vec![0; usize::try_from(end - start + 1).ok()?];
+    file.seek(SeekFrom::Start(start)).ok()?;
+    file.read_exact(&mut bytes).ok()?;
+    Some(Part { bytes, start, total, ranged })
 }
 
 /// Answer a request to `cedarrec://localhost/<token>`. The chat page is another origin, so the
-/// answer says any origin may read it: the token is what keeps it to the page that was told.
+/// answer says any origin may read it (the page draws the video's frames, which a browser only
+/// allows of a video it was let read): the token is what keeps it to the page that was told.
 pub fn serve(app: &AppHandle, request: &tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
-    let respond = |status: u16, kind: &str, body: Vec<u8>| {
-        tauri::http::Response::builder()
+    let respond = |status: u16, kind: &str, range: Option<String>, body: Vec<u8>| {
+        let mut response = tauri::http::Response::builder()
             .status(status)
             .header("Content-Type", kind)
+            .header("Content-Length", body.len().to_string())
+            .header("Accept-Ranges", "bytes")
             .header("Access-Control-Allow-Origin", "*")
-            .header("Cache-Control", "no-store")
-            .body(body)
-            .expect("a response of fixed headers is valid")
+            .header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges")
+            .header("Cache-Control", "no-store");
+        if let Some(range) = range {
+            response = response.header("Content-Range", range);
+        }
+        response.body(body).expect("a response of fixed headers is valid")
     };
     let state = app.state::<AppState>();
-    match take(state.recorder(), request.uri().path()) {
-        Some(bytes) => respond(200, "video/quicktime", bytes),
-        None => respond(404, "text/plain", b"no such recording".to_vec()),
+    let range = request.headers().get("range").and_then(|v| v.to_str().ok());
+    match part(state.recorder(), request.uri().path(), range) {
+        Some(p) if p.ranged => {
+            let range = format!("bytes {}-{}/{}", p.start, p.start + p.bytes.len() as u64 - 1, p.total);
+            respond(206, "video/quicktime", Some(range), p.bytes)
+        }
+        Some(p) => respond(200, "video/quicktime", None, p.bytes),
+        None => respond(404, "text/plain", None, b"no such recording".to_vec()),
     }
 }
 
@@ -392,19 +448,46 @@ mod tests {
     }
 
     #[test]
-    fn a_recording_is_handed_over_once_and_only_for_its_token() {
+    fn a_recording_is_read_in_ranges_and_only_for_its_token_until_it_is_let_go() {
         let dir = std::env::temp_dir();
         let path = dir.join(format!("cedar-recorder-test-{}.mov", token()));
-        std::fs::write(&path, b"movie").unwrap();
+        std::fs::write(&path, b"0123456789").unwrap();
         let recorder = Recorder::default();
         *recorder.finished.lock().unwrap() = Some(Finished { token: "abc123".into(), path: path.clone() });
 
-        assert_eq!(take(&recorder, "/"), None);
-        assert_eq!(take(&recorder, "/other"), None);
-        assert!(path.exists(), "a wrong token leaves the recording");
-        assert_eq!(take(&recorder, "/abc123").as_deref(), Some(&b"movie"[..]));
-        assert!(!path.exists(), "the file goes once it was fetched");
-        assert_eq!(take(&recorder, "/abc123"), None);
+        assert_eq!(part(&recorder, "/", None), None);
+        assert_eq!(part(&recorder, "/other", Some("bytes=0-1")), None);
+        let whole = part(&recorder, "/abc123", None).unwrap();
+        assert_eq!((whole.bytes.as_slice(), whole.ranged, whole.total), (&b"0123456789"[..], false, 10));
+        let range = |r: &str| part(&recorder, "/abc123", Some(r)).map(|p| (String::from_utf8(p.bytes).unwrap(), p.start));
+        assert_eq!(range("bytes=0-1"), Some(("01".into(), 0)));
+        assert_eq!(range("bytes=7-"), Some(("789".into(), 7)));
+        assert_eq!(range("bytes=8-99"), Some(("89".into(), 8)));
+        assert_eq!(range("bytes=-3"), Some(("789".into(), 7)));
+        assert_eq!(range("bytes=10-"), None);
+        assert_eq!(range("lines=1-2"), None);
+        // Read as often as the video element likes; gone when the page is done with it.
+        assert!(path.exists());
+        recorder.discard_finished();
+        assert!(!path.exists());
+        assert_eq!(part(&recorder, "/abc123", None), None);
+
+        // An open range of a long file is answered a part at a time.
+        assert_eq!(byte_range("bytes=5-", 100 << 20), Some((5, 5 + MAX_PART - 1)));
+    }
+
+    /// Start a stand-in recorder. Tests run side by side, and one that forks while another is
+    /// still writing its script makes that script "busy" for a moment: try again then.
+    #[cfg(unix)]
+    async fn start(program: &Path, args: &[String]) -> (Child, ChildStdin) {
+        for _ in 0..50 {
+            match spawn(program, args).await {
+                Ok(child) => return child,
+                Err(e) if format!("{e:#}").contains("busy") => tokio::time::sleep(Duration::from_millis(20)).await,
+                Err(e) => panic!("{e:#}"),
+            }
+        }
+        panic!("the stand-in recorder stayed busy");
     }
 
     /// A stand-in for screencapture: writes its file, then waits for a key or an interrupt.
@@ -427,13 +510,13 @@ mod tests {
         let args = capture_args(&file, 60);
 
         let (stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &args).await.unwrap();
+        let child = start(&program, &args).await;
         stop.send(End::Keep).unwrap();
         assert_eq!(run(child, stopped, &file).await, Outcome::Recorded);
         assert!(file.exists());
 
         let (stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &args).await.unwrap();
+        let child = start(&program, &args).await;
         stop.send(End::Discard).unwrap();
         assert_eq!(run(child, stopped, &file).await, Outcome::Discarded);
         assert!(!file.exists());
@@ -445,7 +528,7 @@ mod tests {
         // Reads nothing; finishes its file on an interrupt only.
         let (program, file) = fake_recorder("trap 'echo movie > \"$f\"; exit 0' INT; while :; do sleep 0.1; done");
         let (stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &capture_args(&file, 60)).await.unwrap();
+        let child = start(&program, &capture_args(&file, 60)).await;
         tokio::time::sleep(Duration::from_millis(300)).await;
         stop.send(End::Keep).unwrap();
         assert_eq!(run(child, stopped, &file).await, Outcome::Recorded);
@@ -456,13 +539,13 @@ mod tests {
     async fn a_recording_ends_by_itself_and_one_that_wrote_nothing_is_empty() {
         let (program, file) = fake_recorder("echo movie > \"$f\"");
         let (_stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &capture_args(&file, 60)).await.unwrap();
+        let child = start(&program, &capture_args(&file, 60)).await;
         assert_eq!(run(child, stopped, &file).await, Outcome::Recorded, "its time limit ended it");
 
         // What the system does to a recorder it keeps from the screen: no file.
         let (program, file) = fake_recorder("echo no screen for you >&2; exit 1");
         let (_stop, stopped) = oneshot::channel();
-        let child = spawn(&program, &capture_args(&file, 60)).await.unwrap();
+        let child = start(&program, &capture_args(&file, 60)).await;
         let Outcome::Empty(why) = run(child, stopped, &file).await else { panic!("a file?") };
         assert!(why.contains("it ended by itself (exit status: 1)") && why.contains("it printed: no screen for you"), "{why}");
     }

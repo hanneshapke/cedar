@@ -561,13 +561,18 @@ there the app records for the page (`src/recorder.rs`):
 
 - It runs macOS's own recorder, `/usr/sbin/screencapture -v -k -x -V <seconds>`, as a child
   process: the entire main screen, with clicks shown, until the page's **Stop** or the time limit.
-  Stopping gives it a key, as at a terminal, then an interrupt if it doesn't react.
+  Stopping gives it a key on its input, as at a terminal, which is what makes it save; it then
+  gets up to two minutes to write the file. (An interrupt ends it without a file.)
 - macOS asks once whether Cedar may record the screen. Until Cedar is switched on under **System
   Settings → Privacy & Security → Screen & System Audio Recording**, and has been quit and opened
-  again, the page says so instead of recording.
-- The finished file goes to the page through the app's own address,
-  `cedarrec://localhost/<random token>`, which answers once and then deletes the file. The page
-  reduces the recording to its key frames, and only those go to cedar.
+  again, the page says so instead of recording. The permission belongs to the app's signature:
+  an ad-hoc signed build (`APPLE_SIGNING_IDENTITY=-`) loses it with every rebuild, so sign test
+  builds with a real identity (`security find-identity -v -p codesigning`).
+- A recording of the whole screen is megabytes a second, so the file stays with the app, which
+  serves it at `cedarrec://localhost/<random token>` in ranges, like a web server; the page
+  plays it from there to pick out its key frames, and only those go to cedar. The file is deleted
+  when the page is done with it, or when the next recording starts.
+- When no file comes of a recording, the page shows how the recorder ended and what it printed.
 
 On Windows the window (WebView2) records like a browser, so the app does nothing there.
 

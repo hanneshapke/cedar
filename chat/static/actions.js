@@ -62,6 +62,7 @@ const cedarActions = (() => {
   let view = 0;          // bumped on every render, so a slow step can't draw into a newer view
   let lastChat = '';     // the hash to go back to
   let session = null;    // the recording being made: { stream, recorder, timer, ... }
+  let appHolds = false;  // the Cedar app keeps a finished recording for this page (see captureInApp)
 
   // -- helpers -----------------------------------------------------------------------------------
 
@@ -269,6 +270,11 @@ const cedarActions = (() => {
 
   /** Stop a capture under way and let go of its screen share. */
   function stopCapture() {
+    // A recording the app still keeps for a view that is being left: it can delete it.
+    if (!session && appHolds) {
+      appHolds = false;
+      window.location.href = '/__cedar-app/record/cancel';
+    }
     if (!session) return;
     const s = session;
     session = null;
@@ -353,12 +359,14 @@ const cedarActions = (() => {
           mine.timer = setInterval(() => onTick(Date.now() - startedAt, maxMs), 500);
         } else if (d.state === 'done') {
           clearInterval(mine.timer);
-          try {
-            const res = await fetch(d.url);
-            if (!res.ok) throw new Error(String(res.status));
-            const blob = new Blob([await res.arrayBuffer()], { type: d.media_type || 'video/quicktime' });
-            settle(resolve, { blob, durationMs: (d.seconds || 0) * 1000 || Date.now() - startedAt });
-          } catch { settle(reject, new Error(tr('actions.rec.handover'))); }
+          // A recording of the whole screen is megabytes a second: far too much to take over
+          // in one piece. It stays with the app, which serves it like a web server would, and
+          // this stands in for the Blob a recording made here is: its address, size and type.
+          appHolds = true;
+          settle(resolve, {
+            blob: { remote: d.url, size: d.bytes || 0, type: d.media_type || 'video/quicktime' },
+            durationMs: (d.seconds || 0) * 1000 || Date.now() - startedAt,
+          });
         } else if (d.state === 'failed') {
           settle(reject, Object.assign(new Error(d.message || tr('actions.rec.failed')), { reason: d.reason, detail: d.message || '' }));
         } else if (d.state === 'cancelled') {
@@ -411,7 +419,10 @@ const cedarActions = (() => {
     video.muted = true;
     video.playsInline = true;
     video.preload = 'auto';
-    const url = URL.createObjectURL(blob);
+    // A recording the app holds (see `captureInApp`) is played from the app's address, piece by
+    // piece; its frames may only be drawn and read back if the video was asked for this way.
+    if (blob.remote) video.crossOrigin = 'anonymous';
+    const url = blob.remote || URL.createObjectURL(blob);
     try {
       await new Promise((resolve, reject) => {
         video.addEventListener('loadeddata', resolve, { once: true });
@@ -524,7 +535,7 @@ const cedarActions = (() => {
     } finally {
       video.removeAttribute('src');
       video.load();
-      URL.revokeObjectURL(url);
+      if (!blob.remote) URL.revokeObjectURL(url);
     }
   }
 
@@ -552,7 +563,7 @@ const cedarActions = (() => {
   /** Whether the video itself goes to the server: a model there takes video, and it is small enough and of a type it takes. */
   function sendsVideo(blob) {
     const types = info.recording.video_types || ['video/webm', 'video/mp4'];
-    return !!info.recording.video && types.includes(blob.type) && blob.size <= (info.limits.video_bytes || 16 << 20);
+    return !blob.remote && !!info.recording.video && types.includes(blob.type) && blob.size <= (info.limits.video_bytes || 16 << 20);
   }
 
   // -- a new action: record, look, let Cedar write the steps, correct, save --------------------------
@@ -576,7 +587,7 @@ const cedarActions = (() => {
 
     // 1. What is about to be shown, and what to share. `notice` says why the person is back here.
     function setup(notice) {
-      if (url) { URL.revokeObjectURL(url); url = null; }
+      if (url?.startsWith('blob:')) URL.revokeObjectURL(url); url = null;
       recording = null;
       const what = el('textarea', 'cedar-act-goal');
       what.rows = 2;
@@ -682,12 +693,25 @@ const cedarActions = (() => {
       box.append(el('b', '', tr('actions.reduce.title')), el('div', 'cedar-ag-note', tr('actions.reduce.note')), bar);
       stage.replaceChildren(box);
       try {
-        const frames = await keyFrames(blob, {
+        const options = {
           maxFrames: Math.min(info.limits.frames || 40, 40),
           maxBytes: info.limits.frames_total_bytes || 12 << 20,
           durationMs,
           onProgress: (p) => { bar.value = p; },
-        });
+        };
+        let frames;
+        try {
+          frames = await keyFrames(blob, options);
+        } catch (e) {
+          // Playing it from the app's address didn't work in this web view: a recording that
+          // isn't huge is taken over whole instead, and read from memory.
+          if (!blob.remote || blob.size > 400 << 20) throw e;
+          const res = await fetch(blob.remote);
+          if (!res.ok) throw new Error(tr('actions.rec.handover'));
+          blob = new Blob([await res.arrayBuffer()], { type: blob.type });
+          if (!alive()) return;
+          frames = await keyFrames(blob, options);
+        }
         if (!alive()) return;
         if (!frames.length) { fail(tr('actions.rec.unplayable')); return; }
         recording = { blob, durationMs: durationMs || frames[frames.length - 1].at_ms, frames };
@@ -700,7 +724,7 @@ const cedarActions = (() => {
     // 4. A look at what was recorded and what of it will be sent.
     function look() {
       const { blob, durationMs, frames } = recording;
-      url ||= URL.createObjectURL(blob);
+      url ||= blob.remote || URL.createObjectURL(blob);
       const video = el('video', 'cedar-act-video');
       video.controls = true;
       video.muted = true;
@@ -759,7 +783,7 @@ const cedarActions = (() => {
         cancelLabel: tr('actions.form.backToRecording'),
         save: async (body) => {
           const saved = await deps.api('POST', '/actions', body);
-          if (url) { URL.revokeObjectURL(url); url = null; }
+          if (url?.startsWith('blob:')) URL.revokeObjectURL(url); url = null;
           deps.toast(tr('actions.saved'));
           await load();
           location.hash = `#/actions/${saved.id}`;
