@@ -275,3 +275,149 @@ async fn with_actions_off_runs_get_no_tool_but_the_api_still_lists_and_deletes()
     let (status, _) = app.json(Method::DELETE, &format!("/v1/actions/{}", saved["id"].as_str().unwrap()), Some(KEY_A), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
+
+// -- actions in applications: what they are carried out with, and the pictures kept with them --
+
+/// A small PNG, as base64.
+fn png() -> String {
+    use base64::Engine;
+    let img = image::RgbImage::from_pixel(64, 40, image::Rgb([20, 120, 220]));
+    let mut out = Vec::new();
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .unwrap();
+    base64::engine::general_purpose::STANDARD.encode(out)
+}
+
+fn app_action(runs_on: &str) -> Value {
+    json!({
+        "title": "Export the report",
+        "summary": "When the user wants the monthly report as a PDF",
+        "app": "LibreOffice Calc",
+        "runs_on": runs_on,
+        "steps": ["Open report.ods", "Choose File, then Export as PDF", "Click Export"],
+        "frames": [{ "shows": "Export as PDF in the File menu", "media_type": "image/png", "data": png() }],
+    })
+}
+
+async fn save(app: &TestApp, body: Value) -> Value {
+    let (status, saved) = app.json(Method::POST, "/v1/actions", Some(KEY_A), Some(body)).await;
+    assert_eq!(status, StatusCode::CREATED, "{saved}");
+    saved
+}
+
+#[tokio::test]
+async fn a_draft_is_written_for_the_computer_the_runs_have() {
+    let draft = r#"{"title": "Export the report", "site": null, "app": "LibreOffice Calc", "runs_on": "computer",
+        "steps": ["Open report.ods"], "frames": [{"frame": 2, "shows": "Export as PDF in the File menu"}, {"frame": 9, "shows": "x"}]}"#;
+    let app = TestApp::with_env(vec![Step::Reply(text(draft))], &[("COMPUTER", "on")]).await;
+    let mut frames_only = recording();
+    frames_only.as_object_mut().unwrap().remove("video");
+    let (status, body) = app.json(Method::POST, "/v1/actions/draft", Some(KEY_A), Some(frames_only)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["draft"]["app"], "LibreOffice Calc");
+    assert_eq!(body["draft"]["runs_on"], "computer");
+    assert_eq!(
+        body["draft"]["frames"],
+        json!([{ "frame": 2, "shows": "Export as PDF in the File menu" }]),
+        "only frames the recording has"
+    );
+    let asked = app.llm.requests()[0]["messages"][0]["content"].as_array().unwrap().last().unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(asked.contains("That desktop is NOT the person's computer"), "{asked}");
+    assert!(asked.contains("- computer: Work a desktop computer"), "{asked}");
+
+    let (_, listed) = app.get("/v1/actions", KEY_A).await;
+    assert_eq!(listed["computer"], "container");
+    let plain = TestApp::new(vec![]).await;
+    let (_, listed) = plain.get("/v1/actions", KEY_A).await;
+    assert_eq!(listed["computer"], Value::Null);
+}
+
+#[tokio::test]
+async fn a_run_gets_an_actions_pictures_and_is_told_what_to_carry_it_out_with() {
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(tool_use("t1", "saved_actions", json!({ "name": "export_the_report" }))),
+            Step::Reply(text("done")),
+        ],
+        &[("COMPUTER", "on")],
+    )
+    .await;
+    let saved = save(&app, app_action("computer")).await;
+    assert_eq!(saved["runs_on"], "computer");
+    assert_eq!(saved["frames"], json!(["Export as PDF in the File menu"]));
+    assert!(!saved.to_string().contains("base64"), "the picture is not in the action itself");
+    let (status, frames) = app.get(&format!("/v1/actions/{}/frames", saved["id"].as_str().unwrap()), KEY_A).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(frames["frames"][0]["media_type"], "image/jpeg");
+    let (status, _) = app.get(&format!("/v1/actions/{}/frames", saved["id"].as_str().unwrap()), KEY_B).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let run = app.create_run(KEY_A, "export the report").await;
+    app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed").await;
+    let system = app.llm.requests()[0]["system"].as_str().unwrap().to_string();
+    assert!(system.contains("- export_the_report: Export the report (When the user wants the monthly report as a PDF), in LibreOffice Calc"), "{system}");
+    assert!(system.contains("Carry the steps out with the computer tool"), "{system}");
+
+    // The steps come with the picture, which is kept for reference.
+    let result = tool_result(&app, 1);
+    let parts = result["content"].as_array().unwrap();
+    let read: Value = serde_json::from_str(parts[0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(read["carry_out_with"], "The computer tool.");
+    assert_eq!(read["app"], "LibreOffice Calc");
+    assert_eq!(read["pictures"]["show"], json!(["Export as PDF in the File menu"]));
+    assert_eq!(parts.len(), 2);
+    assert_eq!(parts[1]["type"], "image");
+    assert_eq!(parts[1]["reference"], true);
+    assert_eq!(parts[1]["source"]["media_type"], "image/jpeg");
+}
+
+#[tokio::test]
+async fn an_action_this_run_cannot_carry_out_is_said_to_be_so_and_comes_without_pictures() {
+    // The user's own computer is needed; the run's computer is a desktop in a container.
+    let app = TestApp::with_env(
+        vec![
+            Step::Reply(tool_use("t1", "saved_actions", json!({ "name": "export_the_report" }))),
+            Step::Reply(tool_use("t2", "saved_actions", json!({}))),
+            Step::Reply(text("I can't do that here.")),
+        ],
+        &[("COMPUTER", "on")],
+    )
+    .await;
+    save(&app, app_action("own_computer")).await;
+    let run = app.create_run(KEY_A, "export the report").await;
+    app.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed").await;
+    let system = app.llm.requests()[0]["system"].as_str().unwrap().to_string();
+    assert!(system.contains("on the user's own computer [can't be carried out in this run: it happens on the user's own computer, and the computer tool here works a separate desktop"), "{system}");
+
+    let read: Value = serde_json::from_str(tool_result(&app, 1)["content"].as_str().expect("text only")).unwrap();
+    assert!(read["carry_out_with"].as_str().unwrap().starts_with("This action can't be carried out in this run:"), "{read}");
+    assert!(read.get("pictures").is_none());
+    let listed: Value = serde_json::from_str(tool_result(&app, 2)["content"].as_str().unwrap()).unwrap();
+    assert!(listed["actions"][0]["cannot_be_carried_out_here"].as_str().unwrap().contains("separate desktop"), "{listed}");
+
+    // A model that reads no images gets the steps without the pictures.
+    let text_only = TestApp::with_env(
+        vec![
+            Step::Reply(tool_use("t1", "saved_actions", json!({ "name": "export_the_report" }))),
+            Step::Reply(text("done")),
+        ],
+        &[("BROWSER", "on")],
+    )
+    .await;
+    text_only.register("text-only", "text-only", &[]).await;
+    let mut web = app_action("browser");
+    web["site"] = json!("example.com");
+    save(&text_only, web).await;
+    let run = text_only
+        .create_run_with(KEY_A, json!({ "prompt": "export the report", "model": "text-only" }))
+        .await;
+    text_only.wait_status(KEY_A, run["id"].as_str().unwrap(), "completed").await;
+    let result = tool_result(&text_only, 1);
+    let read: Value = serde_json::from_str(result["content"].as_str().expect("text only")).unwrap();
+    assert_eq!(read["carry_out_with"], "The browser tool.");
+    assert!(read.get("pictures").is_none());
+}

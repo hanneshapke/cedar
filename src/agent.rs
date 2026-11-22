@@ -10,7 +10,7 @@ use crate::context::{self, Budget};
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
-use crate::actions::{Actions, ActionsContext};
+use crate::actions::{Actions, ActionsContext, Desktop, Hands};
 use crate::memory::{self, Memories, MemoryContext};
 use crate::records::{self, Records, RecordsContext};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
@@ -133,6 +133,8 @@ pub async fn run_agent(
         browser,
         computer,
         max_image_side: crate::images::max_side(&env.store).await?,
+        // Known once the run's model is looked up (see below).
+        reads_images: false,
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
         model: env.llm.client_for(&tool_model.model_id).map(|client| {
@@ -157,9 +159,11 @@ pub async fn run_agent(
             run_id: run.id,
             interactive: run.interactive,
         }),
+        // What the run can carry them out with is known once its tools are (see below).
         actions: env.actions.as_ref().map(|actions| ActionsContext {
             actions: actions.clone(),
             owner: run.owner.clone(),
+            hands: Hands::default(),
         }),
     };
     // Connections the key's owner always allows, which the sandbox's base policy doesn't. Only an
@@ -222,6 +226,18 @@ pub async fn run_agent(
     } else {
         tools.without_computer()
     };
+    // What this run has to carry a saved action out with.
+    let hands = Hands {
+        browser: tools.get("browser").is_some(),
+        computer: tools
+            .get("computer")
+            .map(|_| if own_computer { Desktop::Own } else { Desktop::Container }),
+    };
+    let mut ctx = ctx;
+    ctx.reads_images = reads_images;
+    if let Some(actions) = &mut ctx.actions {
+        actions.hands = hands;
+    }
     let mut tool_defs = tools.definitions();
     // On the user's own computer the tool is described as what it is there.
     if own_computer {
@@ -282,7 +298,7 @@ pub async fn run_agent(
         let saved = actions.list(&run.owner).await?;
         if !saved.is_empty() {
             note.push_str("\n\n");
-            note.push_str(&crate::actions::note(&saved, tools.get("browser").is_some()));
+            note.push_str(&crate::actions::note(&saved, hands));
         }
     }
     // Read per request, so a memory deleted in Settings is gone from the very next run. The
@@ -1220,6 +1236,31 @@ async fn approve(
         if computer.allowed() {
             return Ok(Verdict::Go);
         }
+        // A call that carries out a step of a saved action: the user is asked once for the
+        // whole action, with its steps before them, and not again for its other calls.
+        let action = match (input["saved_action"].as_str(), &ctx.actions) {
+            (Some(named), Some(a)) => a.actions.find(&a.owner, named).await?,
+            _ => None,
+        };
+        if let Some(action) = &action {
+            if computer.spend_action(&action.name) {
+                return Ok(Verdict::Go);
+            }
+            let gate = approvals::computer_action_gate(&action.title, &action.steps);
+            return Ok(match ask(env, run, events, cancel, call_id, name, input, &gate).await? {
+                Decision::Allow => {
+                    computer.allow_action(&action.name, approvals::action_calls(action.steps.len()));
+                    computer.spend_action(&action.name);
+                    Verdict::Go
+                }
+                Decision::Always => {
+                    computer.allow();
+                    Verdict::Go
+                }
+                Decision::Timeout => Verdict::Refused(NOT_APPROVED.into()),
+                Decision::Deny => Verdict::Refused(DECLINED.into()),
+            });
+        }
         return Ok(match ask(env, run, events, cancel, call_id, name, input, &gate).await? {
             Decision::Allow => Verdict::Go,
             Decision::Always => {
@@ -1666,13 +1707,13 @@ async fn finish_call(
     took: Duration,
 ) -> Result<Value, AgentError> {
     let (id, name, input) = (call.id.as_str(), call.name.as_str(), &call.block["input"]);
-    let (mut output, image, is_error) = match result {
-        Ok(out) => (out.text, out.image, false),
+    let (mut output, images, is_error) = match result {
+        Ok(out) => (out.text, out.images, false),
         Err(e) if e.downcast_ref::<SandboxFatal>().is_some() => {
             return Err(AgentError::Failed(e.to_string()))
         }
         // Errors go back to the model so it can recover.
-        Err(e) => (format!("{e:#}"), None, true),
+        Err(e) => (format!("{e:#}"), Vec::new(), true),
     };
     if call.refused.is_none() && call.held.is_none() {
         breaker.record(name, is_error, &output);
@@ -1696,15 +1737,19 @@ async fn finish_call(
         }
     }
     // The image itself stays out of the event log; it is in the conversation (`/messages`).
-    if image.is_some() {
+    if !images.is_empty() {
         data["image"] = Value::Bool(true);
     }
     events.emit(event::TOOL_RESULT, data).await?;
 
-    // A result with an image (the `computer`'s screenshot) is the text and the image as parts.
-    let content = match &image {
-        Some(image) => json!([{ "type": "text", "text": for_model }, image.block()]),
-        None => Value::String(for_model),
+    // A result with images (the `computer`'s screenshot, a saved action's pictures) is the text
+    // and the images as parts.
+    let content = if images.is_empty() {
+        Value::String(for_model)
+    } else {
+        let mut parts = vec![json!({ "type": "text", "text": for_model })];
+        parts.extend(images.iter().map(|image| image.block()));
+        Value::Array(parts)
     };
     let mut block = json!({ "type": "tool_result", "tool_use_id": id, "content": content });
     if is_error {

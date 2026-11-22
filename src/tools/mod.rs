@@ -106,6 +106,8 @@ pub struct ToolContext {
     /// The longer side, in pixels, an image shown to the model may have (the server's
     /// `max_image_side` setting).
     pub max_image_side: u32,
+    /// Whether the run's model reads images, for a tool that has pictures to add to its text.
+    pub reads_images: bool,
     /// Per-command wall-clock limit.
     pub timeout: Duration,
     /// Cap on returned output, per stream.
@@ -187,11 +189,11 @@ impl ToolModel {
 }
 
 /// What a call gives the model: text, and for a tool that shows something (the `computer`'s
-/// screen) an image with it.
+/// screen, the pictures kept with a saved action) images with it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolOutput {
     pub text: String,
-    pub image: Option<ToolImage>,
+    pub images: Vec<ToolImage>,
 }
 
 /// An image in a tool's result, base64-encoded.
@@ -199,19 +201,27 @@ pub struct ToolOutput {
 pub struct ToolImage {
     pub media_type: String,
     pub data: String,
+    /// A picture to go back to (what a button looks like), not a view of how things are right
+    /// now: it stays in later requests where an old screenshot is taken out (see
+    /// [`crate::context::with_recent_views`]).
+    pub reference: bool,
 }
 
 impl ToolImage {
     /// The content block the image is stored and sent as.
     pub fn block(&self) -> Value {
-        json!({ "type": "image",
-                "source": { "type": "base64", "media_type": self.media_type, "data": self.data } })
+        let mut block = json!({ "type": "image",
+                "source": { "type": "base64", "media_type": self.media_type, "data": self.data } });
+        if self.reference {
+            block["reference"] = Value::Bool(true);
+        }
+        block
     }
 }
 
 impl From<String> for ToolOutput {
     fn from(text: String) -> Self {
-        Self { text, image: None }
+        Self { text, images: Vec::new() }
     }
 }
 

@@ -16,7 +16,15 @@
 //! the model never reads it. The `browser` tool types it into a page for the run (`"secret":
 //! "<action>/<name>"`), and only on the action's own site (see [`Actions::secret_for`]), so a
 //! page that talks the model into typing it elsewhere gets nothing.
+//!
+//! An action is not only a website. With the `computer` tool a run can work applications too, so
+//! an action says what it is carried out with ([`RunsOn`]): the browser, any desktop, or only the
+//! user's own computer; and a run is told which of its actions it can carry out with what it has
+//! ([`Hands`]). A few pictures of the recording can be kept with an action ([`ReferenceFrame`]):
+//! a model that reads images is shown them with the steps, so it knows what the button it is
+//! looking for looks like.
 
+use crate::images;
 use crate::llm::{LlmClient, MessageRequest};
 use crate::models::Usage;
 use crate::secrets::{self, SecretStore};
@@ -53,6 +61,12 @@ pub const MAX_RECORDING_MS: u64 = 10 * 60 * 1000;
 /// The image and video types a recording may be made of.
 pub const FRAME_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp"];
 pub const VIDEO_TYPES: &[&str] = &["video/webm", "video/mp4"];
+pub const MAX_APP_CHARS: usize = 80;
+/// How many pictures of its recording an action keeps, what each may say it shows, and the
+/// longer side they are made small to.
+pub const MAX_REFERENCE_FRAMES: usize = 6;
+pub const MAX_SHOWS_CHARS: usize = 160;
+pub const REFERENCE_FRAME_SIDE: u32 = 1024;
 /// The name a lone password is kept under.
 pub const DEFAULT_SECRET: &str = "password";
 
@@ -69,6 +83,78 @@ pub struct SecretRef {
     pub saved: bool,
 }
 
+/// What an action is carried out with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RunsOn {
+    /// A website: the `browser` tool does it (and so can a `computer`, in its web browser).
+    #[default]
+    Browser,
+    /// An application with windows, on any desktop that has it: the `computer` tool.
+    Computer,
+    /// The user's own computer: their applications, their files, the sites they are signed in
+    /// to. Only a `computer` tool that works that computer can do it.
+    OwnComputer,
+}
+
+impl RunsOn {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RunsOn::Browser => "browser",
+            RunsOn::Computer => "computer",
+            RunsOn::OwnComputer => "own_computer",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "browser" => Some(RunsOn::Browser),
+            "computer" => Some(RunsOn::Computer),
+            "own_computer" => Some(RunsOn::OwnComputer),
+            _ => None,
+        }
+    }
+}
+
+/// The desktop a run's `computer` tool works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Desktop {
+    /// A desktop in a container: a web browser, an office suite, a file manager, and nothing
+    /// of the user's.
+    Container,
+    /// The user's own computer.
+    Own,
+}
+
+/// What a run has to carry an action out with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Hands {
+    /// The `browser` tool.
+    pub browser: bool,
+    /// The `computer` tool, and what it works.
+    pub computer: Option<Desktop>,
+}
+
+impl Hands {
+    /// Why `action` can't be carried out with these, in words for the model; `None` when it can.
+    pub fn lacks(&self, action: &Action) -> Option<&'static str> {
+        match (action.runs_on, self.computer) {
+            (RunsOn::Browser, _) if self.browser => None,
+            (RunsOn::Browser | RunsOn::Computer, Some(_)) => None,
+            (RunsOn::OwnComputer, Some(Desktop::Own)) => None,
+            (RunsOn::Browser, None) => Some("it needs the browser tool, which this run doesn't have"),
+            (RunsOn::Computer, None) => Some("it needs the computer tool, which this run doesn't have"),
+            (RunsOn::OwnComputer, Some(Desktop::Container)) => Some(
+                "it happens on the user's own computer, and the computer tool here works a separate \
+                 desktop without their applications, files or sign-ins",
+            ),
+            (RunsOn::OwnComputer, None) => {
+                Some("it happens on the user's own computer, which this run can't use")
+            }
+        }
+    }
+}
+
 /// A saved action, as `/v1/actions` lists it.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Action {
@@ -79,6 +165,11 @@ pub struct Action {
     pub summary: String,
     /// The host it happens on, when it is a website. Saved secrets are only typed there.
     pub site: Option<String>,
+    /// The application it happens in, when it is not (only) a website.
+    pub app: Option<String>,
+    pub runs_on: RunsOn,
+    /// What each picture kept from the recording shows, in order (see [`Actions::frames`]).
+    pub frames: Vec<String>,
     pub steps: Vec<String>,
     pub secrets: Vec<SecretRef>,
     /// Where the steps came from (`{"kind": "recording", "seconds", "frames", "model"}`).
@@ -111,12 +202,41 @@ pub struct ActionInput {
     pub summary: String,
     #[serde(default)]
     pub site: Option<String>,
+    #[serde(default)]
+    pub app: Option<String>,
+    /// Left out: `browser` for a website, `computer` for an application without one.
+    #[serde(default)]
+    pub runs_on: Option<RunsOn>,
     pub steps: Vec<String>,
     #[serde(default)]
     pub secrets: Vec<SecretInput>,
     /// Where the steps came from; kept as sent when it is a small object.
     #[serde(default)]
     pub source: Option<Value>,
+    /// Pictures of the recording to keep with the action. Left out when changing an action,
+    /// the ones it has stay; an empty list removes them.
+    #[serde(default)]
+    pub frames: Option<Vec<FrameInput>>,
+}
+
+/// A picture to keep with an action: a frame of its recording and what it shows.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct FrameInput {
+    #[serde(default)]
+    pub shows: String,
+    pub media_type: String,
+    /// Base64.
+    pub data: String,
+}
+
+/// A picture kept with an action, made small.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ReferenceFrame {
+    pub shows: String,
+    pub media_type: String,
+    /// Base64.
+    pub data: String,
 }
 
 /// Why [`Actions`] did nothing.
@@ -216,10 +336,14 @@ struct Checked {
     title: String,
     summary: String,
     site: Option<String>,
+    app: Option<String>,
+    runs_on: RunsOn,
     steps: Vec<String>,
     /// Name, label, and the value to save if one was sent.
     secrets: Vec<(String, String, Option<String>)>,
     source: Value,
+    /// What each picture shows and its bytes as sent; `None` when none were sent.
+    frames: Option<Vec<(String, Vec<u8>)>>,
 }
 
 fn check(input: &ActionInput) -> Result<Checked, Refused> {
@@ -237,6 +361,35 @@ fn check(input: &ActionInput) -> Result<Checked, Refused> {
     let site = match input.site.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         Some(raw) => Some(site_host(raw).ok_or_else(|| invalid(format!("site {raw:?} is not a website address")))?),
         None => None,
+    };
+    let app = input.app.as_deref().map(one_line).filter(|a| !a.is_empty());
+    if app.as_ref().is_some_and(|a| a.chars().count() > MAX_APP_CHARS) {
+        return Err(invalid(format!("the application's name is longer than {MAX_APP_CHARS} characters")));
+    }
+    let runs_on = input.runs_on.unwrap_or(match (&site, &app) {
+        (None, Some(_)) => RunsOn::Computer,
+        _ => RunsOn::Browser,
+    });
+    let frames = match &input.frames {
+        None => None,
+        Some(sent) => {
+            if sent.len() > MAX_REFERENCE_FRAMES {
+                return Err(invalid(format!("an action keeps at most {MAX_REFERENCE_FRAMES} pictures")));
+            }
+            let mut frames = Vec::new();
+            for (i, f) in sent.iter().enumerate() {
+                if !FRAME_TYPES.contains(&f.media_type.as_str()) {
+                    return Err(invalid(format!("picture {} is {:?}; use one of {}", i + 1, f.media_type, FRAME_TYPES.join(", "))));
+                }
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(&f.data)
+                    .ok()
+                    .filter(|b| !b.is_empty() && b.len() <= MAX_FRAME_BYTES)
+                    .ok_or_else(|| invalid(format!("picture {} is not valid base64, empty, or larger than {} KB", i + 1, MAX_FRAME_BYTES >> 10)))?;
+                frames.push((clip(&one_line(&f.shows), MAX_SHOWS_CHARS), bytes));
+            }
+            Some(frames)
+        }
     };
     let steps: Vec<String> = input.steps.iter().map(|s| one_line(s)).filter(|s| !s.is_empty()).collect();
     if steps.is_empty() {
@@ -283,7 +436,7 @@ fn check(input: &ActionInput) -> Result<Checked, Refused> {
         Some(v) if v.is_object() && v.to_string().len() <= 2_000 => v.clone(),
         _ => json!({ "kind": "manual" }),
     };
-    Ok(Checked { title, summary, site, steps, secrets, source })
+    Ok(Checked { title, summary, site, app, runs_on, steps, secrets, source, frames })
 }
 
 fn from_row(r: &SqliteRow) -> Result<Action> {
@@ -293,6 +446,9 @@ fn from_row(r: &SqliteRow) -> Result<Action> {
         title: r.try_get("title")?,
         summary: r.try_get("summary")?,
         site: r.try_get("site")?,
+        app: r.try_get("app")?,
+        runs_on: RunsOn::parse(r.try_get("runs_on")?).unwrap_or_default(),
+        frames: serde_json::from_str(r.try_get("frames")?)?,
         steps: serde_json::from_str(r.try_get("steps")?)?,
         secrets: serde_json::from_str(r.try_get("secrets")?)?,
         source: serde_json::from_str(r.try_get("source")?)?,
@@ -303,7 +459,26 @@ fn from_row(r: &SqliteRow) -> Result<Action> {
     })
 }
 
-const COLS: &str = "id, name, title, summary, site, steps, secrets, source, uses, last_used_at, created_at, updated_at";
+const COLS: &str = "id, name, title, summary, site, app, runs_on, frames, steps, secrets, source, uses, last_used_at, created_at, updated_at";
+
+/// The pictures of `sent` made small (see [`REFERENCE_FRAME_SIDE`]), off the async threads.
+/// `Err` names the first that is no picture.
+async fn small_frames(sent: Vec<(String, Vec<u8>)>) -> Result<Result<Vec<ReferenceFrame>, Refused>> {
+    let work = move || {
+        sent.into_iter()
+            .enumerate()
+            .map(|(i, (shows, bytes))| match images::reference_jpeg(&bytes, REFERENCE_FRAME_SIDE) {
+                Ok(jpeg) => Ok(ReferenceFrame {
+                    shows,
+                    media_type: "image/jpeg".into(),
+                    data: base64::engine::general_purpose::STANDARD.encode(jpeg),
+                }),
+                Err(_) => Err(invalid(format!("picture {} can't be read as an image", i + 1))),
+            })
+            .collect()
+    };
+    Ok(tokio::task::spawn_blocking(work).await?)
+}
 
 /// The saved actions of every owner.
 #[derive(Clone)]
@@ -329,6 +504,7 @@ impl Actions {
     /// What a client may send, for its forms.
     pub fn limits(&self) -> Value {
         json!({ "actions": MAX_ACTIONS, "steps": MAX_STEPS, "step_chars": MAX_STEP_CHARS,
+                "reference_frames": MAX_REFERENCE_FRAMES,
                 "secrets": MAX_SECRETS, "frames": MAX_FRAMES, "frame_bytes": MAX_FRAME_BYTES,
                 "frames_total_bytes": MAX_FRAMES_TOTAL_BYTES, "video_bytes": MAX_VIDEO_BYTES,
                 "recording_seconds": MAX_RECORDING_MS / 1000 })
@@ -440,13 +616,17 @@ impl Actions {
         if count as usize >= MAX_ACTIONS {
             return Ok(Err(Refused::Full));
         }
+        let frames = match small_frames(checked.frames.clone().unwrap_or_default()).await? {
+            Ok(frames) => frames,
+            Err(refused) => return Ok(Err(refused)),
+        };
         let id = Uuid::now_v7();
         let name = self.free_name(owner, &checked.title).await?;
         let refs = self.settle_secrets(owner, id, &name, &checked, None).await?;
         let now = now_ms();
         sqlx::query(
-            "INSERT INTO actions (id, owner, name, title, summary, site, steps, secrets, source, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO actions (id, owner, name, title, summary, site, app, runs_on, frames, steps, secrets, source, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(id.to_string())
         .bind(owner)
@@ -454,6 +634,9 @@ impl Actions {
         .bind(&checked.title)
         .bind(&checked.summary)
         .bind(&checked.site)
+        .bind(&checked.app)
+        .bind(checked.runs_on.as_str())
+        .bind(serde_json::to_string(&frames.iter().map(|f| &f.shows).collect::<Vec<_>>())?)
         .bind(serde_json::to_string(&checked.steps)?)
         .bind(serde_json::to_string(&refs)?)
         .bind(checked.source.to_string())
@@ -461,6 +644,7 @@ impl Actions {
         .bind(now)
         .execute(self.store.pool())
         .await?;
+        self.put_frames(id, &frames).await?;
         Ok(Ok(self.get(owner, id).await?.ok_or_else(|| anyhow!("the action just saved is gone"))?))
     }
 
@@ -480,14 +664,32 @@ impl Actions {
         if let Err(refused) = self.can_store(&checked, Some(&existing)) {
             return Ok(Some(Err(refused)));
         }
+        // Pictures that were not sent stay as they are.
+        let frames = match checked.frames.clone() {
+            None => None,
+            Some(sent) => match small_frames(sent).await? {
+                Ok(frames) => Some(frames),
+                Err(refused) => return Ok(Some(Err(refused))),
+            },
+        };
+        let shows = match &frames {
+            Some(frames) => frames.iter().map(|f| f.shows.clone()).collect(),
+            None => existing.frames.clone(),
+        };
         let refs = self.settle_secrets(owner, id, &existing.name, &checked, Some(&existing)).await?;
+        if let Some(frames) = &frames {
+            self.put_frames(id, frames).await?;
+        }
         sqlx::query(
-            "UPDATE actions SET title = ?, summary = ?, site = ?, steps = ?, secrets = ?, source = ?, updated_at = ? \
+            "UPDATE actions SET title = ?, summary = ?, site = ?, app = ?, runs_on = ?, frames = ?, steps = ?, secrets = ?, source = ?, updated_at = ? \
              WHERE owner = ? AND id = ?",
         )
         .bind(&checked.title)
         .bind(&checked.summary)
         .bind(&checked.site)
+        .bind(&checked.app)
+        .bind(checked.runs_on.as_str())
+        .bind(serde_json::to_string(&shows)?)
         .bind(serde_json::to_string(&checked.steps)?)
         .bind(serde_json::to_string(&refs)?)
         .bind(checked.source.to_string())
@@ -512,7 +714,47 @@ impl Actions {
             .bind(id.to_string())
             .execute(self.store.pool())
             .await?;
+        self.put_frames(id, &[]).await?;
         Ok(true)
+    }
+
+    /// Replace the pictures kept with an action.
+    async fn put_frames(&self, id: Uuid, frames: &[ReferenceFrame]) -> Result<()> {
+        sqlx::query("DELETE FROM action_frames WHERE action_id = ?")
+            .bind(id.to_string())
+            .execute(self.store.pool())
+            .await?;
+        for (position, f) in frames.iter().enumerate() {
+            sqlx::query("INSERT INTO action_frames (action_id, position, media_type, data) VALUES (?, ?, ?, ?)")
+                .bind(id.to_string())
+                .bind(position as i64)
+                .bind(&f.media_type)
+                .bind(&f.data)
+                .execute(self.store.pool())
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// The pictures kept with the owner's action, in order, each with what it shows.
+    pub async fn frames(&self, owner: &str, id: Uuid) -> Result<Vec<ReferenceFrame>> {
+        let Some(action) = self.get(owner, id).await? else {
+            return Ok(Vec::new());
+        };
+        let rows = sqlx::query("SELECT position, media_type, data FROM action_frames WHERE action_id = ? ORDER BY position")
+            .bind(id.to_string())
+            .fetch_all(self.store.pool())
+            .await?;
+        rows.iter()
+            .map(|r| {
+                let position: i64 = r.try_get("position")?;
+                Ok(ReferenceFrame {
+                    shows: action.frames.get(position as usize).cloned().unwrap_or_default(),
+                    media_type: r.try_get("media_type")?,
+                    data: r.try_get("data")?,
+                })
+            })
+            .collect()
     }
 
     /// Note that a run read the action's steps.
@@ -587,6 +829,8 @@ impl Actions {
 pub struct ActionsContext {
     pub actions: Actions,
     pub owner: String,
+    /// What the run has to carry actions out with.
+    pub hands: Hands,
 }
 
 /// How many actions the prompt lists; an owner with more reads the rest with `saved_actions`.
@@ -594,7 +838,7 @@ const NOTE_MAX_ACTIONS: usize = 40;
 
 /// The note that tells the model which actions its owner saved, for the run's per-request note.
 /// Empty when there are none: a run then needs to know nothing about them.
-pub fn note(actions: &[Action], browser: bool) -> String {
+pub fn note(actions: &[Action], hands: Hands) -> String {
     if actions.is_empty() {
         return String::new();
     }
@@ -611,6 +855,15 @@ pub fn note(actions: &[Action], browser: bool) -> String {
         if let Some(site) = &a.site {
             note.push_str(&format!(", on {site}"));
         }
+        if let Some(app) = &a.app {
+            note.push_str(&format!(", in {app}"));
+        }
+        if a.runs_on == RunsOn::OwnComputer {
+            note.push_str(", on the user's own computer");
+        }
+        if let Some(why) = hands.lacks(a) {
+            note.push_str(&format!(" [can't be carried out in this run: {why}]"));
+        }
     }
     if actions.len() > NOTE_MAX_ACTIONS {
         note.push_str(&format!("\n- and {} more; saved_actions lists them all", actions.len() - NOTE_MAX_ACTIONS));
@@ -620,20 +873,45 @@ pub fn note(actions: &[Action], browser: bool) -> String {
          have changed since it was recorded: go by what the page shows now, and say so if a step \
          no longer fits.",
     );
-    if !browser && actions.iter().any(|a| a.site.is_some()) {
-        note.push_str(" The browser tool is not available in this run, so steps on a website can't be carried out here; say so.");
+    if hands.computer.is_some() {
+        note.push_str(if hands.browser {
+            " Carry out steps on a website with the browser tool, which is quicker and surer, and \
+             steps in an application with the computer tool; use the computer tool's own web \
+             browser where the browser tool can't do what a page needs."
+        } else {
+            " Carry the steps out with the computer tool, a website's in its web browser."
+        });
+    }
+    if actions.iter().take(NOTE_MAX_ACTIONS).any(|a| hands.lacks(a).is_some()) {
+        note.push_str(" When a request needs an action that can't be carried out in this run, say so and why; don't try it another way.");
     }
     note
 }
 
-/// What `saved_actions` returns for one action: its steps, and how its secrets are used.
-pub fn for_model(action: &Action) -> Value {
+/// What `saved_actions` returns for one action: its steps, what to carry them out with in a run
+/// that has `hands`, and how its secrets are used.
+pub fn for_model(action: &Action, hands: Hands) -> Value {
     let mut out = json!({
         "name": action.name,
         "title": action.title,
         "summary": action.summary,
         "site": action.site,
         "steps": action.steps,
+    });
+    if let Some(app) = &action.app {
+        out["app"] = json!(app);
+    }
+    out["carry_out_with"] = json!(match (hands.lacks(action), action.runs_on, hands.computer) {
+        (Some(why), _, _) => format!("This action can't be carried out in this run: {why}. Tell the user so."),
+        (None, RunsOn::Browser, _) if hands.browser => "The browser tool.".to_string(),
+        (None, RunsOn::Browser, _) => "The computer tool, in its web browser.".to_string(),
+        (None, _, Some(Desktop::Own)) => format!(
+            "The computer tool, on the user's own computer. Pass \"saved_action\": \"{}\" with every \
+             computer call you make for it: the user is then asked once for the whole action instead \
+             of before every call.",
+            action.name
+        ),
+        (None, _, _) => "The computer tool.".to_string(),
     });
     if !action.secrets.is_empty() {
         out["secrets"] = action
@@ -750,11 +1028,24 @@ pub struct Draft {
     pub title: String,
     pub summary: String,
     pub site: Option<String>,
+    /// The application it happens in, when it is not (only) a website.
+    pub app: Option<String>,
+    pub runs_on: RunsOn,
     pub steps: Vec<String>,
     /// The secrets the recording showed being typed, by name and label. Never a value.
     pub secrets: Vec<SecretRef>,
     /// What the agent won't be able to do as shown, in the model's words.
     pub notes: String,
+    /// The frames worth keeping with the action, when the model was shown frames: which (from
+    /// 1, as the recording sent them) and what each shows.
+    pub frames: Vec<DraftFrame>,
+}
+
+/// A frame of the recording the model picked as worth keeping.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct DraftFrame {
+    pub frame: usize,
+    pub shows: String,
 }
 
 /// The system prompt of the call that turns a recording into steps. The model is not acting as
@@ -771,7 +1062,7 @@ fn mmss(ms: u64) -> String {
 
 /// The request that goes with the recording. `tools` are the agent's tools by name and what
 /// they do, so the steps are written for what it has.
-fn instruction(recording: &Recording, as_video: bool, tools: &[(String, String)]) -> String {
+fn instruction(recording: &Recording, as_video: bool, tools: &[(String, String)], hands: Hands) -> String {
     let mut s = String::new();
     if as_video {
         s.push_str("Above is the screen recording.");
@@ -788,13 +1079,37 @@ fn instruction(recording: &Recording, as_video: bool, tools: &[(String, String)]
     if !goal.is_empty() {
         s.push_str(&format!("\n\nThe person says about it: \"{goal}\""));
     }
+    s.push_str("\n\nWrite the steps for the agent. ");
+    s.push_str(match hands.computer {
+        None => {
+            "The agent works through a headless web browser tool (it navigates to an address, \
+             reads the page as text with numbered buttons, links and fields, clicks, types into \
+             fields and scrolls) and the other tools listed below. It has no mouse position, no \
+             desktop and no other applications."
+        }
+        Some(Desktop::Own) => {
+            "The agent has a computer tool that works this person's own computer, the one in the \
+             recording: it looks at screenshots of the screen and uses the mouse and keyboard, \
+             so it can work the applications, windows, menus and file dialogs shown. For \
+             websites it also has a headless web browser tool (it reads a page as text with \
+             numbered buttons, links and fields), which is quicker and has none of the person's \
+             sign-ins. Its other tools are listed below."
+        }
+        Some(Desktop::Container) => {
+            "The agent has a computer tool that works a desktop of its own: it looks at \
+             screenshots of the screen and uses the mouse and keyboard, so it can work \
+             applications, windows, menus and file dialogs. That desktop is NOT the person's \
+             computer: it is a Linux desktop with Firefox, LibreOffice, a file manager, a text \
+             editor and a terminal, without the person's other applications, files or sign-ins. \
+             For websites it also has a headless web browser tool (it reads a page as text with \
+             numbered buttons, links and fields), which is quicker. Its other tools are listed \
+             below."
+        }
+    });
     s.push_str(
-        "\n\nWrite the steps for the agent. The agent works through a headless web browser tool \
-         (it navigates to an address, reads the page as text with numbered buttons, links and \
-         fields, clicks, types into fields and scrolls) and the other tools listed below. It has \
-         no mouse position, no desktop and no other applications.\n\
+        "\n\
          - One action per step, in the imperative, in the order shown. Name what to click or fill \
-         in by its visible label or text, never by its position or colour. Give the address to \
+         in by its visible label or text, never by its position in pixels or its colour. Give the address to \
          start from, read from the browser's address bar, if one is shown.\n\
          - Say what the page shows when a step has worked, where that isn't obvious, so the agent \
          can tell.\n\
@@ -806,10 +1121,24 @@ fn instruction(recording: &Recording, as_video: bool, tools: &[(String, String)]
          it can be read in the recording. Where one is typed, write: Enter the saved secret \
          \"password\" into the field ... (choose a short lowercase name), and list that name under \
          secrets. A user name or an email address is not a secret.\n\
-         - If part of what is shown can't be done with the agent's tools (a desktop application, \
-         a file dialog, a phone, a captcha, a code sent to a device), still write the step, and \
-         say under notes what the agent will need the user for.",
+         - If part of what is shown can't be done with what the agent has (",
     );
+    s.push_str(match hands.computer {
+        None => "a desktop application, a file dialog, ",
+        Some(Desktop::Container) => "an application its desktop doesn't have, a file on the person's computer, ",
+        Some(Desktop::Own) => "",
+    });
+    s.push_str(
+        "a phone, a captcha, a code sent to a device), still write the step, and say under notes \
+         what the agent will need the user for.",
+    );
+    if hands.computer.is_some() {
+        s.push_str(
+            "\n- For a step in an application, name the application and the window, and say \
+             where the thing to click sits (which menu, toolbar or dialog), so it can be found on \
+             a screenshot.",
+        );
+    }
     if !tools.is_empty() {
         s.push_str("\n\nThe agent's tools:");
         for (name, what) in tools {
@@ -824,15 +1153,29 @@ fn instruction(recording: &Recording, as_video: bool, tools: &[(String, String)]
          {\"title\": \"a short name for what this does\", \
          \"summary\": \"one sentence: when the agent should use this\", \
          \"site\": \"the host of the website it happens on, like portal.example.com, or null\", \
+         \"app\": \"the application it happens in when that is not just a web browser, like LibreOffice Calc, or null\", \
+         \"runs_on\": \"browser if it is all on a website anyone's browser could open; computer if it needs an application with windows that any desktop could have; own_computer if it needs this person's own computer (their applications, their files, a site they are already signed in to)\", \
          \"steps\": [\"...\"], \
          \"secrets\": [{\"name\": \"password\", \"label\": \"what it is\"}], \
-         \"notes\": \"what the agent can't do as shown, or an empty string\"}",
+         \"notes\": \"what the agent can't do as shown, or an empty string\"",
     );
+    if !as_video && !recording.frames.is_empty() {
+        s.push_str(&format!(
+            ", \"frames\": [{{\"frame\": 3, \"shows\": \"what to look for in it\"}}]}}\n\
+             Under frames, pick at most {MAX_REFERENCE_FRAMES} of the frames above that best show \
+             what the agent has to find on the screen (the button, menu or dialog of a step), by \
+             their number, and say in a few words what each shows. They are kept as pictures for \
+             the agent, so pick none that shows a password, a code or anything private that the \
+             task doesn't need."
+        ));
+    } else {
+        s.push('}');
+    }
     s
 }
 
 /// The messages of the call: the recording as a video or as its frames, then the request.
-pub fn messages(recording: &Recording, as_video: bool, tools: &[(String, String)]) -> Vec<Value> {
+pub fn messages(recording: &Recording, as_video: bool, tools: &[(String, String)], hands: Hands) -> Vec<Value> {
     let mut blocks = Vec::new();
     match (&recording.video, as_video) {
         (Some(v), true) => blocks.push(json!({
@@ -849,7 +1192,7 @@ pub fn messages(recording: &Recording, as_video: bool, tools: &[(String, String)
             }
         }
     }
-    blocks.push(json!({ "type": "text", "text": instruction(recording, as_video, tools) }));
+    blocks.push(json!({ "type": "text", "text": instruction(recording, as_video, tools, hands) }));
     vec![json!({ "role": "user", "content": blocks })]
 }
 
@@ -893,13 +1236,33 @@ pub fn parse_draft(text: &str) -> Result<Draft> {
         secrets.push(SecretRef { name, label: clip(&text_of(&s["label"]), MAX_LABEL_CHARS), saved: false });
     }
     let title = clip(&text_of(&object["title"]), MAX_TITLE_CHARS);
+    let site = object["site"].as_str().and_then(site_host);
+    let app = Some(clip(&text_of(&object["app"]), MAX_APP_CHARS)).filter(|a| !a.is_empty() && a != "null");
+    // What the model didn't say follows from what it found: a website, or an application.
+    let runs_on = object["runs_on"].as_str().and_then(RunsOn::parse).unwrap_or(match (&site, &app) {
+        (None, Some(_)) => RunsOn::Computer,
+        _ => RunsOn::Browser,
+    });
+    let mut frames: Vec<DraftFrame> = Vec::new();
+    for f in object["frames"].as_array().into_iter().flatten() {
+        let number = if f.is_u64() { f.as_u64() } else { f["frame"].as_u64() };
+        let Some(frame) = number.and_then(|n| usize::try_from(n).ok()).filter(|n| *n >= 1) else {
+            continue;
+        };
+        if frames.len() < MAX_REFERENCE_FRAMES && !frames.iter().any(|k| k.frame == frame) {
+            frames.push(DraftFrame { frame, shows: clip(&text_of(&f["shows"]), MAX_SHOWS_CHARS) });
+        }
+    }
     Ok(Draft {
         title: if title.is_empty() { clip(&steps[0], MAX_TITLE_CHARS) } else { title },
         summary: clip(&text_of(&object["summary"]), MAX_SUMMARY_CHARS),
-        site: object["site"].as_str().and_then(site_host),
+        site,
+        app,
+        runs_on,
         steps,
         secrets,
         notes: clip(&text_of(&object["notes"]), 600),
+        frames,
     })
 }
 
@@ -912,8 +1275,9 @@ pub async fn draft(
     recording: &Recording,
     as_video: bool,
     tools: &[(String, String)],
+    hands: Hands,
 ) -> Result<(Draft, Usage)> {
-    let messages = messages(recording, as_video, tools);
+    let messages = messages(recording, as_video, tools, hands);
     let resp = llm
         .create_message(&MessageRequest {
             model,
@@ -930,7 +1294,13 @@ pub async fn draft(
         .filter(|b| b["type"] == "text")
         .filter_map(|b| b["text"].as_str())
         .collect();
-    Ok((parse_draft(&text)?, resp.usage))
+    let mut draft = parse_draft(&text)?;
+    // Only frames the model was shown, by the numbers it was shown them under.
+    if as_video && recording.video.is_some() {
+        draft.frames.clear();
+    }
+    draft.frames.retain(|f| f.frame <= recording.frames.len());
+    Ok((draft, resp.usage))
 }
 
 #[cfg(test)]
@@ -946,6 +1316,9 @@ mod tests {
             ..Default::default()
         }
     }
+
+    /// A run with the browser tool and no computer.
+    const BROWSER: Hands = Hands { browser: true, computer: None };
 
     async fn actions(key: bool) -> Actions {
         let store = Store::connect_memory().await.unwrap();
@@ -1029,7 +1402,7 @@ mod tests {
         assert_eq!(saved.secrets, [SecretRef { name: "password".into(), label: "Portal password".into(), saved: true }]);
         // Neither the row nor what the model reads holds the value.
         assert!(!serde_json::to_string(&saved).unwrap().contains("hunter22"));
-        let shown = for_model(&saved).to_string();
+        let shown = for_model(&saved, BROWSER).to_string();
         assert!(!shown.contains("hunter22"));
         assert!(shown.contains("sign_in/password"));
         let raw: Vec<u8> = sqlx::query_scalar("SELECT ciphertext FROM secrets").fetch_one(a.store.pool()).await.unwrap();
@@ -1080,13 +1453,16 @@ mod tests {
 
     #[test]
     fn the_note_lists_actions_and_is_empty_without_any() {
-        assert_eq!(note(&[], true), "");
+        assert_eq!(note(&[], BROWSER), "");
         let action = Action {
             id: Uuid::nil(),
             name: "get_invoice".into(),
             title: "Get the invoice".into(),
             summary: "Downloads last month's invoice".into(),
             site: Some("portal.example.com".into()),
+            app: None,
+            runs_on: RunsOn::Browser,
+            frames: vec![],
             steps: vec!["x".into()],
             secrets: vec![],
             source: json!({}),
@@ -1095,10 +1471,134 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
-        let n = note(std::slice::from_ref(&action), true);
+        let n = note(std::slice::from_ref(&action), BROWSER);
         assert!(n.contains("- get_invoice: Get the invoice (Downloads last month's invoice), on portal.example.com"));
-        assert!(!n.contains("not available"));
-        assert!(note(&[action], false).contains("browser tool is not available"));
+        assert!(!n.contains("can't be carried out"), "{n}");
+        let without = note(std::slice::from_ref(&action), Hands::default());
+        assert!(without.contains("[can't be carried out in this run: it needs the browser tool"), "{without}");
+        assert!(without.contains("say so and why"), "{without}");
+
+        // A website's steps can also be carried out in a desktop's web browser.
+        let desktop = Hands { browser: false, computer: Some(Desktop::Container) };
+        let n = note(std::slice::from_ref(&action), desktop);
+        assert!(!n.contains("can't be carried out"), "{n}");
+        assert!(n.contains("with the computer tool, a website's in its web browser"), "{n}");
+        assert_eq!(for_model(&action, desktop)["carry_out_with"], "The computer tool, in its web browser.");
+        assert_eq!(for_model(&action, BROWSER)["carry_out_with"], "The browser tool.");
+    }
+
+    #[test]
+    fn an_action_says_what_it_is_carried_out_with_and_where_it_cannot_be() {
+        let own = Hands { browser: true, computer: Some(Desktop::Own) };
+        let container = Hands { browser: true, computer: Some(Desktop::Container) };
+        let action = |runs_on, app: Option<&str>| Action {
+            id: Uuid::nil(),
+            name: "export_report".into(),
+            title: "Export the report".into(),
+            summary: String::new(),
+            site: None,
+            app: app.map(String::from),
+            runs_on,
+            frames: vec![],
+            steps: vec!["x".into()],
+            secrets: vec![],
+            source: json!({}),
+            uses: 0,
+            last_used_at: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        // An application on any desktop: the computer tool, wherever it works.
+        let calc = action(RunsOn::Computer, Some("LibreOffice Calc"));
+        assert_eq!(BROWSER.lacks(&calc), Some("it needs the computer tool, which this run doesn't have"));
+        assert_eq!(container.lacks(&calc), None);
+        assert!(note(std::slice::from_ref(&calc), container).contains("- export_report: Export the report, in LibreOffice Calc"));
+        assert_eq!(for_model(&calc, container)["carry_out_with"], "The computer tool.");
+        assert_eq!(for_model(&calc, container)["app"], "LibreOffice Calc");
+
+        // The user's own computer: only a computer tool that works it.
+        let mine = action(RunsOn::OwnComputer, Some("Numbers"));
+        assert!(container.lacks(&mine).unwrap().contains("separate desktop"));
+        assert!(BROWSER.lacks(&mine).unwrap().contains("which this run can't use"));
+        assert_eq!(own.lacks(&mine), None);
+        let n = note(std::slice::from_ref(&mine), container);
+        assert!(n.contains("in Numbers, on the user's own computer [can't be carried out in this run:"), "{n}");
+        let told = for_model(&mine, container)["carry_out_with"].as_str().unwrap().to_string();
+        assert!(told.starts_with("This action can't be carried out in this run:"), "{told}");
+        // There, the model is told how the user is asked once for the whole action.
+        let told = for_model(&mine, own)["carry_out_with"].as_str().unwrap().to_string();
+        assert!(told.contains("\"saved_action\": \"export_report\""), "{told}");
+        assert!(note(std::slice::from_ref(&mine), own).contains("steps in an application with the computer tool"));
+    }
+
+    /// A small PNG, as base64.
+    fn png(side: u32) -> String {
+        let img = image::RgbImage::from_pixel(side, side / 2, image::Rgb([200, 30, 30]));
+        let mut out = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        base64::engine::general_purpose::STANDARD.encode(out)
+    }
+
+    #[tokio::test]
+    async fn pictures_are_kept_small_with_an_action_and_go_with_it() {
+        let a = actions(false).await;
+        let mut i = input("Export the report", &["Click Export"]);
+        i.site = None;
+        i.app = Some("  LibreOffice   Calc ".into());
+        i.frames = Some(vec![
+            FrameInput { shows: " The Export   button in the toolbar ".into(), media_type: "image/png".into(), data: png(2400) },
+            FrameInput { shows: String::new(), media_type: "image/png".into(), data: png(300) },
+        ]);
+        let saved = a.save("alice", &i).await.unwrap().unwrap();
+        assert_eq!(saved.app.as_deref(), Some("LibreOffice Calc"));
+        assert_eq!(saved.runs_on, RunsOn::Computer, "an application without a site");
+        assert_eq!(saved.frames, ["The Export button in the toolbar", ""]);
+        // Listing reads no picture; asking for them gives each, made small, as a JPEG.
+        assert!(!serde_json::to_string(&a.list("alice").await.unwrap()).unwrap().contains("base64"));
+        let frames = a.frames("alice", saved.id).await.unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].shows, "The Export button in the toolbar");
+        assert_eq!(frames[0].media_type, "image/jpeg");
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&frames[0].data).unwrap();
+        let small = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((small.width(), small.height()), (REFERENCE_FRAME_SIDE, REFERENCE_FRAME_SIDE / 2));
+        assert!(a.frames("bob", saved.id).await.unwrap().is_empty(), "another owner's are not theirs");
+
+        // Changing the text keeps the pictures; sending some replaces them; none removes them.
+        let mut text = input("Export the report", &["Click Export", "Click Save"]);
+        text.site = None;
+        text.app = Some("LibreOffice Calc".into());
+        text.runs_on = Some(RunsOn::OwnComputer);
+        let changed = a.update("alice", saved.id, &text).await.unwrap().unwrap().unwrap();
+        assert_eq!((changed.frames.len(), changed.runs_on), (2, RunsOn::OwnComputer));
+        text.frames = Some(vec![FrameInput { shows: "Save".into(), media_type: "image/png".into(), data: png(100) }]);
+        let changed = a.update("alice", saved.id, &text).await.unwrap().unwrap().unwrap();
+        assert_eq!(changed.frames, ["Save"]);
+        assert_eq!(a.frames("alice", saved.id).await.unwrap().len(), 1);
+        text.frames = Some(vec![]);
+        a.update("alice", saved.id, &text).await.unwrap().unwrap().unwrap();
+        assert!(a.frames("alice", saved.id).await.unwrap().is_empty());
+
+        // What is no picture, or too many, is refused; a deleted action's pictures go with it.
+        let refused = |frames: Vec<FrameInput>| {
+            let mut i = input("Another", &["x"]);
+            i.frames = Some(frames);
+            let a = a.clone();
+            async move { a.save("alice", &i).await.unwrap().unwrap_err().to_string() }
+        };
+        let text_file = FrameInput { shows: String::new(), media_type: "image/png".into(), data: "aGVsbG8=".into() };
+        assert!(refused(vec![text_file]).await.contains("picture 1 can't be read as an image"));
+        let gif = FrameInput { shows: String::new(), media_type: "image/gif".into(), data: png(10) };
+        assert!(refused(vec![gif]).await.contains("picture 1 is \"image/gif\""));
+        let many = (0..=MAX_REFERENCE_FRAMES).map(|_| FrameInput { shows: String::new(), media_type: "image/png".into(), data: png(10) });
+        assert!(refused(many.collect()).await.contains("at most 6 pictures"));
+        text.frames = Some(vec![FrameInput { shows: "Save".into(), media_type: "image/png".into(), data: png(100) }]);
+        a.update("alice", saved.id, &text).await.unwrap().unwrap().unwrap();
+        assert!(a.delete("alice", saved.id).await.unwrap());
+        let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM action_frames").fetch_one(a.store.pool()).await.unwrap();
+        assert_eq!(left, 0);
     }
 
     fn recording() -> Recording {
@@ -1120,7 +1620,7 @@ mod tests {
         let r = recording();
         r.check().unwrap();
         let tools = vec![("browser".to_string(), "Drive a real web browser".to_string())];
-        let as_video = messages(&r, true, &tools);
+        let as_video = messages(&r, true, &tools, BROWSER);
         let blocks = as_video[0]["content"].as_array().unwrap();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0]["type"], "video");
@@ -1130,12 +1630,32 @@ mod tests {
         assert!(ask.contains("- browser: Drive a real web browser"));
         assert!(ask.contains("locale de"));
 
-        let as_frames = messages(&r, false, &[]);
+        // Without a computer the agent is said to have no desktop, and no pictures are asked
+        // for of a recording the model watched as a video.
+        assert!(ask.contains("no desktop and no other applications"), "{ask}");
+        assert!(ask.contains("can't be done with what the agent has (a desktop application, a file dialog, a phone"), "{ask}");
+        assert!(!ask.contains("Under frames"), "{ask}");
+        assert!(ask.contains("\"runs_on\""), "{ask}");
+
+        let as_frames = messages(&r, false, &[], BROWSER);
         let blocks = as_frames[0]["content"].as_array().unwrap();
         assert_eq!(blocks.len(), 5);
         assert_eq!(blocks[2]["text"], "Frame 2 at 1:05:");
         assert_eq!(blocks[3]["type"], "image");
         assert!(blocks[4]["text"].as_str().unwrap().starts_with("Above are 2 frames"));
+        assert!(blocks[4]["text"].as_str().unwrap().contains("Under frames, pick at most 6"));
+
+        // With a computer tool the steps may be in applications: on the person's own computer,
+        // or on a desktop that is said not to be theirs.
+        let text = |hands| messages(&r, false, &[], hands)[0]["content"][4]["text"].as_str().unwrap().to_string();
+        let own = text(Hands { browser: true, computer: Some(Desktop::Own) });
+        assert!(own.contains("works this person's own computer, the one in the recording"), "{own}");
+        assert!(!own.contains("no desktop"), "{own}");
+        assert!(own.contains("can't be done with what the agent has (a phone, a captcha"), "{own}");
+        assert!(own.contains("name the application and the window"), "{own}");
+        let container = text(Hands { browser: true, computer: Some(Desktop::Container) });
+        assert!(container.contains("That desktop is NOT the person's computer"), "{container}");
+        assert!(container.contains("an application its desktop doesn't have, a file on the person's computer, a phone"), "{container}");
     }
 
     #[test]
@@ -1174,6 +1694,23 @@ mod tests {
         assert_eq!(d.steps, ["Go to https://portal.example.com", "Click Sign in"]);
         assert_eq!(d.secrets.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["portal_password", "password"]);
         assert!(!serde_json::to_string(&d).unwrap().contains("hunter22"));
+
+        assert_eq!((d.app.clone(), d.runs_on), (None, RunsOn::Browser), "a website unless it says otherwise");
+        assert!(d.frames.is_empty());
+
+        // What it is carried out with, and the frames worth keeping, as the model gave them.
+        let d = parse_draft(
+            "{\"title\": \"Export\", \"site\": null, \"app\": \"LibreOffice Calc\", \"steps\": [\"Click Export\"], \
+             \"frames\": [{\"frame\": 2, \"shows\": \"The Export button\"}, 2, {\"frame\": 0}, {\"frame\": 7, \"shows\": \"The dialog\"}, \"x\"]}",
+        )
+        .unwrap();
+        assert_eq!((d.app.as_deref(), d.runs_on), (Some("LibreOffice Calc"), RunsOn::Computer), "an application without a site");
+        assert_eq!(
+            d.frames,
+            [DraftFrame { frame: 2, shows: "The Export button".into() }, DraftFrame { frame: 7, shows: "The dialog".into() }]
+        );
+        let d = parse_draft("{\"steps\": [\"x\"], \"app\": \"Numbers\", \"runs_on\": \"own_computer\"}").unwrap();
+        assert_eq!(d.runs_on, RunsOn::OwnComputer);
 
         assert!(parse_draft("I can't see a video.").unwrap_err().to_string().contains("not the JSON"));
         assert!(parse_draft("{\"steps\": []}").unwrap_err().to_string().contains("no steps"));

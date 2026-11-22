@@ -272,7 +272,7 @@ fn translate_message(msg: &Value, out: &mut Vec<Value>) {
 }
 
 /// What introduces the images of a message's tool results, sent after them.
-const TOOL_IMAGES: &str = "The image returned with each tool result above, in the same order:";
+const TOOL_IMAGES: &str = "The images returned with the tool results above, in the same order:";
 
 /// The content part for an `image`, `video` or `document` block with a base64 source, if it is one.
 fn media_part(block: &Value) -> Option<Value> {

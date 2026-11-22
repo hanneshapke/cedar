@@ -123,6 +123,8 @@ impl ComputerTool {
             "{} key: also cmd+c and the like on a Mac.",
             &described[..cut]
         ));
+        schema["properties"]["saved_action"] = json!({ "type": "string",
+            "description": "The name of the saved action this call carries out a step of, when it does. The user is then asked once for the whole action instead of before every call." });
         json!({ "name": "computer", "description": NATIVE_DESCRIPTION, "input_schema": schema })
     }
 }
@@ -300,10 +302,11 @@ fn output(reply: &Value, screen: (u32, u32), shown: (u32, u32), native: bool) ->
     }
     Ok(ToolOutput {
         text,
-        image: Some(ToolImage {
+        images: vec![ToolImage {
             media_type: media_type.to_string(),
             data: data.to_string(),
-        }),
+            reference: false,
+        }],
     })
 }
 
@@ -422,8 +425,8 @@ mod tests {
              at (640, 400). The window with the keyboard is \"report.ods - LibreOffice Calc\"."
         );
         assert_eq!(
-            out.image,
-            Some(ToolImage { media_type: "image/png".into(), data: "aGk=".into() })
+            out.images,
+            [ToolImage { media_type: "image/png".into(), data: "aGk=".into(), reference: false }]
         );
 
         let bare = output(&json!({ "image": "aGk=" }), SCREEN, SCREEN, false).unwrap();

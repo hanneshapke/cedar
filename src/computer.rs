@@ -78,6 +78,9 @@ pub struct ComputerSession {
     native: bool,
     /// The user allowed this run's calls on their own computer for the rest of the run.
     allowed: AtomicBool,
+    /// The saved actions the user allowed this run to carry out on their own computer, each
+    /// with how many calls that still covers.
+    actions: std::sync::Mutex<std::collections::HashMap<String, u32>>,
 }
 
 impl ComputerSession {
@@ -90,6 +93,7 @@ impl ComputerSession {
             started: AtomicBool::new(false),
             native: false,
             allowed: AtomicBool::new(false),
+            actions: Default::default(),
         }
     }
 
@@ -112,6 +116,23 @@ impl ComputerSession {
     /// Remember that the user allowed the rest of this run's calls.
     pub fn allow(&self) {
         self.allowed.store(true, Ordering::SeqCst);
+    }
+
+    /// Remember that the user allowed the saved action `name`, for `calls` calls.
+    pub fn allow_action(&self, name: &str, calls: u32) {
+        self.actions.lock().unwrap().insert(name.to_string(), calls);
+    }
+
+    /// Take one call of what the user allowed for the saved action `name`; `false` when it was
+    /// not allowed or is used up, and the user has to be asked.
+    pub fn spend_action(&self, name: &str) -> bool {
+        match self.actions.lock().unwrap().get_mut(name) {
+            Some(left) if *left > 0 => {
+                *left -= 1;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The run's desktop, started first if this is its first use.

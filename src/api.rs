@@ -64,6 +64,9 @@ const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
 /// for the rest of the request (see [`actions::MAX_FRAMES_TOTAL_BYTES`] and
 /// [`actions::MAX_VIDEO_BYTES`]).
 const MAX_RECORDING_BODY_BYTES: usize = 40 << 20;
+/// An action as it is saved: its text, and the few pictures of its recording kept with it (see
+/// [`actions::MAX_REFERENCE_FRAMES`] and [`actions::MAX_FRAME_BYTES`]) as base64.
+const MAX_ACTION_BODY_BYTES: usize = 10 << 20;
 const DEFAULT_PAGE: u32 = 20;
 const MAX_PAGE: u32 = 100;
 /// Largest workspace file that can be downloaded. It is read into memory before being sent.
@@ -286,13 +289,23 @@ pub fn router_with(
             "/records/{name}",
             get(get_records).post(save_records).delete(drop_records),
         )
-        .route("/actions", get(list_actions).post(save_action))
+        .route(
+            "/actions",
+            get(list_actions).post(save_action).layer(DefaultBodyLimit::max(MAX_ACTION_BODY_BYTES)),
+        )
         // A recording is the one other body with room for media.
         .route(
             "/actions/draft",
             post(draft_action).layer(DefaultBodyLimit::max(MAX_RECORDING_BODY_BYTES)),
         )
-        .route("/actions/{id}", get(get_action).put(update_action).delete(delete_action))
+        .route(
+            "/actions/{id}",
+            get(get_action)
+                .put(update_action)
+                .delete(delete_action)
+                .layer(DefaultBodyLimit::max(MAX_ACTION_BODY_BYTES)),
+        )
+        .route("/actions/{id}/frames", get(action_frames))
         .route("/admin/integrations", get(get_integrations))
         .route("/admin/models", get(get_models))
         .route("/admin/server-models", post(list_server_models))
@@ -1265,7 +1278,32 @@ async fn list_actions(
         },
         "secrets": state.actions.stores_secrets(),
         "browser": state.cfg.browser.enabled,
+        // What the `computer` tool works here, for a client that says where an action can run:
+        // `container`, `own` (the computer cedar runs on), or `null` without the tool.
+        "computer": match computer_desktop(&state).await {
+            Some(actions::Desktop::Own) => json!("own"),
+            Some(actions::Desktop::Container) => json!("container"),
+            None => serde_json::Value::Null,
+        },
     })))
+}
+
+/// What the `computer` tool works on this server right now, if it is on.
+async fn computer_desktop(state: &AppState) -> Option<actions::Desktop> {
+    let computers = state.computers.as_ref()?;
+    Some(match computers.runtime().await {
+        ComputerRuntime::Native => actions::Desktop::Own,
+        ComputerRuntime::Docker => actions::Desktop::Container,
+    })
+}
+
+/// What an owner's runs have to carry a saved action out with, going by their tools.
+async fn action_hands(state: &AppState, tools: &[(String, String)]) -> actions::Hands {
+    let has = |name: &str| tools.iter().any(|(n, _)| n == name);
+    actions::Hands {
+        browser: has("browser"),
+        computer: if has("computer") { computer_desktop(state).await } else { None },
+    }
 }
 
 async fn get_action(
@@ -1279,6 +1317,20 @@ async fn get_action(
         .await?
         .map(Json)
         .ok_or(AppError::NotFound("action not found"))
+}
+
+/// The pictures kept with an action, each with what it shows: `{frames: [{shows, media_type,
+/// data}]}`, the data base64.
+async fn action_frames(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let id = action_id(&id)?;
+    if state.actions.get(&owner.0, id).await?.is_none() {
+        return Err(AppError::NotFound("action not found"));
+    }
+    Ok(Json(json!({ "frames": state.actions.frames(&owner.0, id).await? })))
 }
 
 /// Turn a screen recording into steps for the agent: one call to a model that can watch it.
@@ -1302,7 +1354,8 @@ async fn draft_action(
         .iter()
         .filter_map(|d| Some((d["name"].as_str()?.to_string(), d["description"].as_str()?.to_string())))
         .collect();
-    let (draft, usage) = actions::draft(llm.as_ref(), &model.model, model.max_tokens, &recording, as_video, &tools)
+    let hands = action_hands(&state, &tools).await;
+    let (draft, usage) = actions::draft(llm.as_ref(), &model.model, model.max_tokens, &recording, as_video, &tools, hands)
         .await
         .map_err(|e| AppError::BadGateway(format!("could not turn the recording into steps: {e:#}")))?;
     Ok(Json(json!({

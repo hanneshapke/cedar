@@ -130,6 +130,24 @@ fn downscale(a: &Attachment, max_side: u32) -> Result<Option<Attachment>> {
     }))
 }
 
+/// `bytes` as a JPEG whose longer side is at most `max_side`: a picture kept for reference (see
+/// [`crate::actions`]), where small matters more than sharp.
+pub fn reference_jpeg(bytes: &[u8], max_side: u32) -> Result<Vec<u8>> {
+    let img = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()?
+        .decode()
+        .context("decoding the image")?;
+    let img = if img.width().max(img.height()) > max_side {
+        img.resize(max_side, max_side, FilterType::CatmullRom)
+    } else {
+        img
+    };
+    let mut out = Vec::new();
+    DynamicImage::ImageRgb8(img.to_rgb8())
+        .write_with_encoder(JpegEncoder::new_with_quality(&mut out, 75))?;
+    Ok(out)
+}
+
 /// `name` with its extension replaced by (or, without one, followed by) `ext`.
 fn with_extension(name: &str, ext: &str) -> String {
     let stem = match name.rsplit_once('.') {

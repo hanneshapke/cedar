@@ -339,6 +339,37 @@ pub fn check_computer(rules: &Rules, input: &Value) -> Option<Gate> {
     })
 }
 
+/// How many `computer` calls an OK for a saved action of `steps` steps covers: room to look
+/// between steps and to try one again, and an end to it, so a run can't keep working the user's
+/// computer under one action's name.
+pub fn action_calls(steps: usize) -> u32 {
+    (steps as u32).saturating_mul(4).saturating_add(10)
+}
+
+/// The card for carrying out a whole saved action on the user's own computer: what it is and
+/// its steps, as the user saved them. Asked once per action in a run (see [`action_calls`]).
+pub fn computer_action_gate(title: &str, steps: &[String]) -> Gate {
+    const SHOWN: usize = 12;
+    let mut reason = format!(
+        "Carry out your saved action \"{}\" on this computer ({} {}). Cedar sees screenshots of your screen while it does.",
+        one_line(title),
+        steps.len(),
+        if steps.len() == 1 { "step" } else { "steps" }
+    );
+    for (i, step) in steps.iter().take(SHOWN).enumerate() {
+        reason.push_str(&format!("\n{}. {}", i + 1, one_line(step)));
+    }
+    if steps.len() > SHOWN {
+        reason.push_str(&format!("\n… and {} more", steps.len() - SHOWN));
+    }
+    Gate {
+        rule: Rule::Computer,
+        reason,
+        scope: Some(COMPUTER_SCOPE.into()),
+        grants: vec![],
+    }
+}
+
 /// One line on what a call that sends or changes something in a connected account does, for the
 /// outbox (see [`crate::models::HeldCall`]): the line an approval would show for mail and Slack,
 /// and the like of it for the calendar, Drive and Sheets, which no rule asks about.

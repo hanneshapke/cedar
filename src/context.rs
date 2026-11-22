@@ -215,17 +215,28 @@ fn has_image(result: &Value) -> bool {
             .is_some_and(|parts| parts.iter().any(|p| p["type"] == "image"))
 }
 
+/// Whether a tool result carries a view of how things are (a screenshot), not pictures kept
+/// for reference (a saved action's), which say the same however old they are.
+fn is_view(result: &Value) -> bool {
+    result["type"] == "tool_result"
+        && result["content"]
+            .as_array()
+            .is_some_and(|parts| parts.iter().any(|p| p["type"] == "image" && p["reference"] != true))
+}
+
 /// `messages` with the images of older tool results taken out and a note left in their place:
 /// all but the newest few (see [`KEPT_VIEWS`]), or every one when the model reads no `images`
 /// (a conversation continued on another model). A screenshot shows the screen as it was, so an
-/// old one tells the model little and costs as much as a new one. `None` when nothing is taken
-/// out.
+/// old one tells the model little and costs as much as a new one. Pictures kept for reference
+/// (a saved action's) stay for a model that reads images. `None` when nothing is taken out.
 pub fn with_recent_views(messages: &[Value], images: bool) -> Option<Vec<Value>> {
+    // What goes: old views for a model that reads images, every image for one that doesn't.
+    let goes: fn(&Value) -> bool = if images { is_view } else { has_image };
     let results = || {
         messages
             .iter()
             .flat_map(|m| m["content"].as_array().into_iter().flatten())
-            .filter(|b| has_image(b))
+            .filter(|b| goes(b))
     };
     let total = results().count();
     let gone = if images { total.saturating_sub(KEPT_VIEWS) / KEPT_VIEWS * KEPT_VIEWS } else { total };
@@ -236,7 +247,7 @@ pub fn with_recent_views(messages: &[Value], images: bool) -> Option<Vec<Value>>
     let old = out
         .iter_mut()
         .flat_map(|m| m["content"].as_array_mut().into_iter().flatten())
-        .filter(|b| has_image(b))
+        .filter(|b| goes(b))
         .take(gone);
     for block in old {
         let text: String = block["content"]

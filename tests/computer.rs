@@ -531,3 +531,88 @@ async fn a_runtime_that_cannot_work_is_refused() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+// -- a whole saved action on the user's own computer, with one OK ----------------------------
+
+#[tokio::test]
+async fn a_saved_action_on_the_users_own_computer_is_asked_about_once() {
+    let call = |action: Value| {
+        let mut input = action;
+        input["saved_action"] = json!("export_the_report");
+        input
+    };
+    let app = native_app(
+        vec![
+            call(json!({ "action": "screenshot" })),
+            call(json!({ "action": "click", "x": 40, "y": 12 })),
+            call(json!({ "action": "key", "keys": "Return" })),
+            // Not part of the action, and one named after an action there isn't: asked about.
+            json!({ "action": "type", "text": "something else" }),
+            json!({ "action": "screenshot", "saved_action": "no_such_action" }),
+        ],
+        COMPUTER_ON,
+    )
+    .await;
+    let body = json!({
+        "title": "Export the report",
+        "app": "Numbers",
+        "runs_on": "own_computer",
+        "steps": ["Open the report", "Choose File, then Export To, then PDF", "Click Save"],
+    });
+    let (status, saved) = app.json(Method::POST, "/v1/actions", Some(KEY_A), Some(body)).await;
+    assert_eq!(status, StatusCode::CREATED, "{saved}");
+    let run = app
+        .create_run_with(KEY_A, json!({ "prompt": "export the report", "interactive": true }))
+        .await;
+    let id = run["id"].as_str().unwrap().to_string();
+
+    // One card for the action, with its steps as the user saved them.
+    let first = approval(&app, &id, 1).await;
+    assert_eq!(first["rule"], "computer");
+    assert_eq!(
+        first["reason"],
+        "Carry out your saved action \"Export the report\" on this computer (3 steps). Cedar sees screenshots of your screen while it does.\n\
+         1. Open the report\n2. Choose File, then Export To, then PDF\n3. Click Save"
+    );
+    decide(&app, &id, &first, "allow").await;
+
+    // Its other calls go without one; a call outside it is asked about as before.
+    let second = approval(&app, &id, 2).await;
+    assert!(second["reason"].as_str().unwrap().starts_with("Type \"something else\" on this computer."), "{second}");
+    decide(&app, &id, &second, "allow").await;
+    let third = approval(&app, &id, 3).await;
+    assert!(third["reason"].as_str().unwrap().starts_with("Look at your screen on this computer."), "{third}");
+    decide(&app, &id, &third, "deny").await;
+    app.wait_status(KEY_A, &id, "completed").await;
+
+    let events = app.events(KEY_A, &id, None).await;
+    assert_eq!(events.iter().filter(|e| e.event == "approval.required").count(), 3);
+    // The driver is not told about the action: it gets what each call's action takes.
+    assert_eq!(
+        *app.computers.computer(0).requests.lock().unwrap(),
+        [
+            json!({ "action": "screenshot" }),
+            json!({ "action": "click", "x": 40, "y": 12, "button": "left", "count": 1 }),
+            json!({ "action": "key", "keys": "Return" }),
+            json!({ "action": "type", "text": "something else" }),
+        ]
+    );
+    // The tool is offered with the parameter, and the note says to pass it.
+    let tool = app.llm.requests()[0]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "computer").unwrap().clone();
+    assert!(tool["input_schema"]["properties"]["saved_action"].is_object(), "{tool}");
+}
+
+#[tokio::test]
+async fn an_ok_for_a_saved_action_covers_a_bounded_number_of_calls() {
+    use cedar::computer::ComputerSession;
+    let app = TestApp::with_env(vec![], COMPUTER_ON).await;
+    let factory: std::sync::Arc<dyn cedar::computer::ComputerFactory> = app.computers.clone();
+    let session = ComputerSession::new(factory, uuid::Uuid::new_v4(), uuid::Uuid::new_v4()).on_the_users_computer();
+    assert!(!session.spend_action("export"), "nothing was allowed yet");
+    let calls = cedar::approvals::action_calls(3);
+    assert_eq!(calls, 22, "four calls a step and ten to spare");
+    session.allow_action("export", calls);
+    assert!((0..calls).all(|_| session.spend_action("export")));
+    assert!(!session.spend_action("export"), "then the user is asked again");
+    assert!(!session.spend_action("another"));
+}
