@@ -560,9 +560,11 @@ can follow. A browser records the screen itself; the app's window on a Mac (WKWe
 there the app records for the page (`src/recorder.rs`):
 
 - It runs macOS's own recorder, `/usr/sbin/screencapture -v -k -x -V <seconds>`, as a child
-  process: the entire main screen, with clicks shown, until the page's **Stop** or the time limit.
-  Stopping gives it a key on its input, as at a terminal, which is what makes it save; it then
-  gets up to two minutes to write the file. (An interrupt ends it without a file.)
+  process: the entire main screen, with clicks shown, until it is stopped or the time limit.
+  The recorder only saves when a key stops it, and it takes that key from a terminal, so the app
+  runs it through `/usr/bin/script`, which gives it one; stopping writes a key there, and the
+  recorder then gets up to two minutes to write the file. (An interrupt ends it without a file,
+  and a key on a plain pipe is ignored: both seen on macOS 26.)
 - While it records, Cedar's window hides, so the recording shows what you do and not Cedar, and
   a red light appears in the menu bar. A click on the light (or **Stop Recording** in its menu)
   stops the recording, as the page's **Stop** does; the window then comes back and shows the

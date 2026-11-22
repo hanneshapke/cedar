@@ -2,7 +2,8 @@
 //!
 //! A page in a browser records the screen itself (`getDisplayMedia`). The app's window can't on a
 //! Mac: WKWebView offers no screen sharing. So the app records for it, with the recorder macOS
-//! ships, `/usr/sbin/screencapture -v`, run as a child process. It needs no code of its own that
+//! ships, `/usr/sbin/screencapture -v`, run as a child process (on a pseudo-terminal, through
+//! `script`: see [`SCRIPT`]). It needs no code of its own that
 //! touches the screen, and the system's Screen Recording permission covers it as part of Cedar,
 //! since Cedar started it. On Windows the window (WebView2) records like a browser, so none of
 //! this is used there.
@@ -46,6 +47,11 @@ use tokio::sync::oneshot;
 pub const SCHEME: &str = "cedarrec";
 /// macOS's own recorder.
 const SCREENCAPTURE: &str = "/usr/sbin/screencapture";
+/// Gives the recorder a terminal: it only saves when a key stops it, and it takes that key from
+/// its terminal, which a child of an app doesn't have (seen on macOS 26: a key on a plain pipe
+/// was ignored, and an interrupt ends it without a file). `script` runs a command on a
+/// pseudo-terminal and passes on what it is sent, so a key written to it is a key pressed.
+const SCRIPT: &str = "/usr/bin/script";
 /// The longest recording when the page names none, and the longest it may name, in seconds.
 const DEFAULT_MAX_SECS: u64 = 600;
 const LIMIT_MAX_SECS: u64 = 1800;
@@ -83,7 +89,7 @@ pub struct Recorder {
 impl Recorder {
     /// Whether this app records for its chat page: on a Mac, which has the recorder.
     pub fn available() -> bool {
-        cfg!(target_os = "macos") && Path::new(SCREENCAPTURE).exists()
+        cfg!(target_os = "macos") && Path::new(SCREENCAPTURE).exists() && Path::new(SCRIPT).exists()
     }
 
     /// Forget a finished recording nobody fetched, and its file.
@@ -151,6 +157,18 @@ fn failed(app: &AppHandle, reason: &str, message: Option<String>) {
 /// shown (`-k`, so whoever watches sees what was pressed), no sounds (`-x`), and an end after
 /// `max_secs` at the latest (`-V`).
 fn capture_args(file: &Path, max_secs: u64) -> Vec<String> {
+    let mut args = terminal_args();
+    args.extend(recorder_args(file, max_secs));
+    args
+}
+
+/// What `script` is told: no chatter of its own (`-q`), no transcript (`/dev/null`), and the
+/// recorder as the command to run on the terminal it makes.
+fn terminal_args() -> Vec<String> {
+    vec!["-q".into(), "/dev/null".into(), SCREENCAPTURE.into()]
+}
+
+fn recorder_args(file: &Path, max_secs: u64) -> Vec<String> {
     vec![
         "-v".into(),
         "-k".into(),
@@ -198,7 +216,7 @@ pub fn start(app: &AppHandle, max_secs: Option<u64>) {
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
         let recorder = state.recorder();
-        let child = match spawn(Path::new(SCREENCAPTURE), &capture_args(&path, max_secs)).await {
+        let child = match spawn(Path::new(SCRIPT), &capture_args(&path, max_secs)).await {
             Ok(child) => child,
             Err(e) => {
                 recorder.active.lock().unwrap().take();
@@ -312,12 +330,16 @@ async fn run((mut child, stdin): (Child, ChildStdin), stopped: oneshot::Receiver
         how = stopped => {
             // A sender dropped without a word (the app is going away) keeps nothing.
             let how = how.unwrap_or(End::Discard);
-            if let Some(mut input) = stdin.take() {
+            // The input stays open after the key (it is closed once the recorder has exited):
+            // its end would reach the recorder's terminal as an end of input of its own.
+            if let Some(input) = stdin.as_mut() {
                 let _ = input.write_all(b"q\n").await;
                 let _ = input.flush().await;
             }
             ended = "it stopped at a key";
-            if tokio::time::timeout(AFTER_KEY, child.wait()).await.is_err() {
+            // A recording that is thrown away needs no time to save.
+            let patience = if how == End::Discard { Duration::from_millis(500) } else { AFTER_KEY };
+            if tokio::time::timeout(patience, child.wait()).await.is_err() {
                 interrupt(&child);
                 ended = "it stopped at an interrupt";
                 if tokio::time::timeout(AFTER_SIGNAL, child.wait()).await.is_err() {
@@ -458,10 +480,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_recorder_is_asked_for_a_video_of_the_whole_screen_with_a_time_limit() {
+    fn the_recorder_is_run_on_a_terminal_for_a_video_of_the_whole_screen_with_a_time_limit() {
         assert_eq!(
             capture_args(Path::new("/tmp/a b.mov"), 600),
-            ["-v", "-k", "-x", "-V", "600", "/tmp/a b.mov"]
+            ["-q", "/dev/null", "/usr/sbin/screencapture", "-v", "-k", "-x", "-V", "600", "/tmp/a b.mov"]
         );
     }
 
@@ -525,7 +547,7 @@ mod tests {
     async fn a_key_stops_the_recorder_and_the_file_is_kept_or_thrown_away() {
         // Finishes its file when a key arrives, as screencapture does.
         let (program, file) = fake_recorder("read key; echo movie > \"$f\"");
-        let args = capture_args(&file, 60);
+        let args = recorder_args(&file, 60);
 
         let (stop, stopped) = oneshot::channel();
         let child = start(&program, &args).await;
@@ -546,7 +568,7 @@ mod tests {
         // Reads nothing; finishes its file on an interrupt only.
         let (program, file) = fake_recorder("trap 'echo movie > \"$f\"; exit 0' INT; while :; do sleep 0.1; done");
         let (stop, stopped) = oneshot::channel();
-        let child = start(&program, &capture_args(&file, 60)).await;
+        let child = start(&program, &recorder_args(&file, 60)).await;
         tokio::time::sleep(Duration::from_millis(300)).await;
         stop.send(End::Keep).unwrap();
         assert_eq!(run(child, stopped, &file).await, Outcome::Recorded);
@@ -557,13 +579,13 @@ mod tests {
     async fn a_recording_ends_by_itself_and_one_that_wrote_nothing_is_empty() {
         let (program, file) = fake_recorder("echo movie > \"$f\"");
         let (_stop, stopped) = oneshot::channel();
-        let child = start(&program, &capture_args(&file, 60)).await;
+        let child = start(&program, &recorder_args(&file, 60)).await;
         assert_eq!(run(child, stopped, &file).await, Outcome::Recorded, "its time limit ended it");
 
         // What the system does to a recorder it keeps from the screen: no file.
         let (program, file) = fake_recorder("echo no screen for you >&2; exit 1");
         let (_stop, stopped) = oneshot::channel();
-        let child = start(&program, &capture_args(&file, 60)).await;
+        let child = start(&program, &recorder_args(&file, 60)).await;
         let Outcome::Empty(why) = run(child, stopped, &file).await else { panic!("a file?") };
         assert!(why.contains("it ended by itself (exit status: 1)") && why.contains("it printed: no screen for you"), "{why}");
     }
