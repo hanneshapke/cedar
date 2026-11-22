@@ -10,7 +10,10 @@
 //!
 //! The page asks through the window (see `window::PageAction`):
 //!
-//!   /__cedar-app/record/start?max=600   record the entire screen, for at most that many seconds
+//!   /__cedar-app/record/displays        say which displays there are (`displays` follows)
+//!   /__cedar-app/record/start?max=600&display=2
+//!                                       record a display (that one of `displays`, or the main
+//!                                       one), for at most that many seconds
 //!   /__cedar-app/record/stop            stop and hand the recording over (so does a click on
 //!                                       the red light the app puts in the menu bar meanwhile,
 //!                                       since its window hides while it records)
@@ -18,6 +21,7 @@
 //!
 //! and hears back as `cedar-recorder` events on its window, each with a `detail`:
 //!
+//!   {"state": "displays", "displays": [{"id": 2, "name": "Studio Display", "width": 2560, "height": 1440, "main": true}]}
 //!   {"state": "recording"}
 //!   {"state": "stopping"}                 the recording was told to stop and its file is being closed
 //!   {"state": "done", "url": "cedarrec://localhost/<token>", "bytes": 1234567, "seconds": 42, "media_type": "video/quicktime"}
@@ -45,14 +49,19 @@ mod capture;
 /// Where nothing records for the page: it is never asked to (see [`Recorder::available`]).
 #[cfg(not(target_os = "macos"))]
 mod capture {
-    use super::{End, Outcome};
+    use super::{Display, End, Outcome};
 
     pub fn available() -> bool {
         false
     }
 
+    pub fn screens() -> Vec<Display> {
+        Vec::new()
+    }
+
     pub fn record(
         _file: &std::path::Path,
+        _display: Option<u32>,
         _max: std::time::Duration,
         _stopped: std::sync::mpsc::Receiver<End>,
         _started: impl FnOnce(),
@@ -66,6 +75,17 @@ pub const SCHEME: &str = "cedarrec";
 /// The longest recording when the page names none, and the longest it may name, in seconds.
 const DEFAULT_MAX_SECS: u64 = 600;
 const LIMIT_MAX_SECS: u64 = 1800;
+/// A display that can be recorded: the number the system knows it by, the name System Settings
+/// shows, and its size in points. `main` is the one with the menu bar.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Display {
+    id: u32,
+    name: String,
+    width: u32,
+    height: u32,
+    main: bool,
+}
+
 /// How a recording under way is to end.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum End {
@@ -162,8 +182,15 @@ fn token() -> String {
     hex::encode(buf)
 }
 
-/// Start recording the entire screen. Answers the page with `recording`, or `failed` and why.
-pub fn start(app: &AppHandle, max_secs: Option<u64>) {
+/// Tell the page which displays there are, for it to offer the choice when there are several.
+/// Called from the window's navigation handler, on the main thread, where the system lists them.
+pub fn displays(app: &AppHandle) {
+    push(app, json!({ "state": "displays", "displays": capture::screens() }));
+}
+
+/// Start recording a display: `display` of [`displays`], or the main one. Answers the page with
+/// `recording`, or `failed` and why.
+pub fn start(app: &AppHandle, max_secs: Option<u64>, display: Option<u32>) {
     let state = app.state::<AppState>();
     let recorder = state.recorder();
     if !Recorder::available() {
@@ -191,7 +218,7 @@ pub fn start(app: &AppHandle, max_secs: Option<u64>) {
         let state = app.state::<AppState>();
         let recorder = state.recorder();
         let mut started = None;
-        let outcome = capture::record(&path, Duration::from_secs(max_secs), stopped, || {
+        let outcome = capture::record(&path, display, Duration::from_secs(max_secs), stopped, || {
             started = Some(Instant::now());
             push(&app, json!({ "state": "recording" }));
             // The recording should show what the person does, not Cedar: the window goes out

@@ -127,8 +127,10 @@ enum PageAction {
     /// "Connect Google", which a web view can't do every way of (passkeys, Sign in with Apple).
     /// Only https.
     OpenInBrowser(Url),
-    /// The Actions page's recorder: record the entire screen, for at most so many seconds.
-    RecordStart(Option<u64>),
+    /// The Actions page's recorder: say which displays there are.
+    RecordDisplays,
+    /// Record a display (of that number, or the main one), for at most so many seconds.
+    RecordStart(Option<u64>, Option<u32>),
     /// Stop recording and hand the recording to the page.
     RecordStop,
     /// Stop recording, or forget the finished recording, without handing anything over.
@@ -153,8 +155,10 @@ fn page_action(url: &Url, chat: &str, remote: bool) -> Option<PageAction> {
         "share/on" if remote => Some(PageAction::Ignore),
         "share/on" => Some(PageAction::ShareOn),
         // This computer's screen, whichever computer the chat is on.
+        "record/displays" => Some(PageAction::RecordDisplays),
         "record/start" => Some(PageAction::RecordStart(
             url.query_pairs().find(|(k, _)| k == "max").and_then(|(_, v)| v.parse().ok()),
+            url.query_pairs().find(|(k, _)| k == "display").and_then(|(_, v)| v.parse().ok()),
         )),
         "record/stop" => Some(PageAction::RecordStop),
         "record/cancel" => Some(PageAction::RecordCancel),
@@ -188,7 +192,8 @@ fn run_page_action(app: &AppHandle, action: PageAction) {
         PageAction::ShareOn => {
             tauri::async_runtime::spawn(crate::app::share_from_chat(app.clone()));
         }
-        PageAction::RecordStart(max_secs) => crate::recorder::start(app, max_secs),
+        PageAction::RecordDisplays => crate::recorder::displays(app),
+        PageAction::RecordStart(max_secs, display) => crate::recorder::start(app, max_secs, display),
         PageAction::RecordStop => crate::recorder::stop(app),
         PageAction::RecordCancel => crate::recorder::cancel(app),
         // Handled in `create`, which needs no app handle for it.
@@ -421,8 +426,10 @@ mod tests {
         assert_eq!(at("https://spark.t.ts.net/__cedar-app/setup/model"), Some(PageAction::Ignore));
         assert_eq!(at("http://127.0.0.1:13000/__cedar-app/update/install"), None);
         // The screen that is recorded is this computer's, wherever the chat is.
-        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/start?max=600"), Some(PageAction::RecordStart(Some(600))));
-        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/start"), Some(PageAction::RecordStart(None)));
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/start?max=600"), Some(PageAction::RecordStart(Some(600), None)));
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/start?max=60&display=2"), Some(PageAction::RecordStart(Some(60), Some(2))));
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/start"), Some(PageAction::RecordStart(None, None)));
+        assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/displays"), Some(PageAction::RecordDisplays));
         assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/stop"), Some(PageAction::RecordStop));
         assert_eq!(at("https://spark.t.ts.net/__cedar-app/record/cancel"), Some(PageAction::RecordCancel));
         assert_eq!(at("https://elsewhere.example/__cedar-app/record/start"), None);

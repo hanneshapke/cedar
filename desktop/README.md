@@ -559,8 +559,10 @@ The chat's [Actions](../chat/README.md#actions) page turns a screen recording in
 can follow. A browser records the screen itself; the app's window on a Mac (WKWebView) can't, so
 there the app records for the page (`src/recorder.rs`):
 
-- It records with macOS's ScreenCaptureKit (`src/recorder/capture.rs`): a stream of the main
-  screen, with the pointer and your clicks shown, that the system writes into a movie file as
+- With more than one display connected, the page lists them by the names System Settings
+  shows and you pick the one to record; with one, it records that.
+- It records with macOS's ScreenCaptureKit (`src/recorder/capture.rs`): a stream of that
+  display, with the pointer and your clicks shown, that the system writes into a movie file as
   it goes, until the app stops it or the time limit. It is recorded at five frames a second and
   at most 1600 pixels a side, without sound, so the file stays small. Writing the file this way
   takes macOS 15; on an older macOS the page offers to take a video file instead, as it does

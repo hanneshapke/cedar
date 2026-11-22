@@ -338,7 +338,7 @@ const cedarActions = (() => {
    * with an address to fetch the recording from, once; or `failed` with a reason, of which
    * `permission` means macOS hasn't allowed Cedar to record the screen yet.
    */
-  function captureInApp(onTick, stopped) {
+  function captureInApp(onTick, stopped, display) {
     const maxMs = (info.limits.recording_seconds || 600) * 1000;
     const mine = { native: true, timer: null };
     session = mine;
@@ -381,7 +381,21 @@ const cedarActions = (() => {
       // An app that never answers is one from before it could record.
       noAnswer = setTimeout(() => settle(reject, new Error(tr('actions.rec.failed'))), 10000);
       stopped.then(() => { if (session === mine) window.location.href = '/__cedar-app/record/stop'; });
-      window.location.href = `/__cedar-app/record/start?max=${Math.round(maxMs / 1000)}`;
+      window.location.href = `/__cedar-app/record/start?max=${Math.round(maxMs / 1000)}${display == null ? '' : `&display=${encodeURIComponent(display)}`}`;
+    });
+  }
+
+  /**
+   * The displays the Cedar app can record: `[{ id, name, width, height, main }]`, the main one
+   * first. Empty when the app doesn't say (one from before it could), which leaves it the main.
+   */
+  function appDisplays() {
+    return new Promise((resolve) => {
+      const done = (list) => { window.removeEventListener('cedar-recorder', on); clearTimeout(timer); resolve(list); };
+      const on = (e) => { if (e.detail?.state === 'displays') done(Array.isArray(e.detail.displays) ? e.detail.displays : []); };
+      const timer = setTimeout(() => done([]), 1500);
+      window.addEventListener('cedar-recorder', on);
+      window.location.href = '/__cedar-app/record/displays';
     });
   }
 
@@ -641,7 +655,8 @@ const cedarActions = (() => {
       file.accept = 'video/*';
       file.hidden = true;
       file.addEventListener('change', () => { if (file.files?.[0]) reduce(file.files[0], 0); });
-      const start = button(tr('actions.new.start'), () => record(surface), 'primary');
+      let display = null; // which of the app's displays; null is its main one
+      const start = button(tr('actions.new.start'), () => record(surface, display), 'primary');
       const upload = button(tr('actions.new.upload'), () => file.click());
       const blocked = !info.supported ? tr('actions.unsupported') : cannotWatch();
       start.disabled = upload.disabled = !!blocked;
@@ -662,6 +677,23 @@ const cedarActions = (() => {
         pick.append(radio, icon('screen'), el('b', '', tr('actions.new.surface.monitor')), el('small', '', tr('actions.new.surfaceHelp.app')));
         picks.replaceChildren(pick);
         form.append(el('div', 'cedar-ag-legend', tr('actions.new.share')), picks);
+        // With several displays, the person picks the one to record.
+        appDisplays().then((list) => {
+          if (!alive() || !picks.isConnected || list.length < 2) return;
+          display = (list.find((d) => d.main) || list[0]).id;
+          picks.replaceChildren(...list.map((d) => {
+            const one = el('label', 'cedar-ag-pick');
+            const choice = el('input');
+            choice.type = 'radio';
+            choice.name = 'cedar-act-display';
+            choice.checked = d.id === display;
+            choice.addEventListener('change', () => { display = d.id; });
+            const size = tr('actions.new.display.size', { width: String(d.width), height: String(d.height) });
+            one.append(choice, icon('screen'), el('b', '', d.name || tr('actions.new.surface.monitor')), el('small', '', d.main ? tr('actions.new.display.main', { size }) : size));
+            return one;
+          }));
+          picks.before(el('div', 'cedar-ag-note', tr('actions.new.display.help')));
+        });
       } else { start.hidden = true; upload.className = 'primary'; form.append(el('div', 'cedar-ag-box cedar-act-notice', tr('actions.new.cannotRecord'))); }
       const notes = el('ul', 'cedar-act-notes');
       for (const key of ['small', 'once', 'passwords']) notes.append(el('li', '', tr(`actions.new.note.${key}`)));
@@ -670,7 +702,7 @@ const cedarActions = (() => {
     }
 
     // 2. Recording.
-    async function record(surface) {
+    async function record(surface, display) {
       let release;
       const stopped = new Promise((resolve) => { release = resolve; });
       const time = el('span', 'cedar-act-time', '0:00');
@@ -698,7 +730,7 @@ const cedarActions = (() => {
           if (!box.isConnected) stage.replaceChildren(box);
           time.textContent = tr('actions.rec.time', { elapsed: clock(elapsed), max: clock(max) });
         };
-        got = await (surface === 'app' ? captureInApp(tick, stopped) : capture(surface, tick, stopped));
+        got = await (surface === 'app' ? captureInApp(tick, stopped, display) : capture(surface, tick, stopped));
       } catch (e) {
         window.removeEventListener('cedar-recorder', fromApp);
         if (!alive() || e?.cancelled) return;

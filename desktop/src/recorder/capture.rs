@@ -6,16 +6,16 @@
 //! into a channel that thread waits on, so none of the system's objects change threads except
 //! the list of displays, on its way in.
 
-use super::{End, Outcome};
+use super::{Display, End, Outcome};
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, ProtocolObject};
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
 use objc2_core_media::CMTime;
-use objc2_foundation::{NSArray, NSError, NSObject, NSObjectProtocol, NSString, NSURL};
+use objc2_foundation::{NSArray, NSDictionary, NSError, NSNumber, NSObject, NSObjectProtocol, NSRect, NSString, NSURL};
 use objc2_screen_capture_kit::{
     SCContentFilter, SCRecordingOutput, SCRecordingOutputConfiguration, SCRecordingOutputDelegate, SCShareableContent,
-    SCStream, SCStreamConfiguration,
+    SCDisplay, SCStream, SCStreamConfiguration,
 };
 use std::path::Path;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
@@ -35,6 +35,36 @@ const FPS: i32 = 5;
 /// Whether this macOS can record to a file through ScreenCaptureKit (15 and later).
 pub fn available() -> bool {
     AnyClass::get(c"SCRecordingOutput").is_some() && AnyClass::get(c"SCStream").is_some()
+}
+
+/// The displays connected, the one with the menu bar first, with the names System Settings
+/// shows them under. Asks AppKit, so only on the main thread.
+pub fn screens() -> Vec<Display> {
+    let Some(class) = AnyClass::get(c"NSScreen") else {
+        return Vec::new();
+    };
+    // SAFETY: `+[NSScreen screens]` returns an array of screens; of each, `localizedName` is a
+    // string, `frame` a rectangle in points, and `deviceDescription` a dictionary whose
+    // "NSScreenNumber" is the number ScreenCaptureKit knows the display by.
+    let screens: Retained<NSArray<NSObject>> = unsafe { msg_send![class, screens] };
+    let key = NSString::from_str("NSScreenNumber");
+    let mut found = Vec::new();
+    for (at, screen) in screens.iter().enumerate() {
+        let name: Retained<NSString> = unsafe { msg_send![&*screen, localizedName] };
+        let frame: NSRect = unsafe { msg_send![&*screen, frame] };
+        let about: Retained<NSDictionary<NSString, NSObject>> = unsafe { msg_send![&*screen, deviceDescription] };
+        let Some(number) = about.objectForKey(&key).and_then(|n| n.downcast::<NSNumber>().ok()) else {
+            continue;
+        };
+        found.push(Display {
+            id: number.unsignedIntValue(),
+            name: name.to_string(),
+            width: frame.size.width.round() as u32,
+            height: frame.size.height.round() as u32,
+            main: at == 0,
+        });
+    }
+    found
 }
 
 /// An object of the system's handed from the queue it arrived on to the recording's thread.
@@ -127,9 +157,9 @@ pub(super) fn frame_size(width: f64, height: f64) -> (usize, usize) {
     (even(width), even(height))
 }
 
-/// Record the main display into `file` until `stopped` says how to end, or for `max` at the
+/// Record a display into `file` (the one of that number, or the main one) until `stopped` says how to end, or for `max` at the
 /// most. `started` is called once the recording runs. Blocks; call it on a thread of its own.
-pub fn record(file: &Path, max: Duration, stopped: Receiver<End>, started: impl FnOnce()) -> Outcome {
+pub fn record(file: &Path, display: Option<u32>, max: Duration, stopped: Receiver<End>, started: impl FnOnce()) -> Outcome {
     let began = Instant::now();
     let empty = |why: String| {
         let _ = std::fs::remove_file(file);
@@ -141,8 +171,13 @@ pub fn record(file: &Path, max: Duration, stopped: Receiver<End>, started: impl 
     };
     // SAFETY (for all the calls below): plain calls into ScreenCaptureKit with valid objects of
     // the types its methods take, all made and kept on this thread.
-    // The first display listed is the main one, with the menu bar.
-    let Some(display) = (unsafe { content.displays() }).firstObject() else {
+    // The display asked for; without one, or when it has gone since the page listed it, the
+    // first, which is the main one.
+    let all = unsafe { content.displays() };
+    // SAFETY: `displayID` takes no arguments and returns the display's number.
+    let number = |d: &SCDisplay| -> u32 { unsafe { msg_send![d, displayID] } };
+    let wanted = display.and_then(|id| all.iter().find(|d| number(d) == id));
+    let Some(display) = wanted.or_else(|| all.firstObject()) else {
         return empty("no display to record".into());
     };
     let filter = unsafe {
