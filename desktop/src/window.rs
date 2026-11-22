@@ -265,6 +265,30 @@ pub fn present(win: &WebviewWindow) -> Result<()> {
     Ok(())
 }
 
+/// Takes the window out of the way without closing anything, as closing it does (see main.rs):
+/// the app is a menu bar app again until [`present`]. For a screen recording, which should show
+/// what the person does and not Cedar.
+pub fn hide(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Ok(win) = main_window(&handle) {
+            let _ = win.hide();
+        }
+        #[cfg(target_os = "macos")]
+        let _ = handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    });
+}
+
+/// Brings the window back as it is, on whatever page it shows.
+pub fn reveal(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Err(e) = main_window(&handle).and_then(|win| present(&win)) {
+            eprintln!("showing the window: {e:#}");
+        }
+    });
+}
+
 /// Loads the chat (unless it is already open) and brings the window forward.
 pub fn show_chat(app: &AppHandle) -> Result<()> {
     let win = main_window(app)?;

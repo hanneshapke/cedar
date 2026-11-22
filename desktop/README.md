@@ -563,6 +563,10 @@ there the app records for the page (`src/recorder.rs`):
   process: the entire main screen, with clicks shown, until the page's **Stop** or the time limit.
   Stopping gives it a key on its input, as at a terminal, which is what makes it save; it then
   gets up to two minutes to write the file. (An interrupt ends it without a file.)
+- While it records, Cedar's window hides, so the recording shows what you do and not Cedar, and
+  a red light appears in the menu bar. A click on the light (or **Stop Recording** in its menu)
+  stops the recording, as the page's **Stop** does; the window then comes back and shows the
+  recording being finished.
 - macOS asks once whether Cedar may record the screen. Until Cedar is switched on under **System
   Settings → Privacy & Security → Screen & System Audio Recording**, and has been quit and opened
   again, the page says so instead of recording. The permission belongs to the app's signature:

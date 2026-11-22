@@ -993,7 +993,8 @@ cedar, the page says passwords can't be stored, and Cedar asks you instead. See
 
 In the Cedar app for the Mac, whose window can't share the screen as a browser does, the app
 records for the page: **Entire screen** uses macOS's own recorder, with your clicks shown, and
-hands the recording to the page, which reduces it the same way. The first time, macOS asks
+hands the recording to the page, which reduces it the same way. Cedar's window hides while it
+records, and a red light in the menu bar stops the recording and brings the window back. The first time, macOS asks
 whether Cedar may record the screen (System Settings → Privacy & Security → Screen & System Audio
 Recording); Cedar has to be quit and opened again after you allow it. On Windows the app's window
 records like a browser. A browser that can't record at all (a phone) offers **Use a video file**

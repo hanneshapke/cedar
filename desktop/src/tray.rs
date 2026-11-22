@@ -90,6 +90,55 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The second item in the menu bar while the screen is recorded for the chat's Actions page (see
+/// recorder.rs): a red light. The window is out of the way meanwhile, so this is how the
+/// recording is stopped: a click on it, or "Stop Recording" in its menu (a right click).
+const RECORDING: &str = "recording";
+const STOP_RECORDING: &str = "stop_recording";
+
+/// Show the recording light. Tray icons are made on the main thread.
+pub fn show_recording(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if handle.tray_by_id(RECORDING).is_some() {
+            return;
+        }
+        let built = (|| -> tauri::Result<()> {
+            let stop = MenuItem::with_id(&handle, STOP_RECORDING, t("tray.stop_recording"), true, None::<&str>)?;
+            let menu = Menu::with_items(&handle, &[&stop])?;
+            TrayIconBuilder::with_id(RECORDING)
+                .icon(tauri::image::Image::from_bytes(include_bytes!("../tray-icon-recording.png"))?)
+                .icon_as_template(false)
+                .tooltip(t("tray.stop_recording"))
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| {
+                    if event.id().as_ref() == STOP_RECORDING {
+                        crate::recorder::stop(app);
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        crate::recorder::stop(tray.app_handle());
+                    }
+                })
+                .build(&handle)?;
+            Ok(())
+        })();
+        if let Err(e) = built {
+            eprintln!("showing the recording light: {e:#}");
+        }
+    });
+}
+
+/// Take the recording light away again.
+pub fn hide_recording(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = handle.remove_tray_by_id(RECORDING);
+    });
+}
+
 /// Puts the menu into the language just picked (see `commands::set_locale`).
 pub fn relabel(app: &AppHandle) {
     let Some(items) = app.try_state::<TrayItems>() else {

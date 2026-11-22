@@ -357,6 +357,8 @@ const cedarActions = (() => {
           startedAt = Date.now();
           onTick(0, maxMs);
           mine.timer = setInterval(() => onTick(Date.now() - startedAt, maxMs), 500);
+        } else if (d.state === 'stopping') {
+          clearInterval(mine.timer);
         } else if (d.state === 'done') {
           clearInterval(mine.timer);
           // A recording of the whole screen is megabytes a second: far too much to take over
@@ -650,15 +652,18 @@ const cedarActions = (() => {
       const actions = el('div', 'cedar-ag-form-actions');
       // Stopping takes a moment (the recorder finishes its file, the app hands it over): the
       // button says so and can't be pressed twice.
-      const stop = button(tr('actions.rec.stop'), () => {
+      const stopping = () => {
         stop.disabled = true;
         stop.textContent = tr('actions.rec.stopping');
         live.classList.add('stopping');
-        release();
-      }, 'primary');
+      };
+      const stop = button(tr('actions.rec.stop'), () => { stopping(); release(); }, 'primary');
+      // In the Cedar app the recording can also be stopped from the menu bar: the app says so.
+      const fromApp = (e) => { if (e.detail?.state === 'stopping') stopping(); };
+      window.addEventListener('cedar-recorder', fromApp);
       actions.append(stop);
       const box = el('div', 'cedar-ag-box');
-      box.append(live, el('div', 'cedar-ag-note', tr('actions.rec.hint')), actions);
+      box.append(live, el('div', 'cedar-ag-note', tr(surface === 'app' ? 'actions.rec.hintApp' : 'actions.rec.hint')), actions);
       let got;
       try {
         const tick = (elapsed, max) => {
@@ -668,6 +673,7 @@ const cedarActions = (() => {
         };
         got = await (surface === 'app' ? captureInApp(tick, stopped) : capture(surface, tick, stopped));
       } catch (e) {
+        window.removeEventListener('cedar-recorder', fromApp);
         if (!alive() || e?.cancelled) return;
         // The person closed the browser's dialog without choosing, or the browser (an app's
         // embedded one, say) shares no screen and never asked: back to the start, with a way on.
@@ -680,6 +686,7 @@ const cedarActions = (() => {
         fail(e?.message || tr('actions.rec.failed'));
         return;
       }
+      window.removeEventListener('cedar-recorder', fromApp);
       if (!alive()) return;
       if (!got.blob.size) { fail(tr('actions.rec.empty')); return; }
       reduce(got.blob, got.durationMs);

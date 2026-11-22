@@ -10,12 +10,15 @@
 //! The page asks through the window (see `window::PageAction`):
 //!
 //!   /__cedar-app/record/start?max=600   record the entire screen, for at most that many seconds
-//!   /__cedar-app/record/stop            stop and hand the recording over
+//!   /__cedar-app/record/stop            stop and hand the recording over (so does a click on
+//!                                       the red light the app puts in the menu bar meanwhile,
+//!                                       since its window hides while it records)
 //!   /__cedar-app/record/cancel          stop and throw it away
 //!
 //! and hears back as `cedar-recorder` events on its window, each with a `detail`:
 //!
 //!   {"state": "recording"}
+//!   {"state": "stopping"}                 the recorder was told to stop and is writing its file
 //!   {"state": "done", "url": "cedarrec://localhost/<token>", "bytes": 1234567, "seconds": 42, "media_type": "video/quicktime"}
 //!   {"state": "failed", "reason": "permission" | "empty" | "unavailable" | "busy", "message"?}
 //!   {"state": "cancelled"}
@@ -203,9 +206,18 @@ pub fn start(app: &AppHandle, max_secs: Option<u64>) {
             }
         };
         push(&app, json!({ "state": "recording" }));
+        // The recording should show what the person does, not Cedar: the window goes out of
+        // the way, and a red light in the menu bar is there to stop it by. Both are undone
+        // when the recording ends, however it ends.
+        crate::window::hide(&app);
+        crate::tray::show_recording(&app);
         let started = Instant::now();
         let outcome = run(child, stopped, &path).await;
         recorder.active.lock().unwrap().take();
+        crate::tray::hide_recording(&app);
+        if outcome != Outcome::Discarded {
+            crate::window::reveal(&app);
+        }
         match outcome {
             Outcome::Recorded => {
                 let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
@@ -229,7 +241,13 @@ pub fn start(app: &AppHandle, max_secs: Option<u64>) {
 
 /// Stop the recording under way and hand it to the page (`done` follows).
 pub fn stop(app: &AppHandle) {
-    app.state::<AppState>().recorder().end(End::Keep);
+    if app.state::<AppState>().recorder().end(End::Keep) {
+        // Asked for from the page or from the light in the menu bar: either way the page says
+        // that the recording is being finished, and the window comes back to show it.
+        push(app, json!({ "state": "stopping" }));
+        crate::tray::hide_recording(app);
+        crate::window::reveal(app);
+    }
 }
 
 /// Stop the recording under way, or forget the finished one, without handing anything over.
