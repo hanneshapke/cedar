@@ -62,6 +62,9 @@ pub struct Config {
     /// The setup page's "Allow experimental models": the model the app offers to run may be one
     /// of cedar-llama's experimental ones (see `cedar_llama::catalog::EXPERIMENTAL`).
     pub llama_experimental: bool,
+    /// Which experimental model, where several fit the GPU: its `catalog::Model::id`. Empty: the
+    /// first that fits.
+    pub llama_experimental_model: String,
     /// Extra environment for cedar, applied last (`SANDBOX_NETWORK`, `BRAVE_API_KEY`, ...).
     pub cedar_env: BTreeMap<String, String>,
     /// Extra environment for cedar-chat, applied last.
@@ -134,6 +137,7 @@ impl Default for Config {
             llama: None,
             llama_port: 18081,
             llama_experimental: false,
+            llama_experimental_model: String::new(),
             cedar_env: BTreeMap::new(),
             chat_env: BTreeMap::new(),
             secrets: Secrets::default(),
@@ -157,6 +161,16 @@ impl Config {
             cfg.save(path)?;
         }
         Ok(cfg)
+    }
+
+    /// What the setup page's "Allow experimental models" and its choice of model come to.
+    pub fn experimental(&self) -> cedar_llama::catalog::Experimental<'_> {
+        use cedar_llama::catalog::Experimental;
+        match (self.llama_experimental, self.llama_experimental_model.trim()) {
+            (false, _) => Experimental::No,
+            (true, "") => Experimental::Any,
+            (true, id) => Experimental::Model(id),
+        }
     }
 
     /// The address the app's llama-server answers at.

@@ -344,19 +344,23 @@ with the most; several cards are not added up. Every model is under the Apache-2
 
 Under the offer is **Allow experimental models**, where one fits the GPU. Experimental models are
 newer ones that have not been run with Cedar for long, or whose support in llama.cpp is new
-(`EXPERIMENTAL` in `llama/src/catalog.rs`). With the box ticked, the offer becomes the
+(`EXPERIMENTAL` in `llama/src/catalog.rs`). With the box ticked, the offer becomes an
 experimental model, the page says what to expect of it, and *Recommended* moves to the hosted
-provider. There is one so far:
+provider. Where both fit, a list beside the box picks one; Inkling 2 Mini is the one it starts on.
 
 | GPU memory | Experimental model | Download |
 | --- | --- | --- |
 | 21 to 80 GB (a Mac with 32 to 96 GB) | Inkling 2 Mini | 18 GB |
+| 21.5 to 80 GB (a Mac with 36 to 96 GB) | Qwen3.8 27B | 17.5 GB |
 
-Inkling 2 Mini is a looped model: half of its layers run three times for each word. Its memory
-at Cedar's context has been worked out from its configuration, not measured, so it is not
-offered on a 20 GB card. Its makers say it can get stuck in long reasoning and may delete or
-overwrite files without asking. Where Qwen3.5 122B-A10B fits, that stays the offer. The box only
-changes what is offered: a model that is installed stays until you remove it.
+Inkling 2 Mini is a looped model: half of its layers run three times for each word. Its makers
+say it can get stuck in long reasoning and may delete or overwrite files without asking.
+Qwen3.8 27B is a dense model, which the tested list avoids: all of it works on every word, so it
+answers several times slower than the others of its size, and on a Mac without a Max or Ultra
+chip a long reply can run into cedar's 300 seconds. The memory of both at Cedar's context has
+been worked out from their configuration, not measured, so neither is offered on a 20 GB card.
+Where Qwen3.5 122B-A10B fits, that stays the offer. The box only changes what is offered: a model
+that is installed stays until you remove it.
 
 The button does this, with each step on the page:
 

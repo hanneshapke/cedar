@@ -198,53 +198,109 @@ pub static MODELS: [Model; 4] = [
     },
 ];
 
-/// The experimental models, from the smallest to the largest.
-pub static EXPERIMENTAL: [Model; 1] = [Model {
-    id: "inkling-2-mini",
-    label: "Inkling 2 Mini",
-    repo: "ggml-org/Inkling-2-Mini-GGUF",
-    commit: "e8a2cecf0e78914f07cc27b9be711a9b2c7561d9",
-    // The 4-bit file: the experts of layers 0 to 19 at IQ4_NL, everything else at Q8_0.
-    weights: &[File {
-        path: "Inkling-2-Mini-IQ4_NL.gguf",
-        size: 17_627_940_768,
-        sha256: "cbdf3fa9dc50a4124977980f37da4f1fa764b0cfe800d275cd43d26ce2a81af4",
-    }],
-    mmproj: File {
-        path: "mmproj-Inkling-2-Mini-Q8_0.gguf",
-        size: 345_910_944,
-        sha256: "233287272ec5ac39b4168677aba54a4c024f202410f5629fac1830e1059f8abb",
+/// The experimental models, from the one that needs the least memory to the one that needs the
+/// most. Where several fit, the first is the one chosen unless another is asked for by name: a
+/// mixture of experts before a dense model, as among the tested ones.
+pub static EXPERIMENTAL: [Model; 2] = [
+    Model {
+        id: "inkling-2-mini",
+        label: "Inkling 2 Mini",
+        repo: "ggml-org/Inkling-2-Mini-GGUF",
+        commit: "e8a2cecf0e78914f07cc27b9be711a9b2c7561d9",
+        // The 4-bit file: the experts of layers 0 to 19 at IQ4_NL, everything else at Q8_0.
+        weights: &[File {
+            path: "Inkling-2-Mini-IQ4_NL.gguf",
+            size: 17_627_940_768,
+            sha256: "cbdf3fa9dc50a4124977980f37da4f1fa764b0cfe800d275cd43d26ce2a81af4",
+        }],
+        mmproj: File {
+            path: "mmproj-Inkling-2-Mini-Q8_0.gguf",
+            size: 345_910_944,
+            sha256: "233287272ec5ac39b4168677aba54a4c024f202410f5629fac1830e1059f8abb",
+        },
+        // Not measured, which is one reason it is experimental. It is a looped model: 12 of its 24
+        // layers run three times for each token and every pass keeps a cache of its own. By its
+        // configuration that is 8 caches of the whole context and 40 of a 1024-token window, some
+        // 1.3 GB at CONTEXT, on top of 18 GB of files. This leaves about 2.5 GB beyond that, and
+        // leaves out a 20 GB card, where it would be too close.
+        min_budget_mb: 21_000,
+        max_tokens: 8192,
+        // Its template takes more (none, minimal, xhigh, max); these are the ones Cedar offers
+        // elsewhere. It thinks at `high` when none is asked for.
+        reasoning_levels: &["low", "medium", "high"],
+        license: "Apache-2.0",
+        small: false,
+        experimental: true,
     },
-    // Not measured, which is one reason it is experimental. It is a looped model: 12 of its 24
-    // layers run three times for each token and every pass keeps a cache of its own. By its
-    // configuration that is 8 caches of the whole context and 40 of a 1024-token window, some
-    // 1.3 GB at CONTEXT, on top of 18 GB of files. This leaves about 2.5 GB beyond that, and
-    // leaves out a 20 GB card, where it would be too close.
-    min_budget_mb: 21_000,
-    max_tokens: 8192,
-    // Its template takes more (none, minimal, xhigh, max); these are the ones Cedar offers
-    // elsewhere. It thinks at `high` when none is asked for.
-    reasoning_levels: &["low", "medium", "high"],
-    license: "Apache-2.0",
-    small: false,
-    experimental: true,
-}];
+    Model {
+        id: "qwen3.8-27b",
+        label: "Qwen3.8 27B",
+        // llama.cpp's own organization has no GGUF of this one.
+        repo: "unsloth/Qwen3.8-27B-GGUF",
+        commit: "4af51b3542f775b0a8e4b310bfb3f17e01c306c9",
+        weights: &[File {
+            path: "Qwen3.8-27B-UD-Q4_K_M.gguf",
+            size: 16_564_259_744,
+            sha256: "1bce504dfecd84153666928a41d8a66706f0158d3a317bc5196b72819d7dc529",
+        }],
+        mmproj: File {
+            path: "mmproj-F16.gguf",
+            size: 927_607_488,
+            sha256: "cbb841a9ee0636b2ec172f5bb8df2ea8dfeb01e90fe7c6126581d662a0b4e43e",
+        },
+        // Not measured either. A dense model, which the catalog otherwise avoids: all of it works
+        // on every token, so it answers several times slower than a mixture of experts of its
+        // size, and on a Mac without a Max or Ultra chip a long reply can run into cedar's 300
+        // seconds. 16 of its 64 layers keep a cache of the whole context, some 2 GB at CONTEXT,
+        // on top of 17.5 GB of files; this leaves about 2 GB beyond that.
+        min_budget_mb: 21_500,
+        max_tokens: 8192,
+        // All its template takes. It thinks at `xhigh` when none is asked for.
+        reasoning_levels: &["low", "medium", "xhigh"],
+        license: "Apache-2.0",
+        small: false,
+        experimental: true,
+    },
+];
 
-/// The largest model that fits in `budget_mb` MiB of GPU memory, if any does. With
-/// `experimental`, an experimental model that fits is chosen instead, unless the model it would
-/// replace is more than twice its size: a far larger model does the work better than a new one.
-pub fn choose_model(budget_mb: u64, experimental: bool) -> Option<&'static Model> {
-    let fits = |m: &&Model| m.min_budget_mb <= budget_mb;
-    let tested = MODELS.iter().rev().find(fits);
-    let new = EXPERIMENTAL
+/// Whether the experimental models may be chosen, and which of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Experimental<'a> {
+    /// Only the tested models.
+    #[default]
+    No,
+    /// The first experimental model that fits.
+    Any,
+    /// The experimental model with this id if it fits, else as [`Experimental::Any`].
+    Model(&'a str),
+}
+
+/// The largest tested model that fits in `budget_mb` MiB of GPU memory, if any does.
+fn tested(budget_mb: u64) -> Option<&'static Model> {
+    MODELS.iter().rev().find(|m| m.min_budget_mb <= budget_mb)
+}
+
+/// The experimental models there is a choice of with `budget_mb` MiB of GPU memory, in the order
+/// of [`EXPERIMENTAL`]: those that fit, unless the tested model they would replace is more than
+/// twice their size. A far larger model does the work better than a new one.
+pub fn experimental_models(budget_mb: u64) -> Vec<&'static Model> {
+    let tested = tested(budget_mb).map_or(0, Model::size);
+    EXPERIMENTAL
         .iter()
-        .rev()
-        .find(fits)
-        .filter(|_| experimental);
-    match (tested, new) {
-        (Some(tested), Some(new)) if tested.size() > 2 * new.size() => Some(tested),
-        (tested, new) => new.or(tested),
-    }
+        .filter(|m| m.min_budget_mb <= budget_mb && tested <= 2 * m.size())
+        .collect()
+}
+
+/// The model for `budget_mb` MiB of GPU memory, if any fits: the largest tested one, or with
+/// `experimental` one of [`experimental_models`] where there is one.
+pub fn choose_model(budget_mb: u64, experimental: Experimental) -> Option<&'static Model> {
+    let new = experimental_models(budget_mb);
+    let new = match experimental {
+        Experimental::No => None,
+        Experimental::Any => new.first().copied(),
+        Experimental::Model(id) => new.iter().find(|m| m.id == id).or(new.first()).copied(),
+    };
+    new.or_else(|| tested(budget_mb))
 }
 
 /// Every model Cedar can install: the tested ones, then the experimental ones.
@@ -262,7 +318,7 @@ mod tests {
 
     #[test]
     fn models_by_memory() {
-        let id = |mb| choose_model(mb, false).map(|m| m.id);
+        let id = |mb| choose_model(mb, Experimental::No).map(|m| m.id);
         assert_eq!(id(8_192), None);
         assert_eq!(id(11_264), None); // an 11 GB card
         assert_eq!(id(12_288), Some("gemma-4-12b")); // a 12 GB card
@@ -280,7 +336,7 @@ mod tests {
 
     #[test]
     fn experimental_models_where_they_are_allowed() {
-        let id = |mb| choose_model(mb, true).map(|m| m.id);
+        let id = |mb| choose_model(mb, Experimental::Any).map(|m| m.id);
         // Too little for it: what is chosen without the option.
         assert_eq!(id(8_192), None);
         assert_eq!(id(12_288), Some("gemma-4-12b"));
@@ -291,6 +347,23 @@ mod tests {
 
         // Where a model several times its size fits, that one stays: a 128 GB Mac.
         assert_eq!(id(87_381), Some("qwen3.5-122b-a10b"));
+        assert!(experimental_models(87_381).is_empty());
+
+        // Several fit: the first unless another is named; a name that does not fit is not taken.
+        let named = |mb, name| choose_model(mb, Experimental::Model(name)).map(|m| m.id);
+        let ids = |mb| {
+            experimental_models(mb)
+                .iter()
+                .map(|m| m.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(24_564), ["inkling-2-mini", "qwen3.8-27b"]);
+        assert_eq!(named(24_564, "qwen3.8-27b"), Some("qwen3.8-27b"));
+        assert_eq!(named(24_564, "inkling-2-mini"), Some("inkling-2-mini"));
+        assert_eq!(named(24_564, "gemma-4-12b"), Some("inkling-2-mini"));
+        assert_eq!(ids(21_200), ["inkling-2-mini"]);
+        assert_eq!(named(21_200, "qwen3.8-27b"), Some("inkling-2-mini"));
+        assert_eq!(named(20_470, "qwen3.8-27b"), Some("gemma-4-26b-a4b"));
         assert!(EXPERIMENTAL.iter().all(|m| m.experimental && !m.small));
         assert!(MODELS.iter().all(|m| !m.experimental));
     }

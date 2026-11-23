@@ -25,7 +25,8 @@ Sets up llama.cpp as Cedar's model server.
   --model MODEL  the model, instead of the one chosen for the GPU's memory
   --port PORT    the port llama-server listens on, on this computer only (default: 18081)
   --experimental choose an experimental model where one fits the GPU: newer than the tested ones,
-                 and not run with Cedar for long. For `serve`: run the experimental model that
+                 and not run with Cedar for long. Where several fit it is the first of them;
+                 `detect --experimental` lists the others, and --model names one. For `serve`: run the experimental model that
                  is downloaded, where a tested one is too
 
 `cedar-llama detect` lists the builds and models. An API key for llama-server, if you want one,
@@ -137,6 +138,16 @@ fn gib(mb: u64) -> String {
     format!("{:.1} GB", mb as f64 / 1024.0)
 }
 
+/// `--experimental` as the catalog takes it: the first experimental model that fits. Another one
+/// is named with `--model`.
+fn allow(experimental: bool) -> catalog::Experimental<'static> {
+    if experimental {
+        catalog::Experimental::Any
+    } else {
+        catalog::Experimental::No
+    }
+}
+
 async fn detect(experimental: bool) -> Result<(), String> {
     let machine = machine().await?;
     if machine.gpus.is_empty() {
@@ -150,7 +161,7 @@ async fn detect(experimental: bool) -> Result<(), String> {
         };
         println!("GPU:    {}, {}{shared}", gpu.name, gib(gpu.memory_mb));
     }
-    match cedar_llama::plan(machine.os, machine.arch, &machine.gpus, experimental) {
+    match cedar_llama::plan(machine.os, machine.arch, &machine.gpus, allow(experimental)) {
         Some(plan) => {
             println!(
                 "Build:  {} (llama.cpp {})",
@@ -165,6 +176,20 @@ async fn detect(experimental: bool) -> Result<(), String> {
             );
             if plan.model.experimental {
                 println!("        An experimental model: newer than the tested ones, and not run with Cedar for long.");
+                let budget = machine
+                    .gpus
+                    .iter()
+                    .map(|g| g.budget_mb())
+                    .max()
+                    .unwrap_or(0);
+                for other in catalog::experimental_models(budget) {
+                    if other.id != plan.model.id {
+                        println!(
+                            "        Also fits: {} (install it with --model {})",
+                            other.label, other.id
+                        );
+                    }
+                }
                 println!("\nRun `cedar-llama install --experimental` to download both.");
             } else {
                 println!("\nRun `cedar-llama install` to download both.");
@@ -212,7 +237,7 @@ async fn install(options: Options) -> Result<(), String> {
         machine.os,
         machine.arch,
         &machine.gpus,
-        options.experimental,
+        allow(options.experimental),
     );
     let build = options.build.or(plan.as_ref().map(|p| p.build));
     let model = options.model.or(plan.as_ref().map(|p| p.model));
