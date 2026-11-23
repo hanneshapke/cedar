@@ -241,7 +241,7 @@ mod platform {
                 if let Some(dir) = downloaded.parent() {
                     let _ = std::fs::remove_dir_all(dir);
                 }
-                if let Some(app) = tailscale_app().filter(|a| a.exists()) {
+                if let Some(app) = crate::tailscale::app().filter(|a| a.exists()) {
                     if let Err(e) = docker::launch(&app) {
                         eprintln!("opening Tailscale: {e:#}");
                     }
@@ -276,18 +276,6 @@ mod platform {
             .context("looking up the current Tailscale")?;
         let url = msi_url(&index, arm64)?;
         installer::download("Tailscale", &url, "tailscale-setup.msi", step).await
-    }
-
-    /// Tailscale's own app, to open after installing it so the user can log in.
-    #[cfg(target_os = "macos")]
-    fn tailscale_app() -> Option<PathBuf> {
-        Some(PathBuf::from("/Applications/Tailscale.app"))
-    }
-
-    #[cfg(windows)]
-    fn tailscale_app() -> Option<PathBuf> {
-        std::env::var_os("ProgramFiles")
-            .map(|pf| PathBuf::from(pf).join(r"Tailscale\tailscale-ipn.exe"))
     }
 }
 

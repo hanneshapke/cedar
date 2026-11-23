@@ -413,7 +413,8 @@ impl AppState {
     }
 
     /// The address to start the chat with when sharing is on, or `None` (with the reason on the
-    /// page) when it is off or Tailscale isn't ready. Sharing that was turned off is undone here.
+    /// page) when it is off or Tailscale isn't ready. A Tailscale that isn't running is started
+    /// first. Sharing that was turned off is undone here.
     async fn prepare_share(&self, cfg: &Config) -> Option<String> {
         if !cfg.tailscale_share {
             self.stop_share().await;
@@ -421,7 +422,7 @@ impl AppState {
         }
         self.set_share(ShareStatus::Starting);
         let found = match tailscale::find() {
-            Some(cli) => cli.url(cfg.tailscale_https_port).await,
+            Some(cli) => cli.url_started(cfg.tailscale_https_port).await,
             None => Err(anyhow::anyhow!(tailscale::MISSING)),
         };
         match found {
