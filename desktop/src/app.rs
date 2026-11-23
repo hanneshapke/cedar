@@ -100,11 +100,24 @@ pub enum ShareStatus {
     Failed(String),
 }
 
+/// An experimental model the page lets the user pick.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct ExperimentalModel {
+    /// `cedar_llama::catalog::Model::id`.
+    pub id: String,
+    pub label: String,
+}
+
 /// llama.cpp as the model server, set up and run by the app (llamasetup.rs, llamaserver.rs).
 #[derive(Serialize, Clone, Debug)]
 pub struct LlamaStatus {
     /// What the page offers to install: this computer's GPU can run one of Cedar's models.
     pub offer: Option<llamasetup::Offer>,
+    /// The user allows experimental models (`Config::llama_experimental`).
+    pub experimental: bool,
+    /// The experimental models that fit this computer's GPU, the one chosen by default first.
+    /// Empty: allowing them would change nothing, and the page does not ask.
+    pub experimental_models: Vec<ExperimentalModel>,
     pub setup: SetupStatus,
     /// How far the download is, from 0 to 1, while there is one.
     pub progress: Option<f64>,
@@ -133,8 +146,8 @@ pub struct AppState {
     pub supervisor: Supervisor,
     /// The screen recording the chat's Actions page asked for (see recorder.rs).
     recorder: crate::recorder::Recorder,
-    /// What suits this computer's GPU, once it was looked at (see `llamasetup::detect`).
-    llama_plan: Mutex<Option<cedar_llama::Plan>>,
+    /// This computer and its GPUs, once they were looked at (see `llamasetup::detect`).
+    llama_machine: Mutex<Option<cedar_llama::probe::Machine>>,
     llama_setup: Mutex<(SetupStatus, Option<f64>)>,
     /// Stops the download that is under way.
     llama_cancel: Mutex<CancellationToken>,
@@ -199,7 +212,7 @@ impl AppState {
         Self {
             supervisor: Supervisor::new(exe_dir, paths.clone()),
             recorder: Default::default(),
-            llama_plan: Mutex::new(None),
+            llama_machine: Mutex::new(None),
             llama_setup: Mutex::new((SetupStatus::Idle, None)),
             llama_cancel: Mutex::new(CancellationToken::new()),
             llama: LlamaServer::new(paths.clone()),
@@ -263,12 +276,33 @@ impl AppState {
         begin(&self.tailscale_setup)
     }
 
-    pub fn set_llama_plan(&self, plan: Option<cedar_llama::Plan>) {
-        *self.llama_plan.lock().unwrap() = plan;
+    pub fn set_llama_machine(&self, machine: Option<cedar_llama::probe::Machine>) {
+        *self.llama_machine.lock().unwrap() = machine;
     }
 
+    /// What suits this computer's GPU: the build of llama.cpp and the model, an experimental one
+    /// where the user allows those and one fits.
     pub fn llama_plan(&self) -> Option<cedar_llama::Plan> {
-        self.llama_plan.lock().unwrap().clone()
+        let cfg = self.config();
+        let machine = self.llama_machine.lock().unwrap();
+        let machine = machine.as_ref()?;
+        cedar_llama::plan(machine.os, machine.arch, &machine.gpus, cfg.experimental())
+    }
+
+    /// The experimental models there is a choice of on this computer: none where it gets no
+    /// setup at all.
+    fn experimental_models(&self) -> Vec<ExperimentalModel> {
+        let machine = self.llama_machine.lock().unwrap();
+        let plan = machine
+            .as_ref()
+            .and_then(|m| cedar_llama::plan(m.os, m.arch, &m.gpus, cedar_llama::catalog::Experimental::No));
+        let Some(plan) = plan else {
+            return Vec::new();
+        };
+        cedar_llama::catalog::experimental_models(plan.gpu.budget_mb())
+            .into_iter()
+            .map(|m| ExperimentalModel { id: m.id.to_string(), label: m.label.to_string() })
+            .collect()
     }
 
     /// The step the llama.cpp setup is on and, during a download, how far it is.
@@ -284,6 +318,10 @@ impl AppState {
         }
         *setup = (SetupStatus::Running(crate::i18n::t("setup.starting")), None);
         true
+    }
+
+    pub fn llama_setup_running(&self) -> bool {
+        matches!(self.llama_setup.lock().unwrap().0, SetupStatus::Running(_))
     }
 
     /// A fresh token for a download that starts now; [`Self::cancel_llama`] stops that download.
@@ -321,6 +359,8 @@ impl AppState {
         });
         LlamaStatus {
             offer: self.llama_plan().as_ref().map(llamasetup::offer),
+            experimental: cfg.llama_experimental,
+            experimental_models: self.experimental_models(),
             setup,
             progress,
             model: installed,
@@ -835,6 +875,7 @@ mod tests {
     use super::*;
     use crate::config::{Llama, Remote};
     use cedar_llama::gpu::Gpu;
+    use cedar_llama::probe::Machine;
     use cedar_llama::release::{Arch, Os};
 
     fn state(cfg: Config) -> AppState {
@@ -846,25 +887,62 @@ mod tests {
     /// What the chat's Settings is told about llama.cpp, for its "Add a model".
     #[test]
     fn what_settings_learns_about_llama() {
-        let plan = cedar_llama::plan(Os::Macos, Arch::Arm64, &[Gpu::apple(32 << 30)]);
+        let mac = Some(Machine { os: Os::Macos, arch: Arch::Arm64, gpus: vec![Gpu::apple(32 << 30)] });
         let say = |s: &AppState| s.llama_for_chat();
 
         let none = state(Config::default());
         assert_eq!(say(&none), serde_json::json!({ "state": "no_gpu", "model": "" }));
-        none.set_llama_plan(plan.clone());
+        none.set_llama_machine(mac.clone());
         assert_eq!(say(&none), serde_json::json!({ "state": "available", "model": "Gemma 4 26B-A4B" }));
 
         // One is installed: that is the one, whatever else the GPU could run.
         let llama = Some(Llama { build: "macos-arm64".into(), model: "qwen3.6-35b-a3b".into() });
         let installed = state(Config { llama: llama.clone(), ..Config::default() });
-        installed.set_llama_plan(plan.clone());
+        installed.set_llama_machine(mac.clone());
         assert_eq!(say(&installed), serde_json::json!({ "state": "installed", "model": "Qwen3.6 35B-A3B" }));
 
         // The chat is another computer's: nothing runs here.
         let remote = Some(Remote { server: "https://spark.t.ts.net".into(), token: "t".into() });
         let away = state(Config { llama, remote, ..Config::default() });
-        away.set_llama_plan(plan);
+        away.set_llama_machine(mac.clone());
         assert_eq!(say(&away), serde_json::json!({ "state": "remote", "model": "" }));
+    }
+
+    /// "Allow experimental models" changes what is offered, where one fits the GPU.
+    #[test]
+    fn experimental_models_are_offered_once_allowed() {
+        let mac = |gb: u64| Some(Machine { os: Os::Macos, arch: Arch::Arm64, gpus: vec![Gpu::apple(gb << 30)] });
+        let app = state(Config::default());
+        app.set_llama_machine(mac(48));
+        let llama = app.status().llama;
+        let offer = llama.offer.unwrap();
+        assert_eq!((offer.model.as_str(), offer.experimental), ("Qwen3.6 35B-A3B", false));
+        assert!(!llama.experimental);
+        let fit: Vec<_> = llama.experimental_models.iter().map(|m| m.label.as_str()).collect();
+        assert_eq!(fit, ["Inkling 2 Mini", "Qwen3.8 27B"]);
+
+        // The test has no folder to save to; the setting itself is changed all the same.
+        app.update_config(|c| c.llama_experimental = true).ok();
+        let llama = app.status().llama;
+        let offer = llama.offer.unwrap();
+        assert_eq!((offer.model.as_str(), offer.experimental), ("Inkling 2 Mini", true));
+        assert!(llama.experimental);
+        assert_eq!(app.llama_for_chat()["model"], "Inkling 2 Mini");
+
+        // Another of them, picked on the page.
+        app.update_config(|c| c.llama_experimental_model = "qwen3.8-27b".into()).ok();
+        let offer = app.status().llama.offer.unwrap();
+        assert_eq!((offer.model_id.as_str(), offer.experimental), ("qwen3.8-27b", true));
+        // The pick is kept while the box is off, and counts for nothing then.
+        app.update_config(|c| c.llama_experimental = false).ok();
+        assert_eq!(app.status().llama.offer.unwrap().model, "Qwen3.6 35B-A3B");
+        app.update_config(|c| c.llama_experimental = true).ok();
+
+        // A model several times its size fits: the option changes nothing, and the page hides it.
+        app.set_llama_machine(mac(128));
+        let llama = app.status().llama;
+        assert_eq!(llama.offer.unwrap().model, "Qwen3.5 122B-A10B");
+        assert!(llama.experimental_models.is_empty());
     }
 
     /// The page's view of the two things the app manages: they are independent.

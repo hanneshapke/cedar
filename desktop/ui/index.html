@@ -317,6 +317,13 @@
     </button>
     <div id="llama" class="source-panel hidden">
       <p id="llama-intro" class="muted"></p>
+      <div class="row hidden" id="llama-experimental-row">
+        <label style="margin:0; display:flex; align-items:center; gap:8px; color: var(--text);">
+          <input type="checkbox" id="llama-experimental"> <span data-i18n="llama.experimental">Allow experimental models</span>
+        </label>
+        <select id="llama-experimental-model" class="hidden" aria-label="Experimental model"></select>
+      </div>
+      <p class="muted fine hidden" id="llama-experimental-note" data-i18n="llama.experimentalNote">Newer models that have not been run with Cedar for long. They can be better, and they can fail in ways the tested ones do not.</p>
       <div class="row">
         <button class="primary" id="llama-install" data-i18n="llama.install">Set up a model for me</button>
         <button class="hidden" id="llama-cancel" data-i18n="llama.cancel">Stop the download</button>

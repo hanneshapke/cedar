@@ -1494,6 +1494,11 @@ cedar-llama install    # downloads both into ~/.local/share/cedar (Ctrl-C stops;
 cedar-llama serve      # runs llama-server on 127.0.0.1:18081
 ```
 
+`detect --experimental` and `install --experimental` choose an experimental model where one fits
+the GPU: a newer one that has not been run with Cedar for long. Where two fit, `detect` names the
+other, and `--model` installs it (see
+[desktop/README.md](desktop/README.md#setting-a-model-up-with-llamacpp)).
+
 `install` ends by printing the `PUT /v1/admin/models/<id>` call that registers the server with
 cedar. An NVIDIA card with driver 570.26 or newer gets the CUDA 12 build, which needs nothing but
 the driver; an older driver and AMD cards get the Vulkan build, which needs the Vulkan loader and

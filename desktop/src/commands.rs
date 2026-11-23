@@ -129,6 +129,35 @@ pub fn install_llama(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// The setup page's "Allow experimental models": what the page offers to run may then be one of
+/// the experimental models. `model` is the one picked where several fit (its id in cedar-llama's
+/// catalog); without it the pick stays as it was. Only the offer changes; a model that is
+/// installed stays until it is removed.
+#[tauri::command]
+pub fn set_llama_experimental(app: AppHandle, allow: bool, model: Option<String>) -> Result<(), String> {
+    use cedar_llama::catalog;
+    if let Some(id) = &model {
+        if !catalog::by_id(id).is_some_and(|m| m.experimental) {
+            return Err(format!("{id} is not an experimental model"));
+        }
+    }
+    let state = app.state::<AppState>();
+    // Not under a download, which would go on with the model it started with.
+    if state.llama_setup_running() {
+        return Err(t("cmd.llama_busy"));
+    }
+    state
+        .update_config(|c| {
+            c.llama_experimental = allow;
+            if let Some(id) = model {
+                c.llama_experimental_model = id;
+            }
+        })
+        .map_err(fail)?;
+    crate::window::push_llama(&app);
+    Ok(())
+}
+
 /// Stops the download; "Set up for me" continues it later.
 #[tauri::command]
 pub fn cancel_llama(state: State<'_, AppState>) {
