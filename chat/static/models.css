@@ -1,6 +1,6 @@
 /* The send button's model menu (models.js: sendMenu), shared by both UIs. Like settings.css it
    relies only on --accent and --muted, which both define, the page's surface colour (--surface in
-   Claude style, --sheet in Cedar style), and translucent greys for edges. */
+   Claude style, --sheet on the main page), and translucent greys for edges. */
 
 /* The two <select>s hold the choice (and what the conversation restores); the menu shows it. */
 .cedar-picker-state { display: none; }

@@ -1537,15 +1537,26 @@ async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
 async fn both_uis_are_served() {
     let h = Harness::new(&[]).await;
 
-    for ui in ["v1", "v2", "v3", "v4"] {
+    // Ledger (/v3/) and Dossier (/v4/) are one page in two layouts: it is served at both
+    // addresses, with its files under /v3/.
+    for (ui, files) in [("v1", "v1"), ("v3", "v3"), ("v4", "v3")] {
         // The page is reachable with and without the trailing slash and loads its own assets.
         for uri in [format!("/{ui}"), format!("/{ui}/")] {
             let (status, headers, page) = fetch(&h, &uri).await;
             assert_eq!(status, StatusCode::OK, "{uri}");
             assert_eq!(headers["content-type"], "text/html; charset=utf-8");
-            assert!(page.contains(&format!("data-ui=\"{ui}\"")), "{uri} names itself");
-            assert!(page.contains(&format!("<script src=\"/{ui}/app.js\">")));
-            assert!(page.contains(&format!("href=\"/{ui}/style.css\"")));
+            assert!(page.contains(&format!("data-ui=\"{files}\"")), "{uri} names itself");
+            assert!(page.contains(&format!("<script src=\"/{files}/app.js\">")));
+            assert!(page.contains(&format!("href=\"/{files}/style.css\"")));
+            if files == "v3" {
+                // The page takes its layout from the address, and has both to choose from.
+                assert!(page.contains("location.pathname.startsWith('/v4') ? 'v4' : 'v3'"), "{uri} picks its layout");
+                for layout in ["ledger", "dossier"] {
+                    assert!(page.contains(&format!("href=\"/v3/{layout}.css\"")), "{uri} has the {layout} styles");
+                    assert!(page.find(&format!("src=\"/v3/{layout}.js\"")) < page.find("src=\"/v3/app.js\""), "{uri} loads {layout} before the script that uses it");
+                }
+                assert!(page.contains("<template data-layout=\"v3\">") && page.contains("<template data-layout=\"v4\">"), "{uri} has a shell for each layout");
+            }
             assert!(page.contains("<script src=\"/ui-pref.js\">"));
             assert!(page.contains("<script src=\"/file-viewer.js\">"), "{uri} loads the file viewer");
             assert!(page.contains("<script src=\"/image-view.js\">"), "{uri} loads the image view");
@@ -1625,11 +1636,44 @@ async fn both_uis_are_served() {
             assert!(page.contains("id=\"agent-badge\""), "{uri} links a run's conversation to its agent");
             assert!(page.contains("id=\"agent-btn\""), "{uri} has a Make-an-agent button");
         }
-        let (status, headers, _) = fetch(&h, &format!("/{ui}/app.js")).await;
+        let (status, headers, _) = fetch(&h, &format!("/{files}/app.js")).await;
         assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
-        let (status, headers, _) = fetch(&h, &format!("/{ui}/style.css")).await;
+        let (status, headers, _) = fetch(&h, &format!("/{files}/style.css")).await;
         assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/css; charset=utf-8"));
     }
+    for (uri, content_type, marker) in [
+        ("/v3/ledger.js", "text/javascript; charset=utf-8", "cedarLayouts ||= {}).ledger"),
+        ("/v3/dossier.js", "text/javascript; charset=utf-8", "cedarLayouts ||= {}).dossier"),
+        ("/v3/ledger.css", "text/css; charset=utf-8", ".stage"),
+        ("/v3/dossier.css", "text/css; charset=utf-8", ".brief"),
+    ] {
+        let (status, headers, body) = fetch(&h, uri).await;
+        assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, content_type), "{uri}");
+        assert!(body.contains(marker), "{uri} is the expected file");
+    }
+    // Dossier has no files of its own, and "Cedar style" (/v2/) is retired: its address opens Ledger.
+    assert_eq!(fetch(&h, "/v4/app.js").await.0, StatusCode::NOT_FOUND);
+    for uri in ["/v2", "/v2/"] {
+        let (status, headers, _) = fetch(&h, uri).await;
+        assert_eq!((status, headers["location"].to_str().unwrap()), (StatusCode::TEMPORARY_REDIRECT, "/v3/"), "{uri}");
+    }
+    assert_eq!(fetch(&h, "/v2/app.js").await.0, StatusCode::NOT_FOUND);
+    // The Interface page shows a small screenshot of each design, light and dark.
+    for ui in ["v1", "v3", "v4"] {
+        let (_, _, page) = fetch(&h, &format!("/{ui}/")).await;
+        for choice in ["v1", "v3", "v4"] {
+            for theme in ["light", "dark"] {
+                let uri = format!("/ui-previews/{choice}-{theme}.webp");
+                assert!(page.contains(&uri), "{ui} shows {uri}");
+                let resp = h.app.clone().oneshot(Request::builder().uri(&uri).body(Body::empty()).unwrap()).await.unwrap();
+                assert_eq!((resp.status(), resp.headers()["content-type"].to_str().unwrap()), (StatusCode::OK, "image/webp"), "{uri}");
+                let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+                assert!(bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP", "{uri} is a WebP");
+            }
+        }
+    }
+    assert_eq!(fetch(&h, "/i18n/v2.js").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(fetch(&h, "/i18n/v4.js").await.0, StatusCode::NOT_FOUND);
 
     // The shared script holds the saved choice; `/` only sends the browser to the UI it names.
     let (status, headers, script) = fetch(&h, "/ui-pref.js").await;
@@ -1717,7 +1761,7 @@ async fn the_logo_and_icons_are_served_and_linked() {
         assert!(bytes.starts_with(magic), "{uri} is the expected file");
     }
 
-    for ui in ["v1", "v2"] {
+    for ui in ["v1", "v3"] {
         let (_, _, page) = fetch(&h, &format!("/{ui}/")).await;
         assert!(page.contains("rel=\"icon\" href=\"/assets/favicon.svg\""), "{ui} has an icon");
         assert!(page.contains("rel=\"apple-touch-icon\" href=\"/assets/apple-touch-icon.png\""), "{ui} has a touch icon");

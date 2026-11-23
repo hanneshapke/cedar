@@ -1,6 +1,6 @@
 'use strict';
 
-// Images the agent produces, shared by both UIs (/v1 and /v2). A chart from generate_chart, a
+// Images the agent produces, shared by every UI. A chart from generate_chart, a
 // picture written by write_file or download_file, an image bash or run_python created, or one the
 // agent refers to in its text as ![caption](chart.png) is shown in the response, not only offered
 // as a download. Each image a response produced is shown once, after the reply, as the file is

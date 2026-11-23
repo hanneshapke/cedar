@@ -1,6 +1,6 @@
 'use strict';
 
-// Stock display for cedar's `compare_stocks` tool, shared by both UIs (/v1 and /v2). The tool's
+// Stock display for cedar's `compare_stocks` tool, shared by every UI. The tool's
 // result is a JSON object, {"range", "benchmark"?: {"symbol", "name", "in_symbols"},
 // "benchmark_series"?: {"symbol", "name", "dates", "close"}, "as_of", "symbols": [{"symbol", "name",
 // "type", "currency", "price", "change", "change_pct", "returns", "indicators", "rating": {"call",

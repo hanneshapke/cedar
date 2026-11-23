@@ -1,6 +1,6 @@
 'use strict';
 
-// Workspace file viewer, shared by both UIs (/v1 and /v2). It shows a Markdown file as rendered
+// Workspace file viewer, shared by every UI. It shows a Markdown file as rendered
 // Markdown, a PDF in the browser's own PDF viewer, and an image (see image-view.js for the kinds)
 // at full size, in a modal dialog. Each app hands over its own helpers through cedarViewer.init(),
 // so this file knows nothing about the app's internals:

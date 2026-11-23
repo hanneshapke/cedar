@@ -1,6 +1,6 @@
 'use strict';
 
-// Attaching images and PDFs to a message, shared by both UIs (/v1 and /v2). PDFs go with any
+// Attaching images and PDFs to a message, shared by every UI. PDFs go with any
 // model (cedar saves them in the run's workspace for the agent to read); images only while the
 // model the picker has chosen is registered as accepting them (see models.js; the app calls
 // setImages as the picker changes, which also shows the button). Three ways in:

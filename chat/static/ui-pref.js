@@ -1,7 +1,7 @@
 'use strict';
 
-// Which front end to show: "v3" (Ledger), "v4" (Dossier), "v2" (Cedar style) or "v1"
-// (Claude style). Shared by the loader at / and by every UI, each a separate page under /vN/. The choice
+// Which front end to show: "v3" (Ledger) or "v4" (Dossier), the two layouts of the main page, or
+// "v1" (Claude style), a page of its own. Shared by the loader at / and by every UI. The choice
 // is kept in localStorage and only decides where / goes; visiting /vN/ directly always shows that UI.
 // Pages that contain #settings-dialog also get the Interface page of Settings wired up here; the
 // dialog itself is framed by settings-shell.js.
@@ -9,9 +9,9 @@
 const cedarUI = (() => {
   const KEY = 'cedar-chat-ui';
   const DEFAULT = 'v3';
-  const LABELS = { v3: 'Ledger', v4: 'Dossier', v2: 'Cedar style', v1: 'Claude style' };
+  const LABELS = { v3: 'Ledger', v4: 'Dossier', v1: 'Claude style' };
   /** The UI's name in the page's language (Ledger and Dossier are names and stay as they are). */
-  const label = (ui) => (ui === 'v2' ? tr('ui.cedarStyle') : ui === 'v1' ? tr('ui.claudeStyle') : LABELS[ui]);
+  const label = (ui) => (ui === 'v1' ? tr('ui.claudeStyle') : LABELS[ui]);
   const valid = (ui) => typeof ui === 'string' && Object.hasOwn(LABELS, ui);
 
   function get() {
@@ -19,7 +19,7 @@ const cedarUI = (() => {
       const saved = localStorage.getItem(KEY);
       if (valid(saved)) return saved;
     } catch { /* storage may be unavailable; fall back to the default */ }
-    return DEFAULT;
+    return DEFAULT; // also for a saved "v2" (Cedar style, retired): Ledger grew out of it
   }
 
   function set(ui) {

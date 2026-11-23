@@ -152,9 +152,7 @@ const I18N_CATALOGS: &[(&str, &str)] = &[
     ("agents.js", include_str!("../static/i18n/agents.js")),
     ("actions.js", include_str!("../static/i18n/actions.js")),
     ("v1.js", include_str!("../static/i18n/v1.js")),
-    ("v2.js", include_str!("../static/i18n/v2.js")),
     ("v3.js", include_str!("../static/i18n/v3.js")),
-    ("v4.js", include_str!("../static/i18n/v4.js")),
 ];
 const ATTACH_JS: &str = include_str!("../static/attach.js");
 const ATTACH_CSS: &str = include_str!("../static/attach.css");
@@ -221,6 +219,17 @@ const FAVICON_32_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-32.png")
 const FAVICON_16_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-16.png");
 const APPLE_TOUCH_ICON_PNG: &[u8] = include_bytes!("../../docs/assets/apple-touch-icon.png");
 
+/// Small screenshots of each interface, light and dark, for the Interface page of Settings.
+/// Retake them when a design changes visibly.
+const UI_PREVIEWS: &[(&str, &[u8])] = &[
+    ("v1-light.webp", include_bytes!("../static/ui-previews/v1-light.webp")),
+    ("v1-dark.webp", include_bytes!("../static/ui-previews/v1-dark.webp")),
+    ("v3-light.webp", include_bytes!("../static/ui-previews/v3-light.webp")),
+    ("v3-dark.webp", include_bytes!("../static/ui-previews/v3-dark.webp")),
+    ("v4-light.webp", include_bytes!("../static/ui-previews/v4-light.webp")),
+    ("v4-dark.webp", include_bytes!("../static/ui-previews/v4-dark.webp")),
+];
+
 /// One of the front ends, served under its own prefix.
 struct Ui {
     prefix: &'static str,
@@ -237,15 +246,10 @@ const V1: Ui = Ui {
     css: include_str!("../static/v1/style.css"),
 };
 
-/// "Cedar style".
-const V2: Ui = Ui {
-    prefix: "/v2",
-    index: include_str!("../static/v2/index.html"),
-    js: include_str!("../static/v2/app.js"),
-    css: include_str!("../static/v2/style.css"),
-};
-
-/// "Ledger": the v2 split with the plan, approvals, citations and a sources rail.
+/// The main page, in its two layouts: "Ledger" at `/v3/` (talk on the left, results on the right)
+/// and "Dossier" at `/v4/` (one column; each turn is a brief of plan, work, result and sources).
+/// The page picks the layout from the address it was opened at; `app.js` and `style.css` are what
+/// the two share, [`LAYOUT_FILES`] what each brings.
 const V3: Ui = Ui {
     prefix: "/v3",
     index: include_str!("../static/v3/index.html"),
@@ -253,13 +257,13 @@ const V3: Ui = Ui {
     css: include_str!("../static/v3/style.css"),
 };
 
-/// "Dossier": one column; each turn is a brief of plan, work, result and sources.
-const V4: Ui = Ui {
-    prefix: "/v4",
-    index: include_str!("../static/v4/index.html"),
-    js: include_str!("../static/v4/app.js"),
-    css: include_str!("../static/v4/style.css"),
-};
+/// Each layout's own script and stylesheet, served next to the main page's.
+const LAYOUT_FILES: &[(&str, &str, &str)] = &[
+    ("/v3/ledger.js", JS, include_str!("../static/v3/ledger.js")),
+    ("/v3/ledger.css", CSS, include_str!("../static/v3/ledger.css")),
+    ("/v3/dossier.js", JS, include_str!("../static/v3/dossier.js")),
+    ("/v3/dossier.css", CSS, include_str!("../static/v3/dossier.css")),
+];
 
 #[derive(Clone)]
 pub struct AppState {
@@ -554,7 +558,20 @@ pub fn router(state: AppState) -> Router {
     let pages = I18N_CATALOGS.iter().fold(pages, |pages, &(name, js)| {
         pages.route(&format!("/i18n/{name}"), get(move || async move { asset(JS, js) }))
     });
-    with_ui(with_ui(with_ui(with_ui(pages, V1), V2), V3), V4)
+    let pages = UI_PREVIEWS.iter().fold(pages, |pages, &(name, bytes)| {
+        pages.route(&format!("/ui-previews/{name}"), get(move || async move { asset(WEBP, bytes) }))
+    });
+    let pages = LAYOUT_FILES.iter().fold(pages, |pages, &(path, content_type, body)| {
+        pages.route(path, get(move || async move { asset(content_type, body) }))
+    });
+    with_ui(with_ui(pages, V1), V3)
+        // Dossier is the main page under its own address.
+        .route("/v4", get(|| async { asset(HTML, V3.index) }))
+        .route("/v4/", get(|| async { asset(HTML, V3.index) }))
+        // "Cedar style" is retired: its address opens Ledger, which grew out of it. The browser
+        // keeps the #/c/<id> of a bookmarked conversation across the redirect.
+        .route("/v2", get(|| async { Redirect::temporary("/v3/") }))
+        .route("/v2/", get(|| async { Redirect::temporary("/v3/") }))
         .nest("/api", api)
         .fallback(|| async { AppError::NotFound("no such route") })
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
@@ -568,6 +585,7 @@ const CSS: &str = "text/css; charset=utf-8";
 const JSON: &str = "application/json; charset=utf-8";
 const SVG: &str = "image/svg+xml";
 const PNG: &str = "image/png";
+const WEBP: &str = "image/webp";
 const WOFF2: &str = "font/woff2";
 
 /// Serve a front end's page at `/vN` and `/vN/`, and its script and stylesheet next to it.
