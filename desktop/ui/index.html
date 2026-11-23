@@ -86,6 +86,8 @@
   .update.hidden { display: none; }
   .update .grow { flex: 1; min-width: 220px; }
   .update a { color: inherit; font-size: 13px; }
+  .back { margin: -8px 0 12px -10px; padding: 4px 10px; border-color: transparent; background: none; color: var(--muted); }
+  .back:hover { color: var(--text); border-color: var(--line); }
   .header-side { display: flex; align-items: baseline; gap: 12px; }
   /* What Cedar is doing right now, or what it waits for the user to do (see activity() in app.js). */
   .activity { display: flex; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; }
@@ -182,6 +184,9 @@
 </section>
 
 <div id="panel" class="hidden">
+<!-- Back to the chat, once there is one to go back to: someone who came here from the chat (its
+     Settings, the tray menu) to change the model setup needn't scroll to "Open chat". -->
+<button type="button" class="back hidden" id="back-to-chat"><span aria-hidden="true">←</span> <span data-i18n="panel.backToChat">Back to chat</span></button>
 <header>
   <h1>Cedar</h1>
   <div class="header-side">

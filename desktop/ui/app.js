@@ -194,6 +194,9 @@ function render(s) {
 
   $('open-chat').disabled = !running;
   $('open-browser').disabled = !running;
+  // The way back to the chat, while there is one: this computer's, or the other computer's.
+  const chatReady = s.remote_server ? s.remote.state === 'connected' : running;
+  $('back-to-chat').classList.toggle('hidden', !chatReady);
 
   renderRemote(s);
   renderUpdate(s);
@@ -1006,6 +1009,7 @@ $('copy-share-url').addEventListener('click', () => invoke('copy_share_url').cat
 $('share-copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
 
 $('open-chat').addEventListener('click', () => invoke('open_chat').catch((e) => alert(e)));
+$('back-to-chat').addEventListener('click', () => invoke('open_chat').catch((e) => alert(e)));
 $('open-browser').addEventListener('click', () => invoke('open_in_browser').catch((e) => alert(e)));
 $('copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
 // Links to other sites (Get Docker Desktop, Docker's terms, Tailscale) open in the default browser: the web view
