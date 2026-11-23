@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
 
 - **Computer use.** With `COMPUTER=on`, a model that reads images gets a `computer` tool: a desktop on a virtual screen (Xfce with Firefox and LibreOffice, the new `cedar-computer` image) that it works through screenshots, the mouse and the keyboard, for what only exists behind windows. Each run gets its own, started on first use and removed with the run, with the conversation's workspace mounted, so files move between the desktop and the other tools. Off by default; see "The computer" in the README, and its safety notes before giving the desktop a network.
 - **Computer use on your own computer.** With `COMPUTER_RUNTIME=native`, or *Let Cedar use this computer* in the desktop app, the `computer` tool works the computer Cedar runs on instead of a container: your real screen, mouse and keyboard, for what only exists in your own applications. Every call waits for your OK (the new `computer` approval rule; *Always* lasts for that reply only), unattended runs are not offered it, and one run at a time has the screen. On a Mac, Cedar needs the Screen Recording and Accessibility permissions. An admin can switch between the container and the server's own computer under Settings → Advanced (`computer_runtime` on `PUT /v1/admin/settings`), from the next message and without a restart. See "The user's own computer" in the README.
