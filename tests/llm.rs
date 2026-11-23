@@ -276,6 +276,7 @@ async fn the_agent_loop_drives_a_chat_completions_server() {
         llm: common::ScriptedLlm::new(vec![]), // unused: the real client is wired in above
         factory,
         browsers: Default::default(), // unused: the browser is off
+        computers: Default::default(), // unused: the computer is off
     };
 
     let first = app.create_run(common::KEY_A, "say hi").await;

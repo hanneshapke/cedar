@@ -4,12 +4,13 @@
 use crate::approvals::{self, Gate, Rules};
 use crate::attachments;
 use crate::browser::BrowserSession;
+use crate::computer::ComputerSession;
 use crate::config::SandboxConfig;
 use crate::context::{self, Budget};
 use crate::events::Emitter;
 use crate::integrations::Integrations;
 use crate::llm::{LlmClient, LlmResponse, LlmRouter, MessageRequest};
-use crate::actions::{Actions, ActionsContext};
+use crate::actions::{Actions, ActionsContext, Desktop, Hands};
 use crate::memory::{self, Memories, MemoryContext};
 use crate::records::{self, Records, RecordsContext};
 use crate::models::{event, PlanMode, Run, Usage, DEFAULT_MAX_TOKENS};
@@ -20,7 +21,7 @@ use crate::sandbox::{Reach, Runtime, Sandbox, SandboxFatal};
 use crate::sources::{Sources, CITE_NOTE};
 use crate::store::Store;
 use crate::tools::{
-    question_text, Handover, ToolContext, ToolModel, ToolView, ACCOUNT_GROUPS, ASK_USER,
+    question_text, Handover, ToolContext, ToolModel, ToolOutput, ToolView, ACCOUNT_GROUPS, ASK_USER,
     RECORDS_SAVE, REMEMBER, SAVED_ACTIONS,
 };
 use crate::trace;
@@ -103,6 +104,7 @@ pub async fn run_agent(
     created: &Run,
     sandbox: Arc<dyn Sandbox>,
     browser: Option<Arc<BrowserSession>>,
+    computer: Option<Arc<ComputerSession>>,
     events: &Emitter,
     cancel: &CancellationToken,
 ) -> Result<Completion, AgentError> {
@@ -129,6 +131,10 @@ pub async fn run_agent(
     let ctx = ToolContext {
         sandbox: sandbox.clone(),
         browser,
+        computer,
+        max_image_side: crate::images::max_side(&env.store).await?,
+        // Known once the run's model is looked up (see below).
+        reads_images: false,
         timeout: env.tool_timeout,
         max_output: env.tool_output_max_bytes,
         model: env.llm.client_for(&tool_model.model_id).map(|client| {
@@ -153,9 +159,11 @@ pub async fn run_agent(
             run_id: run.id,
             interactive: run.interactive,
         }),
+        // What the run can carry them out with is known once its tools are (see below).
         actions: env.actions.as_ref().map(|actions| ActionsContext {
             actions: actions.clone(),
             owner: run.owner.clone(),
+            hands: Hands::default(),
         }),
     };
     // Connections the key's owner always allows, which the sandbox's base policy doesn't. Only an
@@ -202,7 +210,42 @@ pub async fn run_agent(
     let tools = tool_set
         .select(narrowed.as_deref().or(created.tools.as_deref()))
         .without(if run.private { crate::tools::KEEPING_GROUPS } else { &[] });
+    // Looked up now, so an admin's change since the run was created applies. A model that reads
+    // no images gets no tool that answers with one, and none of the screenshots an earlier run
+    // of the conversation took on another model.
+    let reads_images = env
+        .integrations
+        .models()
+        .iter()
+        .any(|m| m.id == run.model_id && m.multimodal);
+    // The user's own computer is only for a run someone is there to answer for, since its calls
+    // wait for their OK (see [`approve`]); a run nobody answers for was given a desktop in a
+    // container instead (see [`crate::computer::Computers::session`]).
+    let own_computer = ctx.computer.as_ref().is_some_and(|c| c.native());
+    let tools = if reads_images && (run.interactive || !own_computer) {
+        tools
+    } else {
+        tools.without_computer()
+    };
+    // What this run has to carry a saved action out with.
+    let hands = Hands {
+        browser: tools.get("browser").is_some(),
+        computer: tools
+            .get("computer")
+            .map(|_| if own_computer { Desktop::Own } else { Desktop::Container }),
+    };
+    let mut ctx = ctx;
+    ctx.reads_images = reads_images;
+    if let Some(actions) = &mut ctx.actions {
+        actions.hands = hands;
+    }
     let mut tool_defs = tools.definitions();
+    // On the user's own computer the tool is described as what it is there.
+    if own_computer {
+        for def in tool_defs.iter_mut().filter(|d| d["name"] == "computer") {
+            *def = crate::tools::ComputerTool::native_definition();
+        }
+    }
     let mut note = tools.environment_note(&Reach::of(sandbox.runtime(), &env.sandbox));
     // How this run hands over to its user: what waits for their OK, what is held for them.
     note.push(' ');
@@ -256,7 +299,7 @@ pub async fn run_agent(
         let saved = actions.list(&run.owner).await?;
         if !saved.is_empty() {
             note.push_str("\n\n");
-            note.push_str(&crate::actions::note(&saved, tools.get("browser").is_some()));
+            note.push_str(&crate::actions::note(&saved, hands));
         }
     }
     // Read per request, so a memory deleted in Settings is gone from the very next run. The
@@ -316,16 +359,10 @@ pub async fn run_agent(
     let blocks = if attachments.is_empty() {
         vec![]
     } else {
-        // Looked up now, so an admin's change since the run was created applies.
-        let images = env
-            .integrations
-            .models()
-            .iter()
-            .any(|m| m.id == run.model_id && m.multimodal);
         let prepare = attachments::prepare(
             sandbox.as_ref(),
             &attachments,
-            images,
+            reads_images,
             env.pdf_preview_pages,
             env.tool_timeout,
             &imported,
@@ -375,15 +412,19 @@ pub async fn run_agent(
         // A reply cut off at its limit before it said or asked anything gets one more try with
         // less of the conversation; a second one ends the run as failed.
         let mut tight = false;
+        // Old screenshots tell the model little about the screen as it is now: only the newest
+        // few are sent.
+        let viewed = context::with_recent_views(&messages, reads_images);
+        let stored: &[Value] = viewed.as_deref().unwrap_or(&messages);
         let resp = loop {
             // What was cut before is cut the same way again, so the start of the request stays
             // the same text and the server can reuse its cache for it.
-            let applied = (!cuts.is_empty()).then(|| cuts.apply(&messages));
-            let current: &[Value] = applied.as_deref().unwrap_or(&messages);
+            let applied = (!cuts.is_empty()).then(|| cuts.apply(stored));
+            let current: &[Value] = applied.as_deref().unwrap_or(stored);
             let fitted = match budget.message_bytes(fixed_bytes, tight) {
                 Some(max) if context::size(current) > max => {
                     // Down to well below the limit, so the next turns fit without new cuts.
-                    let fitted = context::fit(&messages, max * context::REFIT_PERCENT / 100, &cuts);
+                    let fitted = context::fit(stored, max * context::REFIT_PERCENT / 100, &cuts);
                     let before = budget.estimate(fixed_bytes + context::size(current));
                     let after = budget.estimate(fixed_bytes + context::size(&fitted.messages));
                     let window = budget.window().unwrap_or_default();
@@ -1170,6 +1211,7 @@ async fn approve(
     env: &AgentEnv,
     tools: &ToolView<'_>,
     reach: &Reach,
+    ctx: &ToolContext,
     run: &Run,
     events: &Emitter,
     cancel: &CancellationToken,
@@ -1185,6 +1227,50 @@ async fn approve(
             return hold(env, run, events, call_id, name, input, "unattended").await;
         }
         return Ok(Verdict::Go);
+    }
+    // The user's own computer: asked every time, until they allow the rest of this run. That is
+    // kept with the run and never saved, unlike the other rules' "always".
+    if let Some(computer) = ctx.computer.as_ref().filter(|c| name == "computer" && c.native()) {
+        let Some(gate) = approvals::check_computer(&env.approvals, input) else {
+            return Ok(Verdict::Go);
+        };
+        if computer.allowed() {
+            return Ok(Verdict::Go);
+        }
+        // A call that carries out a step of a saved action: the user is asked once for the
+        // whole action, with its steps before them, and not again for its other calls.
+        let action = match (input["saved_action"].as_str(), &ctx.actions) {
+            (Some(named), Some(a)) => a.actions.find(&a.owner, named).await?,
+            _ => None,
+        };
+        if let Some(action) = &action {
+            if computer.spend_action(&action.name) {
+                return Ok(Verdict::Go);
+            }
+            let gate = approvals::computer_action_gate(&action.title, &action.steps);
+            return Ok(match ask(env, run, events, cancel, call_id, name, input, &gate).await? {
+                Decision::Allow => {
+                    computer.allow_action(&action.name, approvals::action_calls(action.steps.len()));
+                    computer.spend_action(&action.name);
+                    Verdict::Go
+                }
+                Decision::Always => {
+                    computer.allow();
+                    Verdict::Go
+                }
+                Decision::Timeout => Verdict::Refused(NOT_APPROVED.into()),
+                Decision::Deny => Verdict::Refused(DECLINED.into()),
+            });
+        }
+        return Ok(match ask(env, run, events, cancel, call_id, name, input, &gate).await? {
+            Decision::Allow => Verdict::Go,
+            Decision::Always => {
+                computer.allow();
+                Verdict::Go
+            }
+            Decision::Timeout => Verdict::Refused(NOT_APPROVED.into()),
+            Decision::Deny => Verdict::Refused(DECLINED.into()),
+        });
     }
     let personal = tools
         .get(name)
@@ -1276,7 +1362,9 @@ async fn ask(
     // `always_allow_after` times, counted since they last declined it. Until then the event
     // carries no `scope`, which is how clients know not to offer it, and `always` says how far
     // along it is.
-    let after = env.always_allow_after;
+    // On the user's own computer "always" lasts for this run only and is never saved, so there
+    // is nothing to earn: it is offered from the first card.
+    let after = if gate.rule == approvals::Rule::Computer { 0 } else { env.always_allow_after };
     let allowed = match &gate.scope {
         Some(_) if after > 0 => env.store.allow_count(&run.owner, rule, &gate.grants).await?,
         _ => 0,
@@ -1515,12 +1603,13 @@ pub fn is_temporary(error: &str) -> bool {
 }
 
 /// Whether a call must run on its own, in order: anything that works in the sandbox (files,
-/// code), the browser (one page), questions and plans, memory and records, downloads, and
+/// code), the browser (one page), the computer (one screen), questions and plans, memory and
+/// records, downloads, and
 /// account tools that change something. Other calls of a turn (searches, pages, lookups) run at
 /// the same time.
 fn runs_alone(tools: &ToolView<'_>, name: &str) -> bool {
     let group = tools.group(name);
-    matches!(group, "core" | "browser" | "ask_user" | "memory" | "records")
+    matches!(group, "core" | "browser" | "computer" | "ask_user" | "memory" | "records")
         || name == "download_file"
         || name == plan::TOOL
         || crate::tools::writes(name)
@@ -1558,7 +1647,7 @@ async fn prepare_call<'b>(
     // A call to a tool the run doesn't have fails without running, so it needs no OK.
     if refused.is_none() && tools.get(&name).is_some() {
         let reach = Reach::of(ctx.sandbox.runtime(), &env.sandbox);
-        match approve(env, tools, &reach, run, events, cancel, &id, &name, input).await? {
+        match approve(env, tools, &reach, ctx, run, events, cancel, &id, &name, input).await? {
             Verdict::Go => {}
             Verdict::Refused(why) => refused = Some(why),
             Verdict::Held(output) => held = Some(output),
@@ -1579,18 +1668,18 @@ async fn run_call(
     ctx: &ToolContext,
     cancel: &CancellationToken,
     call: &Prepared<'_>,
-) -> Result<(Result<String>, Duration), AgentError> {
+) -> Result<(Result<ToolOutput>, Duration), AgentError> {
     let started = Instant::now();
     let work = async {
         if let Some(message) = &call.refused {
             return Err(anyhow!(message.clone()));
         }
         if let Some(output) = &call.held {
-            return Ok(output.clone());
+            return Ok(ToolOutput::from(output.clone()));
         }
         // A tool left out of the run's selection is as unknown as a made-up one.
         match tools.get(&call.name) {
-            Some(tool) => tool.call(ctx, &call.block["input"]).await,
+            Some(tool) => tool.call_output(ctx, &call.block["input"]).await,
             None => Err(anyhow!("unknown tool: {}", call.name)),
         }
     };
@@ -1615,17 +1704,17 @@ async fn finish_call(
     events: &Emitter,
     cancel: &CancellationToken,
     call: &Prepared<'_>,
-    result: Result<String>,
+    result: Result<ToolOutput>,
     took: Duration,
 ) -> Result<Value, AgentError> {
     let (id, name, input) = (call.id.as_str(), call.name.as_str(), &call.block["input"]);
-    let (mut output, is_error) = match result {
-        Ok(out) => (out, false),
+    let (mut output, images, is_error) = match result {
+        Ok(out) => (out.text, out.images, false),
         Err(e) if e.downcast_ref::<SandboxFatal>().is_some() => {
             return Err(AgentError::Failed(e.to_string()))
         }
         // Errors go back to the model so it can recover.
-        Err(e) => (format!("{e:#}"), true),
+        Err(e) => (format!("{e:#}"), Vec::new(), true),
     };
     if call.refused.is_none() && call.held.is_none() {
         breaker.record(name, is_error, &output);
@@ -1648,9 +1737,22 @@ async fn finish_call(
             for_model = numbered.output;
         }
     }
+    // The image itself stays out of the event log; it is in the conversation (`/messages`).
+    if !images.is_empty() {
+        data["image"] = Value::Bool(true);
+    }
     events.emit(event::TOOL_RESULT, data).await?;
 
-    let mut block = json!({ "type": "tool_result", "tool_use_id": id, "content": for_model });
+    // A result with images (the `computer`'s screenshot, a saved action's pictures) is the text
+    // and the images as parts.
+    let content = if images.is_empty() {
+        Value::String(for_model)
+    } else {
+        let mut parts = vec![json!({ "type": "text", "text": for_model })];
+        parts.extend(images.iter().map(|image| image.block()));
+        Value::Array(parts)
+    };
+    let mut block = json!({ "type": "tool_result", "tool_use_id": id, "content": content });
     if is_error {
         block["is_error"] = Value::Bool(true);
     }

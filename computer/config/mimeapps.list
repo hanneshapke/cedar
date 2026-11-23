@@ -1,0 +1,12 @@
+[Default Applications]
+text/plain=org.xfce.mousepad.desktop
+text/markdown=org.xfce.mousepad.desktop
+application/json=org.xfce.mousepad.desktop
+text/csv=libreoffice-calc.desktop
+application/pdf=firefox-esr.desktop
+text/html=firefox-esr.desktop
+image/png=org.xfce.ristretto.desktop
+image/jpeg=org.xfce.ristretto.desktop
+image/gif=org.xfce.ristretto.desktop
+image/webp=org.xfce.ristretto.desktop
+image/svg+xml=firefox-esr.desktop

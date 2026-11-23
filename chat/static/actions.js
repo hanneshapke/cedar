@@ -60,7 +60,7 @@ const cedarActions = (() => {
   let deps = null;
   let page = null;       // the page's elements, built on first use
   let started = false;
-  let info = { supported: true, actions: [], limits: {}, recording: {}, secrets: false, enabled: true, browser: true };
+  let info = { supported: true, actions: [], limits: {}, recording: {}, secrets: false, enabled: true, browser: true, computer: null };
   let view = 0;          // bumped on every render, so a slow step can't draw into a newer view
   let lastChat = '';     // the hash to go back to
   let session = null;    // the recording being made: { stream, recorder, timer, ... }
@@ -208,7 +208,7 @@ const cedarActions = (() => {
     if (!deps) return false;
     try {
       const data = await deps.api('GET', '/actions');
-      info = { supported: data.supported !== false, actions: data.actions || [], limits: data.limits || {}, recording: data.recording || {}, secrets: !!data.secrets, enabled: data.enabled !== false, browser: data.browser !== false };
+      info = { supported: data.supported !== false, actions: data.actions || [], limits: data.limits || {}, recording: data.recording || {}, secrets: !!data.secrets, enabled: data.enabled !== false, browser: data.browser !== false, computer: data.computer || null };
     } catch { return false; }
     renderNav();
     return true;
@@ -230,12 +230,28 @@ const cedarActions = (() => {
     return info.recording.video || info.recording.frames ? '' : tr('actions.noModel');
   }
 
+  /**
+   * Why an action carried out with `runsOn` (browser, computer, own_computer) can't be on this
+   * server, as a message key, or '' when it can. `info.computer` is what the computer tool
+   * works here: 'container', 'own' (the server's own computer), or null without the tool.
+   */
+  function cannotRun(runsOn) {
+    if (runsOn === 'own_computer') {
+      if (info.computer === 'own') return '';
+      return info.computer ? 'actions.form.cannot.ownComputerContainer' : 'actions.form.cannot.ownComputer';
+    }
+    if (runsOn === 'computer') return info.computer ? '' : 'actions.form.cannot.computer';
+    return info.browser || info.computer ? '' : 'actions.form.noBrowser';
+  }
+
   function card(a) {
     const c = link('', `#/actions/${a.id}`, 'cedar-ag-card');
     const title = el('div', 'cedar-ag-card-title');
     title.append(el('span', '', a.title));
     const meta = el('div', 'cedar-ag-meta');
     if (a.site) meta.append(el('span', '', a.site));
+    if (a.app) meta.append(el('span', '', a.app));
+    if (cannotRun(a.runs_on)) meta.append(el('span', 'cedar-act-locked', tr('actions.cannotRunHere')));
     meta.append(el('span', '', tr('actions.steps', { count: a.steps.length })));
     if (a.secrets.some((s) => s.saved)) meta.append(el('span', 'cedar-act-locked', tr('actions.passwordStored')));
     meta.append(el('span', '', a.uses ? tr('actions.used', { count: a.uses }) : tr('actions.unused')));
@@ -898,7 +914,11 @@ const cedarActions = (() => {
         if (!alive()) return;
         const draft = result.draft || {};
         const source = { kind: 'recording', seconds: Math.round(durationMs / 1000), frames: frames.length, watched: result.watched, model: result.model_id };
-        edit({ title: draft.title, summary: draft.summary, site: draft.site, steps: draft.steps || [], secrets: draft.secrets || [] }, { source, notes: draft.notes, model: result.model });
+        // The frames the model picked as worth keeping, by the numbers it was shown them under.
+        const pictures = (draft.frames || [])
+          .filter((f) => frames[f.frame - 1])
+          .map((f) => ({ shows: f.shows || '', media_type: frames[f.frame - 1].media_type, data: frames[f.frame - 1].data }));
+        edit({ title: draft.title, summary: draft.summary, site: draft.site, app: draft.app, runs_on: draft.runs_on, steps: draft.steps || [], secrets: draft.secrets || [] }, { source, notes: draft.notes, model: result.model, pictures });
       } catch (e) {
         clearInterval(timer);
         if (alive()) fail(e?.message || tr('actions.write.failed'), () => write(asVideo));
@@ -935,12 +955,29 @@ const cedarActions = (() => {
    * The form for `action` ({title, summary, site, steps, secrets}). `save(body)` saves what it
    * holds and may throw; `notes` and `model` say what the model made of a recording.
    */
-  function form(action, { save, cancel, cancelLabel, notes, model, source, remove } = {}) {
+  function form(action, { save, cancel, cancelLabel, notes, model, source, remove, pictures } = {}) {
     const f = el('form', 'cedar-ag-form');
     const title = input(action.title, { max: 120 });
     title.required = true;
     const summary = input(action.summary, { max: 400 });
     const site = input(action.site, { max: 253, placeholder: 'portal.example.com' });
+    const app = input(action.app, { max: 80, placeholder: 'LibreOffice Calc' });
+    const runsOn = el('select');
+    for (const value of ['browser', 'own_computer', 'computer']) {
+      const option = el('option', '', tr(`actions.runsOn.${value}`));
+      option.value = value;
+      runsOn.append(option);
+    }
+    // An application is on your own computer unless you say any desktop would do.
+    runsOn.value = action.runs_on || (action.app && !action.site ? 'own_computer' : 'browser');
+    const where = el('div', 'cedar-ag-box warn');
+    const showWhere = () => {
+      const why = cannotRun(runsOn.value);
+      where.hidden = !why;
+      where.textContent = why ? tr(why) : '';
+    };
+    runsOn.addEventListener('change', showWhere);
+    showWhere();
     const steps = el('textarea', 'cedar-act-steps');
     steps.value = (action.steps || []).join('\n');
     steps.rows = Math.min(24, Math.max(6, (action.steps || []).length + 2));
@@ -959,8 +996,42 @@ const cedarActions = (() => {
       field(tr('actions.form.summary'), summary, tr('actions.form.summaryHelp')),
       field(tr('actions.form.steps'), steps, tr('actions.form.stepsHelp')),
       field(tr('actions.form.site'), site, tr('actions.form.siteHelp')),
+      field(tr('actions.form.app'), app, tr('actions.form.appHelp')),
+      field(tr('actions.form.runsOn'), runsOn, tr('actions.form.runsOnHelp')),
+      where,
     );
-    if (action.site && !info.browser) f.append(el('div', 'cedar-ag-box warn', tr('actions.form.noBrowser')));
+
+    // Pictures of the recording kept with the action: what to look for on the screen. `kept`
+    // is what is sent; it stays null (leave them as they are) until a saved action's are loaded.
+    let kept = pictures ? [...pictures] : null;
+    let changed = !!pictures;
+    const gallery = el('div', 'cedar-act-pictures');
+    const drawPictures = () => {
+      gallery.replaceChildren();
+      for (const p of kept || []) {
+        const fig = el('figure', 'cedar-act-picture');
+        const img = el('img');
+        img.src = `data:${p.media_type};base64,${p.data}`;
+        img.alt = p.shows || '';
+        fig.append(img, el('figcaption', '', p.shows || ''), button(tr('actions.form.removePicture'), () => {
+          kept.splice(kept.indexOf(p), 1);
+          changed = true;
+          drawPictures();
+        }));
+        gallery.append(fig);
+      }
+      picturesField.hidden = !(kept && kept.length);
+    };
+    const picturesField = field(tr('actions.form.pictures'), gallery, tr('actions.form.picturesHelp'));
+    f.append(picturesField);
+    drawPictures();
+    if (!pictures && action.id && (action.frames || []).length) {
+      deps.api('GET', `/actions/${action.id}/frames`).then((got) => {
+        if (changed) return;
+        kept = got.frames || [];
+        drawPictures();
+      }).catch(() => {});
+    }
 
     // Passwords: what the recording showed being typed, and any the person adds.
     const set = el('fieldset', 'cedar-ag-set');
@@ -1009,6 +1080,9 @@ const cedarActions = (() => {
         title: title.value,
         summary: summary.value,
         site: site.value.trim() || null,
+        app: app.value.trim() || null,
+        runs_on: runsOn.value,
+        ...(changed && kept ? { frames: kept } : {}),
         steps: steps.value.split('\n').map((s) => s.replace(/^\s*(?:\d+[.)]|[-*•])\s+/, '').trim()).filter(Boolean),
         secrets: entries.map((s) => ({ name: s.name, label: s.label.value.trim(), ...(s.value.value ? { value: s.value.value } : {}) })),
         ...(source ? { source } : {}),

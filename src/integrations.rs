@@ -896,6 +896,7 @@ impl Integrations {
             ("records", off("RECORDS")),
             ("actions", off("ACTIONS")),
             ("browser", off("BROWSER")),
+            ("computer", off("COMPUTER")),
             ("gmail", google("gmail", "GMAIL")),
             ("calendar", google("calendar", "CALENDAR")),
             ("drive", google("drive", "DRIVE")),

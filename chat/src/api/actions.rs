@@ -9,6 +9,10 @@ use super::*;
 /// A recording as the page sends it: its key frames and video as base64 (see cedar's limits).
 pub(super) const MAX_RECORDING_BODY_BYTES: usize = 40 << 20;
 
+/// An action as the page saves it: its text and the few pictures of its recording kept with it,
+/// as base64 (cedar's limit is the same).
+pub(super) const MAX_ACTION_BODY_BYTES: usize = 10 << 20;
+
 fn action_id(raw: &str) -> Result<Uuid, AppError> {
     Uuid::parse_str(raw).map_err(|_| AppError::NotFound("action not found"))
 }
@@ -38,6 +42,11 @@ pub(super) async fn create(Scoped(state): Scoped, ApiJson(action): ApiJson<Value
 
 pub(super) async fn get(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
     Ok(Json(state.cedar.action(action_id(&id)?).await?))
+}
+
+/// `GET /api/actions/{id}/frames`: the pictures kept with an action, for its form.
+pub(super) async fn frames(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {
+    Ok(Json(state.cedar.action_frames(action_id(&id)?).await?))
 }
 
 /// `PUT /api/actions/{id}`: change an action. A secret sent without a value keeps its saved one.

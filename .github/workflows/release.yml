@@ -270,6 +270,83 @@ jobs:
             docker buildx imagetools inspect "$REPO/$image:$VERSION"
           done
 
+  # The desktop behind the computer tool (computer/), apart from the two images above: it is
+  # large, nothing needs it unless the tool is turned on, and a build of it that fails must not
+  # hold back the images every install pulls, or the release. So both jobs may fail (the run
+  # shows which did), and the release notes only name the image when it was published.
+  computer-image:
+    needs: verify
+    if: needs.verify.outputs.cedar == 'true'
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the computer image (${{ matrix.arch }})
+        uses: docker/build-push-action@v6
+        with:
+          context: computer
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ghcr.io/${{ needs.verify.outputs.image_owner }}/cedar-computer:${{ needs.verify.outputs.version }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=The desktop behind cedar's computer tool
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+          cache-from: type=gha,scope=computer-${{ matrix.arch }}
+          cache-to: type=gha,scope=computer-${{ matrix.arch }},mode=max,ignore-error=true
+
+  computer-manifest:
+    # One multi-arch tag, pointing at the two builds above. If one of them failed, its tag is
+    # missing and this fails too.
+    needs: [verify, computer-image]
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the multi-arch tag
+        id: publish
+        env:
+          IMAGE: ghcr.io/${{ needs.verify.outputs.image_owner }}/cedar-computer
+          VERSION: ${{ needs.verify.outputs.version }}
+          PUBLISH: ${{ needs.verify.outputs.publish }}
+        run: |
+          set -eu
+          tags="-t $IMAGE:$VERSION"
+          # A manual run must not move :latest.
+          [ "$PUBLISH" = true ] && tags="$tags -t $IMAGE:latest"
+          if ! docker buildx imagetools create $tags "$IMAGE:$VERSION-amd64" "$IMAGE:$VERSION-arm64"; then
+            echo "::error::cedar-computer $VERSION was not published: the computer tool's desktop in a container can't be pulled for this version"
+            exit 1
+          fi
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
   dmg:
     needs: verify
     if: needs.verify.outputs.cedar == 'true'
@@ -324,7 +401,8 @@ jobs:
             desktop -> target
 
       - name: Build cedar and cedar-chat
-        run: cargo build --release --locked -p cedar -p cedar-chat --target ${{ matrix.target }}
+        # With the driver of this computer's own screen, for the app's "use this computer".
+        run: cargo build --release --locked -p cedar -p cedar-chat --features cedar/native-computer --target ${{ matrix.target }}
 
       - name: Put them where the bundler expects sidecars
         run: |
@@ -476,7 +554,7 @@ jobs:
       - name: Build cedar and cedar-chat
         env:
           RUSTFLAGS: -C target-feature=+crt-static
-        run: cargo build --release --locked -p cedar -p cedar-chat --target $env:TARGET
+        run: cargo build --release --locked -p cedar -p cedar-chat --features cedar/native-computer --target $env:TARGET
 
       - name: Put them where the bundler expects sidecars
         run: |
@@ -692,9 +770,10 @@ jobs:
       ref: ${{ needs.verify.outputs.sha }}
 
   release:
-    needs: [verify, manifests, dmg, msi, apk, linux, ios, ipa]
+    needs: [verify, manifests, computer-manifest, dmg, msi, apk, linux, ios, ipa]
     # The jobs of a platform that isn't released are skipped, which must not skip this one; a
-    # failed or cancelled job must.
+    # failed or cancelled job must. computer-manifest is waited for, so the notes can say whether
+    # its image is there, but it may fail (continue-on-error) without stopping the release.
     if: >-
       always() && needs.verify.result == 'success' && needs.verify.outputs.publish == 'true' &&
       !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
@@ -792,8 +871,11 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
           PREVIOUS: ${{ needs.verify.outputs.cedar_previous }}
           REPO: ghcr.io/${{ needs.verify.outputs.image_owner }}
+          COMPUTER_IMAGE: ${{ needs.computer-manifest.outputs.published }}
         run: |
           set -eu
+          IMAGES="\`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\`"
+          [ "$COMPUTER_IMAGE" != true ] || IMAGES="$IMAGES, \`$REPO/cedar-computer:$VERSION\`"
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             echo "::notice::v$VERSION is published already"; exit 0
           fi
@@ -825,7 +907,7 @@ jobs:
           unit from the tarball set up (DEPLOYMENT.md, "Updates"), its *Update* button installs it;
           \`sudo ./cedar-update\` does the same from a shell.
 
-          Images: \`$REPO/cedar-sandbox:$VERSION\`, \`$REPO/cedar-browser:$VERSION\` (linux/amd64, linux/arm64).
+          Images: $IMAGES (linux/amd64, linux/arm64).
 
           ## Android, iPhone and iPad
 

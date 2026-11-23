@@ -49,6 +49,9 @@ async fn bash_runs_the_command_as_given_and_lists_the_files_it_changed() {
     let ctx = ToolContext {
         sandbox: sandbox.clone(),
         browser: None,
+        computer: None,
+        max_image_side: cedar::images::DEFAULT_MAX_SIDE,
+        reads_images: false,
         timeout: Duration::from_secs(5),
         max_output: 1000,
         model: None,

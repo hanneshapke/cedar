@@ -193,6 +193,9 @@ async fn call_tool(
     let context = |sandbox: Arc<dyn Sandbox>| ToolContext {
         sandbox,
         browser: None,
+        computer: None,
+        max_image_side: crate::images::DEFAULT_MAX_SIDE,
+        reads_images: false,
         timeout: cfg.tool_timeout,
         max_output: MAX_OUTPUT_BYTES,
         model: None,
@@ -225,6 +228,9 @@ pub async fn call_without_run(cfg: &Config, tool: &dyn Tool, input: &Value) -> R
     let ctx = ToolContext {
         sandbox: Arc::new(NoSandbox),
         browser: None,
+        computer: None,
+        max_image_side: crate::images::DEFAULT_MAX_SIDE,
+        reads_images: false,
         timeout: cfg.tool_timeout,
         max_output: MAX_OUTPUT_BYTES,
         model: None,

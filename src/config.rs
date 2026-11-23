@@ -150,6 +150,83 @@ pub struct BrowserConfig {
     pub cpus: String,
 }
 
+/// What the `computer` tool works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputerRuntime {
+    /// A desktop in a container of its own per run (see `computer/`).
+    Docker,
+    /// The screen, mouse and keyboard of the computer cedar runs on: the user's own.
+    Native,
+}
+
+impl ComputerRuntime {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ComputerRuntime::Docker => "docker",
+            ComputerRuntime::Native => "native",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "docker" => Some(ComputerRuntime::Docker),
+            "native" => Some(ComputerRuntime::Native),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ComputerConfig {
+    /// Offer the `computer` tool (off by default).
+    pub enabled: bool,
+    /// What the tool works unless an admin chose otherwise (the `computer_runtime` setting).
+    /// Unset, it is the computer cedar runs on in a build that can drive it (the
+    /// `native-computer` feature, as in the desktop app), else a desktop in a container.
+    pub runtime: ComputerRuntime,
+    /// The `docker` command, as in [`SandboxConfig`].
+    pub docker_bin: String,
+    pub image: String,
+    /// Docker network for the computer containers: `bridge` by default, so its web browser
+    /// works; `none` gives a desktop that only works on the workspace's files.
+    pub network: String,
+    pub memory: String,
+    pub cpus: String,
+    /// The size of the screen in pixels.
+    pub width: u32,
+    pub height: u32,
+}
+
+impl ComputerConfig {
+    /// Whether the desktop in a container can reach a network at all.
+    pub fn online(&self) -> bool {
+        self.network != "none"
+    }
+
+    pub fn native(&self) -> bool {
+        self.runtime == ComputerRuntime::Native
+    }
+}
+
+/// The range each side of `COMPUTER_SCREEN` accepts.
+const SCREEN_SIDES: std::ops::RangeInclusive<u32> = 640..=2560;
+
+/// A screen size like `1280x800`.
+fn screen_size(value: &str) -> Result<(u32, u32)> {
+    let size = value
+        .trim()
+        .split_once('x')
+        .and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)))
+        .filter(|(w, h)| SCREEN_SIDES.contains(w) && SCREEN_SIDES.contains(h));
+    size.ok_or_else(|| {
+        anyhow!(
+            "COMPUTER_SCREEN must be a size like 1280x800, each side from {} to {} pixels",
+            SCREEN_SIDES.start(),
+            SCREEN_SIDES.end()
+        )
+    })
+}
+
 /// An OAuth client and the refresh token one Google account granted it.
 #[derive(Clone)]
 pub struct GoogleOAuthConfig {
@@ -407,6 +484,7 @@ pub struct Config {
 
     pub sandbox: SandboxConfig,
     pub browser: BrowserConfig,
+    pub computer: ComputerConfig,
 }
 
 /// Docker wants an absolute host path for a bind mount, so a relative `TOOLS_DIR` is resolved
@@ -629,6 +707,7 @@ impl Config {
             );
         }
 
+        let computer_screen = screen_size(&get("COMPUTER_SCREEN").unwrap_or_else(|| "1280x800".into()))?;
         let cfg = Config {
             brave_api_key: get("BRAVE_API_KEY").map(|k| k.trim().to_string()),
             brave_base_url: get("BRAVE_API_BASE_URL")
@@ -798,11 +877,30 @@ impl Config {
             },
             browser: BrowserConfig {
                 enabled: flag("BROWSER", false)?,
-                docker_bin,
+                docker_bin: docker_bin.clone(),
                 image: get("BROWSER_IMAGE").unwrap_or_else(|| "cedar-browser:latest".into()),
                 network: get("BROWSER_NETWORK").unwrap_or_else(|| "bridge".into()),
                 memory: get("BROWSER_MEMORY").unwrap_or_else(|| "1g".into()),
                 cpus: get("BROWSER_CPUS").unwrap_or_else(|| "1".into()),
+            },
+            computer: ComputerConfig {
+                enabled: flag("COMPUTER", false)?,
+                // The user's own computer where this cedar can drive it (and they allow each
+                // call); a desktop in a container where it can't.
+                runtime: match get("COMPUTER_RUNTIME") {
+                    None if cfg!(feature = "native-computer") => ComputerRuntime::Native,
+                    None => ComputerRuntime::Docker,
+                    Some(name) => ComputerRuntime::parse(name.trim()).ok_or_else(|| {
+                        anyhow!("COMPUTER_RUNTIME must be docker or native, not {name:?}")
+                    })?,
+                },
+                docker_bin,
+                image: get("COMPUTER_IMAGE").unwrap_or_else(|| "cedar-computer:latest".into()),
+                network: get("COMPUTER_NETWORK").unwrap_or_else(|| "bridge".into()),
+                memory: get("COMPUTER_MEMORY").unwrap_or_else(|| "2g".into()),
+                cpus: get("COMPUTER_CPUS").unwrap_or_else(|| "2".into()),
+                width: computer_screen.0,
+                height: computer_screen.1,
             },
         };
         cfg.validate()?;
@@ -1170,6 +1268,58 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.brave_api_key.as_deref(), Some("BSA-secret"));
         assert_eq!(cfg.brave_base_url, "http://localhost:9999/search");
+    }
+
+    #[test]
+    fn the_computer_is_off_unless_enabled() {
+        let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        assert!(!cfg.computer.enabled);
+        assert_eq!(cfg.computer.image, "cedar-computer:latest");
+        assert_eq!((cfg.computer.width, cfg.computer.height), (1280, 800));
+        assert!(cfg.computer.online());
+
+        let cfg = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("COMPUTER", "on"),
+            ("COMPUTER_IMAGE", "my-computer:2"),
+            ("COMPUTER_NETWORK", "none"),
+            ("COMPUTER_SCREEN", "1024x768"),
+            ("DOCKER_BIN", "/opt/homebrew/bin/docker"),
+        ]))
+        .unwrap();
+        assert!(cfg.computer.enabled);
+        assert_eq!(cfg.computer.image, "my-computer:2");
+        assert!(!cfg.computer.online(), "a desktop may be kept offline");
+        assert_eq!((cfg.computer.width, cfg.computer.height), (1024, 768));
+        assert_eq!(cfg.computer.docker_bin, "/opt/homebrew/bin/docker");
+
+        let said = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_RUNTIME", "docker")])).unwrap();
+        assert_eq!(said.computer.runtime, ComputerRuntime::Docker, "said outright");
+        // Unset, it is the user's own computer where this build can drive it.
+        let unset = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
+        let preferred = if cfg!(feature = "native-computer") { ComputerRuntime::Native } else { ComputerRuntime::Docker };
+        assert_eq!(unset.computer.runtime, preferred);
+        let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_RUNTIME", "vm")]))
+            .unwrap_err();
+        assert!(err.to_string().contains("COMPUTER_RUNTIME"), "{err}");
+        // Naming the runtime turns nothing on. A cedar built without the driver still starts
+        // with it turned on: runs then get the desktop in a container (see `Computers`).
+        let named = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_RUNTIME", "native")]))
+            .unwrap();
+        assert!(named.computer.native() && !named.computer.enabled);
+        let on = Config::from_lookup(lookup(&[
+            ("CEDAR_API_KEYS", "a"),
+            ("COMPUTER", "on"),
+            ("COMPUTER_RUNTIME", "native"),
+        ]))
+        .unwrap();
+        assert!(on.computer.native() && on.computer.enabled);
+
+        for bad in ["1280", "1280x", "axb", "100x100", "9000x800"] {
+            let err = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a"), ("COMPUTER_SCREEN", bad)]))
+                .unwrap_err();
+            assert!(err.to_string().contains("COMPUTER_SCREEN"), "{bad}: {err}");
+        }
     }
 
     #[test]

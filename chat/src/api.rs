@@ -400,9 +400,10 @@ pub fn router(state: AppState) -> Router {
         .route("/feedback/{id}", axum::routing::delete(handover::delete_feedback))
         .route("/outbox", get(handover::list_outbox))
         .route("/outbox/{id}", get(handover::get_outbox).post(handover::decide_outbox))
-        .route("/actions", get(actions::list).post(actions::create))
+        .route("/actions", get(actions::list).post(actions::create).layer(DefaultBodyLimit::max(actions::MAX_ACTION_BODY_BYTES)))
         .route("/actions/draft", post(actions::draft).layer(DefaultBodyLimit::max(actions::MAX_RECORDING_BODY_BYTES)))
-        .route("/actions/{id}", get(actions::get).put(actions::update).delete(actions::delete))
+        .route("/actions/{id}", get(actions::get).put(actions::update).delete(actions::delete).layer(DefaultBodyLimit::max(actions::MAX_ACTION_BODY_BYTES)))
+        .route("/actions/{id}/frames", get(actions::frames))
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/{id}", get(get_schedule).patch(update_schedule).delete(delete_schedule))
         .route("/schedules/{id}/run", post(run_schedule_now))
@@ -2156,7 +2157,7 @@ async fn get_server_settings(Scoped(state): Scoped, headers: HeaderMap) -> Resul
     Ok(Json(state.cedar.server_settings().await?))
 }
 
-/// Change cedar's server-wide settings; the body (`{max_image_side?, sandbox_idle_minutes?, sandbox_runtime?, run_timeout_secs?, model_selection?}`)
+/// Change cedar's server-wide settings; the body (`{max_image_side?, sandbox_idle_minutes?, sandbox_runtime?, run_timeout_secs?, model_selection?, computer_runtime?}`)
 /// goes through as it is.
 async fn put_server_settings(Scoped(state): Scoped, headers: HeaderMap, ApiJson(body): ApiJson<Value>) -> Result<Json<Value>, AppError> {
     require_admin(&state, &headers)?;

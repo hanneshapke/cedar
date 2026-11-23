@@ -4,6 +4,8 @@ use crate::actions::{self, ActionInput, Actions, Recording};
 use crate::agent::AgentEnv;
 use crate::auth::{self, Admin, AuthKeys, Owner};
 use crate::browser::{BrowserFactory, DockerBrowserFactory};
+use crate::computer::{self, ComputerFactory, Computers, DockerComputerFactory, NativeComputerFactory};
+use crate::config::ComputerRuntime;
 use crate::compact;
 use crate::config::Config;
 use crate::error::AppError;
@@ -62,6 +64,9 @@ const MAX_ATTACHMENT_NAME_CHARS: usize = 200;
 /// for the rest of the request (see [`actions::MAX_FRAMES_TOTAL_BYTES`] and
 /// [`actions::MAX_VIDEO_BYTES`]).
 const MAX_RECORDING_BODY_BYTES: usize = 40 << 20;
+/// An action as it is saved: its text, and the few pictures of its recording kept with it (see
+/// [`actions::MAX_REFERENCE_FRAMES`] and [`actions::MAX_FRAME_BYTES`]) as base64.
+const MAX_ACTION_BODY_BYTES: usize = 10 << 20;
 const DEFAULT_PAGE: u32 = 20;
 const MAX_PAGE: u32 = 100;
 /// Largest workspace file that can be downloaded. It is read into memory before being sent.
@@ -76,6 +81,8 @@ pub struct AppState {
     pub sandboxes: Arc<dyn SandboxFactory>,
     /// `None` when the browser is turned off.
     pub browsers: Option<Arc<dyn BrowserFactory>>,
+    /// `None` when the computer is turned off.
+    pub computers: Option<Arc<Computers>>,
     pub auth: AuthKeys,
     /// The registered models' clients, for model calls outside a run (compaction).
     pub llm: Arc<LlmRouter>,
@@ -100,7 +107,8 @@ pub struct AppState {
 
 impl AppState {
     /// Wire the services together. The LLM client and sandbox factory are injected so tests can
-    /// substitute fakes; browsers run in Docker when the browser is on (see [`Self::with_browsers`]).
+    /// substitute fakes; browsers and computers run in Docker when they are on (see
+    /// [`Self::with_browsers`] and [`Self::with_containers`]).
     /// Fails only if a tool can't be set up (e.g. the HTTP client for web search).
     pub fn new(
         cfg: Config,
@@ -121,7 +129,33 @@ impl AppState {
         sandboxes: Arc<dyn SandboxFactory>,
         browsers: Arc<dyn BrowserFactory>,
     ) -> Result<Self> {
+        // A desktop in a container per run, and, where this cedar can drive it, the computer it
+        // runs on; `COMPUTER_RUNTIME` and the `computer_runtime` setting pick between them.
+        let computers = Arc::new(DockerComputerFactory::new(cfg.computer.clone()));
+        let own: Option<Arc<dyn ComputerFactory>> = if cfg!(feature = "native-computer") {
+            Some(Arc::new(NativeComputerFactory::new()?))
+        } else {
+            None
+        };
+        Self::with_containers(cfg, store, llm, sandboxes, browsers, computers, own)
+    }
+
+    /// Like [`Self::with_browsers`], with the computer factories injected as well: the one for
+    /// desktops in containers, and the one for the computer cedar runs on (`None` where it can't
+    /// be driven). Each is only used if the configuration turns its tool on.
+    pub fn with_containers(
+        cfg: Config,
+        store: Store,
+        llm: Arc<LlmRouter>,
+        sandboxes: Arc<dyn SandboxFactory>,
+        browsers: Arc<dyn BrowserFactory>,
+        computers: Arc<dyn ComputerFactory>,
+        own_computer: Option<Arc<dyn ComputerFactory>>,
+    ) -> Result<Self> {
         let browsers = cfg.browser.enabled.then_some(browsers);
+        let computers = cfg.computer.enabled.then(|| {
+            Arc::new(Computers::new(computers, own_computer, store.clone(), cfg.computer.runtime))
+        });
         let hub = Arc::new(EventHub::new());
         let cfg = Arc::new(cfg);
         let integrations = Arc::new(Integrations::new(cfg.clone(), store.clone())?);
@@ -161,6 +195,7 @@ impl AppState {
             env,
             sandboxes.clone(),
             browsers.clone(),
+            computers.clone(),
             cfg.max_concurrent_runs,
             cfg.run_timeout,
         );
@@ -183,6 +218,7 @@ impl AppState {
             manager,
             sandboxes,
             browsers,
+            computers,
             auth,
             llm,
             integrations,
@@ -253,13 +289,23 @@ pub fn router_with(
             "/records/{name}",
             get(get_records).post(save_records).delete(drop_records),
         )
-        .route("/actions", get(list_actions).post(save_action))
+        .route(
+            "/actions",
+            get(list_actions).post(save_action).layer(DefaultBodyLimit::max(MAX_ACTION_BODY_BYTES)),
+        )
         // A recording is the one other body with room for media.
         .route(
             "/actions/draft",
             post(draft_action).layer(DefaultBodyLimit::max(MAX_RECORDING_BODY_BYTES)),
         )
-        .route("/actions/{id}", get(get_action).put(update_action).delete(delete_action))
+        .route(
+            "/actions/{id}",
+            get(get_action)
+                .put(update_action)
+                .delete(delete_action)
+                .layer(DefaultBodyLimit::max(MAX_ACTION_BODY_BYTES)),
+        )
+        .route("/actions/{id}/frames", get(action_frames))
         .route("/admin/integrations", get(get_integrations))
         .route("/admin/models", get(get_models))
         .route("/admin/server-models", post(list_server_models))
@@ -1232,7 +1278,32 @@ async fn list_actions(
         },
         "secrets": state.actions.stores_secrets(),
         "browser": state.cfg.browser.enabled,
+        // What the `computer` tool works here, for a client that says where an action can run:
+        // `container`, `own` (the computer cedar runs on), or `null` without the tool.
+        "computer": match computer_desktop(&state).await {
+            Some(actions::Desktop::Own) => json!("own"),
+            Some(actions::Desktop::Container) => json!("container"),
+            None => serde_json::Value::Null,
+        },
     })))
+}
+
+/// What the `computer` tool works on this server right now, if it is on.
+async fn computer_desktop(state: &AppState) -> Option<actions::Desktop> {
+    let computers = state.computers.as_ref()?;
+    Some(match computers.runtime().await {
+        ComputerRuntime::Native => actions::Desktop::Own,
+        ComputerRuntime::Docker => actions::Desktop::Container,
+    })
+}
+
+/// What an owner's runs have to carry a saved action out with, going by their tools.
+async fn action_hands(state: &AppState, tools: &[(String, String)]) -> actions::Hands {
+    let has = |name: &str| tools.iter().any(|(n, _)| n == name);
+    actions::Hands {
+        browser: has("browser"),
+        computer: if has("computer") { computer_desktop(state).await } else { None },
+    }
 }
 
 async fn get_action(
@@ -1246,6 +1317,20 @@ async fn get_action(
         .await?
         .map(Json)
         .ok_or(AppError::NotFound("action not found"))
+}
+
+/// The pictures kept with an action, each with what it shows: `{frames: [{shows, media_type,
+/// data}]}`, the data base64.
+async fn action_frames(
+    State(state): State<AppState>,
+    Extension(owner): Extension<Owner>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let id = action_id(&id)?;
+    if state.actions.get(&owner.0, id).await?.is_none() {
+        return Err(AppError::NotFound("action not found"));
+    }
+    Ok(Json(json!({ "frames": state.actions.frames(&owner.0, id).await? })))
 }
 
 /// Turn a screen recording into steps for the agent: one call to a model that can watch it.
@@ -1269,7 +1354,8 @@ async fn draft_action(
         .iter()
         .filter_map(|d| Some((d["name"].as_str()?.to_string(), d["description"].as_str()?.to_string())))
         .collect();
-    let (draft, usage) = actions::draft(llm.as_ref(), &model.model, model.max_tokens, &recording, as_video, &tools)
+    let hands = action_hands(&state, &tools).await;
+    let (draft, usage) = actions::draft(llm.as_ref(), &model.model, model.max_tokens, &recording, as_video, &tools, hands)
         .await
         .map_err(|e| AppError::BadGateway(format!("could not turn the recording into steps: {e:#}")))?;
     Ok(Json(json!({
@@ -1355,6 +1441,10 @@ struct SettingsBody {
     /// `RUN_TIMEOUT_SECS`.
     #[serde(default, deserialize_with = "crate::integrations::present")]
     run_timeout_secs: Option<Option<u64>>,
+    /// What the `computer` tool works: `docker` (a desktop in a container) or `native` (the
+    /// computer cedar runs on). Unset: `COMPUTER_RUNTIME`.
+    #[serde(default, deserialize_with = "crate::integrations::present")]
+    computer_runtime: Option<Option<String>>,
     /// Whether users choose the model of a run themselves. Off (the default), cedar chooses
     /// among the registered models by their size (see [`crate::routing`]).
     #[serde(default, deserialize_with = "crate::integrations::present")]
@@ -1367,6 +1457,11 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
         "sandbox_idle_minutes": manager::saved_idle_minutes(&state.store).await?,
         "sandbox_runtime": sandbox::saved_runtime(&state.store).await?.map(sandbox::Runtime::as_str),
         "run_timeout_secs": manager::saved_run_timeout_secs(&state.store).await?,
+        "computer_runtime": computer::saved_runtime(&state.store).await?.map(ComputerRuntime::as_str),
+        // Whether the `computer` tool is on at all (`COMPUTER`), and whether this cedar can
+        // drive the computer it runs on (built with the `native-computer` feature).
+        "computer_enabled": state.computers.is_some(),
+        "native_computer_supported": state.computers.as_ref().is_some_and(|c| c.native_supported()),
         "model_selection": routing::selection_on(&state.store).await?,
         // Where OpenShell can't run (Windows), sandboxes always run on Docker.
         "openshell_supported": sandbox::OPENSHELL_SUPPORTED,
@@ -1374,6 +1469,8 @@ async fn settings_json(state: &AppState) -> Result<serde_json::Value, AppError> 
         "server_os": std::env::consts::OS,
         "defaults": {
             "sandbox_runtime": sandbox::Runtime::Docker.as_str(),
+            // `COMPUTER_RUNTIME`, which applies while no admin has saved `computer_runtime`.
+            "computer_runtime": state.cfg.computer.runtime.as_str(),
             "max_image_side": images::DEFAULT_MAX_SIDE,
             "min_max_image_side": images::MIN_MAX_SIDE,
             "max_max_image_side": images::MAX_MAX_SIDE,
@@ -1435,8 +1532,36 @@ async fn put_settings(
             Some(Some(runtime))
         }
     };
+    let computer_runtime = match &body.computer_runtime {
+        None => None,
+        Some(None) => Some(None),
+        Some(Some(name)) => {
+            let runtime = ComputerRuntime::parse(name).ok_or_else(|| {
+                AppError::BadRequest("computer_runtime must be \"docker\" or \"native\"".into())
+            })?;
+            let Some(computers) = &state.computers else {
+                return Err(AppError::BadRequest(
+                    "the computer tool is turned off on the server (COMPUTER=off)".into(),
+                ));
+            };
+            // Switching to a runtime that can't start would fail every computer call after it.
+            if let Err(e) = computers.check(runtime).await {
+                tracing::warn!(error = %format!("{e:#}"), runtime = runtime.as_str(), "refused to switch the computer runtime");
+                return Err(AppError::BadRequest(match runtime {
+                    ComputerRuntime::Docker => format!("the desktop in a container can't run here yet: {e:#}"),
+                    ComputerRuntime::Native => format!("this computer can't be used: {e:#}"),
+                }));
+            }
+            Some(Some(runtime))
+        }
+    };
     if let Some(side) = body.max_image_side {
         images::set_max_side(&state.store, side).await?;
+    }
+    if let Some(runtime) = computer_runtime {
+        // `COMPUTER_RUNTIME` is the default, so it is saved as no setting at all.
+        let runtime = runtime.filter(|r| *r != state.cfg.computer.runtime);
+        computer::set_runtime(&state.store, runtime).await?;
     }
     if let Some(minutes) = body.sandbox_idle_minutes {
         manager::set_idle_minutes(&state.store, minutes).await?;
@@ -2394,8 +2519,8 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Ready when the database answers and the sandbox runtime (and, if it is on, the browser image)
-/// is usable. Details go to the log, not to this unauthenticated endpoint.
+/// Ready when the database answers and the sandbox runtime (and, if they are on, the browser and
+/// computer images) are usable. Details go to the log, not to this unauthenticated endpoint.
 async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
     let mut checks = vec![
         ("database", state.store.ping().await),
@@ -2403,6 +2528,9 @@ async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_json::
     ];
     if let Some(browsers) = &state.browsers {
         checks.push(("browser", browsers.health().await));
+    }
+    if let Some(computers) = &state.computers {
+        checks.push(("computer", computers.health().await));
     }
     for (name, result) in &checks {
         if let Err(e) = result {

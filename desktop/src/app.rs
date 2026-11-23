@@ -181,6 +181,7 @@ pub struct Status {
     pub providers: &'static [models::Provider],
     pub presets: &'static [models::Preset],
     pub browser: bool,
+    pub computer: bool,
     pub chat_url: String,
     pub access_token: String,
     pub logs_dir: String,
@@ -444,6 +445,7 @@ impl AppState {
             providers: &models::model_servers().providers,
             presets: &models::model_servers().presets,
             browser: cfg.browser,
+            computer: cfg.computer,
             chat_url: cfg.chat_url(),
             access_token: cfg.chat_token().to_string(),
             logs_dir: self.paths.logs.to_string_lossy().into_owned(),
@@ -612,11 +614,17 @@ pub async fn bootstrap(app: AppHandle) {
     // 2. The images the agent's tools run in. The tag carries the app version, so an upgrade
     //    pulls the matching images once.
     let cfg = state.config();
-    let mut images = vec![cfg.sandbox_image()];
+    let mut images = vec![(cfg.sandbox_image(), true)];
     if cfg.browser {
-        images.push(cfg.browser_image());
+        images.push((cfg.browser_image(), true));
     }
-    for image in images {
+    // The desktop in a container, which the chat's Settings → Advanced can choose instead of
+    // this computer. Nothing needs it until then, so a pull that fails holds nothing up: the
+    // next launch tries again, and choosing the container says that the image is missing.
+    if cfg.computer {
+        images.push((cfg.computer_image(), false));
+    }
+    for (image, required) in images {
         if cli.image_present(&image).await {
             continue;
         }
@@ -633,6 +641,10 @@ pub async fn bootstrap(app: AppHandle) {
             })
             .await;
         if let Err(e) = pulled {
+            if !required {
+                eprintln!("pulling {image}: {e:#}");
+                continue;
+            }
             state.set_images(ImagesStatus::Failed(format!("{e:#}")));
             return;
         }

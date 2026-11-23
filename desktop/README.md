@@ -175,7 +175,18 @@ Running everything here, the setup window shows three steps:
   socket; when that can't be reached, or for a TCP or SSH context, `docker pull` does it and the
   bar counts layers). Tick
   *Browser tool* to also pull `cedar-browser` (a few hundred MB more) and offer the `browser`
-  tool.
+  tool. Tick *Let Cedar use this computer* to offer the `computer` tool on this computer itself:
+  a model that reads images may then look at your screen and use your mouse and keyboard, and
+  asks before every step (see
+  [The user's own computer](../README.md#the-users-own-computer) and its safety notes). macOS
+  asks for the Screen Recording and Accessibility permissions the first time it is used. An app
+  you built yourself is signed anew on every build, and macOS then no longer counts a permission
+  given to the build before, though its switch still shows as on: remove Cedar from both lists
+  (the − button, or `tccutil reset Accessibility io.github.hanneshapke.cedar` and the same with
+  `ScreenCapture`), reopen the app and allow it again. The
+  app starts cedar with this computer as the default, and also pulls `cedar-computer` (about
+  1.4 GB), so the desktop in a container can be chosen instead under Settings → Advanced in the
+  chat. If that pull fails, the app carries on without it and tries again at the next launch.
 - **Model server**: three options, each opening its form under it. The one in use is marked.
   - *Run a model here with llama.cpp*: the app downloads llama.cpp and a model and runs them
     (see [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)). Greyed out
@@ -630,7 +641,9 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
   "chat_port": 13000,
   "sandbox_image": "",
   "browser_image": "",
+  "computer_image": "",
   "browser": false,
+  "computer": false,
   "tailscale_share": false,
   "tailscale_https_port": 443,
   "check_updates": true,
@@ -646,7 +659,7 @@ Windows; the app sets no extra ACL on the file, unlike the 0600 mode it gives it
 
 `cedar_env` and `chat_env` are added to the servers' environment last, so any setting from the
 [README](../README.md#configuration) or [chat/README.md](../chat/README.md#configuration) can be
-set there. An empty `sandbox_image` or `browser_image` means the published image for this app
+set there. An empty `sandbox_image`, `browser_image` or `computer_image` means the published image for this app
 version; set them to use an image you built yourself (`docker build -t cedar-sandbox sandbox/`).
 
 `remote` is the chat server on another computer the app uses instead of its own, set by
@@ -697,13 +710,18 @@ so it must never change.
 # From the repository root. Replace the triple with x86_64-apple-darwin for an Intel build.
 T=aarch64-apple-darwin
 rustup target add $T
-cargo build --release -p cedar -p cedar-chat --target $T
+# native-computer: the driver behind "Let Cedar use this computer" (without it that switch gives
+# a desktop in a container instead).
+cargo build --release -p cedar -p cedar-chat --features cedar/native-computer --target $T
 install -m 0755 target/$T/release/cedar desktop/binaries/cedar-$T
 install -m 0755 target/$T/release/cedar-chat desktop/binaries/cedar-chat-$T
 
 cargo install tauri-cli --version '^2' --locked     # once
 cd desktop
-cargo tauri build --target $T --bundles dmg          # target/$T/release/bundle/dmg/Cedar_<version>_*.dmg
+# Signed ad hoc ("-"), so macOS sees one app, Cedar, rather than a bare program named cedar-app:
+# without it the Screen Recording and Accessibility permissions land on different entries and
+# "Let Cedar use this computer" keeps asking for them.
+APPLE_SIGNING_IDENTITY=- cargo tauri build --target $T --bundles dmg   # target/$T/release/bundle/dmg/Cedar_<version>_*.dmg
 ```
 
 Without the Apple secrets below the bundler signs ad hoc and skips notarization, which is fine
@@ -721,7 +739,8 @@ the OpenSSL that cedar-chat links statically (Git's own Perl can't). In PowerShe
 $T = "x86_64-pc-windows-msvc"
 # The C runtime linked in, so the servers run on PCs without the Visual C++ Redistributable.
 $env:RUSTFLAGS = "-C target-feature=+crt-static"
-cargo build --release -p cedar -p cedar-chat --target $T
+# native-computer: the driver behind "Let Cedar use this computer".
+cargo build --release -p cedar -p cedar-chat --features cedar/native-computer --target $T
 Remove-Item Env:RUSTFLAGS
 Copy-Item target/$T/release/cedar.exe desktop/binaries/cedar-$T.exe
 Copy-Item target/$T/release/cedar-chat.exe desktop/binaries/cedar-chat-$T.exe
@@ -782,7 +801,9 @@ is still the same Cedar 0.11.
 3. The workflow releases every platform whose version has no tag yet
    (`scripts/release-plan.sh`), each as a GitHub Release of its own:
    - **cedar**: runs the tests, builds and pushes `ghcr.io/hanneshapke/cedar-sandbox:<version>`
-     and `cedar-browser:<version>` for amd64 and arm64 (and `:latest`), builds the Apple Silicon
+     and `cedar-browser:<version>` for amd64 and arm64 (and `:latest`), and in jobs of its own
+     `cedar-computer:<version>` (a failure there doesn't stop the release; the notes then leave
+     that image out), builds the Apple Silicon
      DMG, the x64 MSI and the Linux tarballs, and creates `v<version>` with them, a
      `checksums.txt`, the signed update bundles (`Cedar-<version>-apple-silicon.app.tar.gz` and
      the MSI, each with a `.sig`) and `latest.json`, which installed apps read to find the update
@@ -827,7 +848,7 @@ One-time setup:
   Azure Trusted Signing; Tauri signs during `cargo tauri build` once `bundle.windows` in
   `tauri.windows.conf.json` names one.
 - **Package visibility.** The first push creates each GHCR package as private, linked to this
-  repository. Make `cedar-sandbox` and `cedar-browser` public once (the package's settings →
+  repository. Make `cedar-sandbox`, `cedar-browser` and `cedar-computer` public once (the package's settings →
   Danger Zone → Change visibility), or users' pulls fail with "denied".
 - **arm64 runners.** The images job uses `ubuntu-24.04-arm`, which GitHub provides for public
   repositories. For a private repository, replace the matrix with a single `ubuntu-24.04` runner

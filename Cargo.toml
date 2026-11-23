@@ -35,9 +35,19 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 
+# The driver of the user's own screen, mouse and keyboard (`COMPUTER_RUNTIME=native`, see
+# src/native.rs). Optional, since on Linux these link X11 libraries a server doesn't have.
+enigo = { version = "0.6", optional = true }
+xcap = { version = "0.9", optional = true }
+
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
+
+[features]
+# `cedar computer ...`: screenshots of, and input to, the computer cedar runs on. Built into the
+# desktop app's cedar.
+native-computer = ["dep:enigo", "dep:xcap"]
 
 [workspace]
 members = [".", "chat", "pairing", "llama", "contrib-schema", "contrib"]

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// Where the release workflow publishes the sandbox and browser images.
+/// Where the release workflow publishes the sandbox, browser and computer images.
 pub const IMAGE_REPOSITORY: &str = "ghcr.io/hanneshapke";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -25,8 +25,13 @@ pub struct Config {
     /// Empty means the published image for this app version.
     pub sandbox_image: String,
     pub browser_image: String,
+    pub computer_image: String,
     /// Pull the browser image and offer the `browser` tool.
     pub browser: bool,
+    /// Offer the `computer` tool on this computer itself: with the user's OK, a model that reads
+    /// images may look at this screen and use the mouse and keyboard. Also pulls the computer
+    /// image, so the desktop in a container can be chosen instead in the chat's settings.
+    pub computer: bool,
     /// Serve the chat on the tailnet over HTTPS (`tailscale serve`), for the iOS and Android apps.
     pub tailscale_share: bool,
     /// The tailnet port it is served on; 443 gives an address without a port.
@@ -112,7 +117,9 @@ impl Default for Config {
             chat_port: 13000,
             sandbox_image: String::new(),
             browser_image: String::new(),
+            computer_image: String::new(),
             browser: false,
+            computer: false,
             tailscale_share: false,
             tailscale_https_port: 443,
             check_updates: true,
@@ -234,6 +241,14 @@ impl Config {
             format!("{IMAGE_REPOSITORY}/cedar-browser:{VERSION}")
         } else {
             self.browser_image.trim().to_string()
+        }
+    }
+
+    pub fn computer_image(&self) -> String {
+        if self.computer_image.trim().is_empty() {
+            format!("{IMAGE_REPOSITORY}/cedar-computer:{VERSION}")
+        } else {
+            self.computer_image.trim().to_string()
         }
     }
 

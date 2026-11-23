@@ -69,3 +69,9 @@
 /* Stop was pressed: the dot rests, and the button (disabled, see actions.js) says what goes on. */
 .cedar-act-live.stopping .cedar-act-dot { animation: none; opacity: .35; }
 .cedar-act-page .cedar-ag-form-actions button.primary:disabled { opacity: .6; cursor: progress; }
+
+/* The pictures of a recording kept with an action. */
+.cedar-act-pictures { display: flex; flex-wrap: wrap; gap: 12px; }
+.cedar-act-picture { margin: 0; width: 220px; display: flex; flex-direction: column; gap: 6px; }
+.cedar-act-picture img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--wash); }
+.cedar-act-picture figcaption { font-size: 0.85em; overflow-wrap: anywhere; }
