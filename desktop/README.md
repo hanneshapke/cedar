@@ -351,7 +351,7 @@ provider. Where both fit, a list beside the box picks one; Inkling 2 Mini is the
 | GPU memory | Experimental model | Download |
 | --- | --- | --- |
 | 21 to 80 GB (a Mac with 32 to 96 GB) | Inkling 2 Mini | 18 GB |
-| 21.5 to 80 GB (a Mac with 36 to 96 GB) | Qwen3.8 27B | 17.5 GB |
+| 21.5 to 80 GB (a Mac with 32 to 96 GB) | Qwen3.8 27B | 17.5 GB |
 
 Inkling 2 Mini is a looped model: half of its layers run three times for each word. Its makers
 say it can get stuck in long reasoning and may delete or overwrite files without asking.
