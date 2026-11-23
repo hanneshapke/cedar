@@ -1658,6 +1658,20 @@ async fn both_uis_are_served() {
         assert_eq!((status, headers["location"].to_str().unwrap()), (StatusCode::TEMPORARY_REDIRECT, "/v3/"), "{uri}");
     }
     assert_eq!(fetch(&h, "/v2/app.js").await.0, StatusCode::NOT_FOUND);
+    // The Interface page shows a small screenshot of each design, light and dark.
+    for ui in ["v1", "v3", "v4"] {
+        let (_, _, page) = fetch(&h, &format!("/{ui}/")).await;
+        for choice in ["v1", "v3", "v4"] {
+            for theme in ["light", "dark"] {
+                let uri = format!("/ui-previews/{choice}-{theme}.webp");
+                assert!(page.contains(&uri), "{ui} shows {uri}");
+                let resp = h.app.clone().oneshot(Request::builder().uri(&uri).body(Body::empty()).unwrap()).await.unwrap();
+                assert_eq!((resp.status(), resp.headers()["content-type"].to_str().unwrap()), (StatusCode::OK, "image/webp"), "{uri}");
+                let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+                assert!(bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP", "{uri} is a WebP");
+            }
+        }
+    }
     assert_eq!(fetch(&h, "/i18n/v2.js").await.0, StatusCode::NOT_FOUND);
     assert_eq!(fetch(&h, "/i18n/v4.js").await.0, StatusCode::NOT_FOUND);
 

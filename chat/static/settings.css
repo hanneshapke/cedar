@@ -110,7 +110,18 @@
 
 /* -- the Interface page ---------------------------------------------------------------------- */
 
-.settings-page .ui-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* A stack of the designs, each with a small screenshot of it (static/ui-previews/, light and dark)
+   beside its name and what it is like. */
+.settings-page .ui-choice { display: flex; flex-direction: column; gap: 10px; }
+.settings-page .ui-option[data-ui] {
+  display: grid; grid-template-columns: 176px minmax(0, 1fr); grid-template-rows: auto 1fr;
+  column-gap: 18px; row-gap: 4px; align-items: start; padding: 12px; cursor: pointer;
+}
+.settings-page .ui-option[data-ui] strong { grid-column: 2; padding-top: 6px; font-size: 14px; }
+.settings-page .ui-option[data-ui] > span { grid-column: 2; line-height: 1.45; }
+.ui-shot { grid-column: 1; grid-row: 1 / 3; display: block; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 6px; border: 1px solid rgba(127, 127, 127, .22); background: rgba(127, 127, 127, .08); }
+.ui-shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.settings-page .ui-option[data-ui][aria-pressed="true"] .ui-shot { border-color: var(--accent); }
 
 /* -- the Tools page -------------------------------------------------------------------------- */
 
@@ -280,7 +291,8 @@
   .settings-page-head { padding: 16px 16px 12px; }
   .settings-page-body { padding: 16px; }
   .settings-foot { padding: 10px 16px; }
-  .settings-page .ui-choice { grid-template-columns: 1fr; }
+  .settings-page .ui-option[data-ui] { grid-template-columns: 112px minmax(0, 1fr); column-gap: 12px; padding: 10px; }
+  .settings-page .ui-option[data-ui] strong { padding-top: 2px; }
   .cedar-set-fields { grid-template-columns: 1fr; }
   .cedar-set-single-list { margin-left: 0; }
   .cedar-set-menu { width: calc(100vw - 16px); }

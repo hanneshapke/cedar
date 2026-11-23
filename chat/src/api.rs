@@ -219,6 +219,17 @@ const FAVICON_32_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-32.png")
 const FAVICON_16_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-16.png");
 const APPLE_TOUCH_ICON_PNG: &[u8] = include_bytes!("../../docs/assets/apple-touch-icon.png");
 
+/// Small screenshots of each interface, light and dark, for the Interface page of Settings.
+/// Retake them when a design changes visibly.
+const UI_PREVIEWS: &[(&str, &[u8])] = &[
+    ("v1-light.webp", include_bytes!("../static/ui-previews/v1-light.webp")),
+    ("v1-dark.webp", include_bytes!("../static/ui-previews/v1-dark.webp")),
+    ("v3-light.webp", include_bytes!("../static/ui-previews/v3-light.webp")),
+    ("v3-dark.webp", include_bytes!("../static/ui-previews/v3-dark.webp")),
+    ("v4-light.webp", include_bytes!("../static/ui-previews/v4-light.webp")),
+    ("v4-dark.webp", include_bytes!("../static/ui-previews/v4-dark.webp")),
+];
+
 /// One of the front ends, served under its own prefix.
 struct Ui {
     prefix: &'static str,
@@ -547,6 +558,9 @@ pub fn router(state: AppState) -> Router {
     let pages = I18N_CATALOGS.iter().fold(pages, |pages, &(name, js)| {
         pages.route(&format!("/i18n/{name}"), get(move || async move { asset(JS, js) }))
     });
+    let pages = UI_PREVIEWS.iter().fold(pages, |pages, &(name, bytes)| {
+        pages.route(&format!("/ui-previews/{name}"), get(move || async move { asset(WEBP, bytes) }))
+    });
     let pages = LAYOUT_FILES.iter().fold(pages, |pages, &(path, content_type, body)| {
         pages.route(path, get(move || async move { asset(content_type, body) }))
     });
@@ -571,6 +585,7 @@ const CSS: &str = "text/css; charset=utf-8";
 const JSON: &str = "application/json; charset=utf-8";
 const SVG: &str = "image/svg+xml";
 const PNG: &str = "image/png";
+const WEBP: &str = "image/webp";
 const WOFF2: &str = "font/woff2";
 
 /// Serve a front end's page at `/vN` and `/vN/`, and its script and stylesheet next to it.
