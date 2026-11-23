@@ -1588,18 +1588,31 @@ impl Breaker {
 }
 
 /// Whether a tool's error looks temporary: rate limits, servers that are down, timeouts.
+///
+/// The error is read without the addresses it names, and a status code counts only as a number
+/// of its own: `http://127.0.0.1:45039/missing returned HTTP 404 Not Found` is not a 503, and a
+/// page at `/docs/timeout` that is missing did not time out.
 pub fn is_temporary(error: &str) -> bool {
-    let lower = error.to_lowercase();
-    [
-        "429", "502", "503", "504", "too many requests", "rate limit", "rate-limit",
-        "service unavailable", "bad gateway", "gateway timeout", "timed out", "timeout",
-        "couldn't reach", "could not reach", "connection refused", "connection reset",
-        // Windows words a refused or dropped connection differently (os errors 10060, 10061).
-        "actively refused", "forcibly closed", "did not properly respond", "os error 10061",
-        "os error 10060", "os error 10054",
-    ]
-    .iter()
-    .any(|m| lower.contains(m))
+    let lower = error
+        .to_lowercase()
+        .split_whitespace()
+        .filter(|word| !word.contains("://"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let has_code = lower
+        .split(|c: char| !c.is_ascii_digit())
+        .any(|n| matches!(n, "429" | "502" | "503" | "504"));
+    has_code
+        || [
+            "too many requests", "rate limit", "rate-limit", "service unavailable", "bad gateway",
+            "gateway timeout", "timed out", "timeout", "couldn't reach", "could not reach",
+            "connection refused", "connection reset",
+            // Windows words a refused or dropped connection differently (os errors 10060, 10061).
+            "actively refused", "forcibly closed", "did not properly respond", "os error 10061",
+            "os error 10060", "os error 10054",
+        ]
+        .iter()
+        .any(|m| lower.contains(m))
 }
 
 /// Whether a call must run on its own, in order: anything that works in the sandbox (files,
@@ -1842,6 +1855,15 @@ mod tests {
         ));
         assert!(is_temporary("tcp connect error: Connection refused (os error 111)"));
         assert!(!is_temporary("unknown tool: frobnicate"));
+        // An address is not the error: a port or a path may hold a status code's digits.
+        assert!(!is_temporary("http://127.0.0.1:45039/missing returned HTTP 404 Not Found"));
+        assert!(!is_temporary(
+            "http://127.0.0.1:35028/huge.bin is larger than the 25 MB download limit"
+        ));
+        assert!(!is_temporary("https://example.com/docs/timeout returned HTTP 404 Not Found"));
+        assert!(!is_temporary("the file has 15030 rows, more than the 10000 allowed"));
+        assert!(is_temporary("http://127.0.0.1:8080/feed returned HTTP 503 Service Unavailable"));
+        assert!(is_temporary("https://example.com/a: operation timed out"));
     }
 
     #[test]

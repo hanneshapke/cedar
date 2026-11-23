@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A tool is no longer left out of a run because of digits in an address.** Two failures in a row that look temporary take a tool out of a run, and an error counted as temporary when `429`, `502`, `503` or `504` appeared anywhere in it, a port or a path included: two missing pages at `http://host:45039/…` were enough. Addresses are now left out of that reading, and a status code counts only as a number of its own.
+
 ## 0.12.1
 
 - **The desktop app starts Tailscale when it isn't running.** With *Share with the phone apps over Tailscale* on, the app used to report that Tailscale didn't answer and start without sharing. At its start it now opens Tailscale's app when the CLI gets no answer (macOS and Windows), runs `tailscale up` when Tailscale is turned off, and waits up to 45 seconds for one that is still connecting, as when both start at login. Logging in is still yours.
