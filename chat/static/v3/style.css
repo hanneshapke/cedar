@@ -153,25 +153,21 @@ a { color: var(--accent); }
 /* -- the conversation column ---------------------------------------------------------------- */
 
 .talk { grid-area: talk; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--paper); }
-.hero, .examples, .caps, .home-recents { display: none; }
-/* A new chat: the hero, composer, example tasks and capabilities in a centred column, recent
+.hero, .examples, .home-recents { display: none; }
+/* A new chat: the hero, composer and example tasks in a centred column, recent
    conversations in a rail on the right. */
-.app.empty .talk { display: grid; overflow-y: auto; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: 1fr auto auto auto auto 1fr; grid-template-areas: "a recents" "hero recents" "slip recents" "examples recents" "caps recents" "z recents"; column-gap: 0; }
-.app.empty .hero, .app.empty .slip, .app.empty .examples, .app.empty .caps { display: flex; width: min(720px, 100% - 80px); justify-self: center; }
+.app.empty .talk { display: grid; overflow-y: auto; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: 1fr auto auto auto 1fr; grid-template-areas: "a recents" "hero recents" "slip recents" "examples recents" "z recents"; column-gap: 0; }
+.app.empty .hero, .app.empty .slip, .app.empty .examples { display: flex; width: min(720px, 100% - 80px); justify-self: center; }
 .app.empty .hero { grid-area: hero; flex-direction: column; margin-bottom: 28px; }
-.hero h1 { margin: 0 0 8px; font: 500 34px/1.15 var(--serif); letter-spacing: -.01em; }
-.hero p { margin: 0; max-width: 560px; color: var(--muted); font-size: 15px; line-height: 1.5; text-wrap: pretty; }
+.hero h1 { margin: 0; font: 500 34px/1.15 var(--serif); letter-spacing: -.01em; }
 .app.empty .notes { display: none; }
 .app.empty .slip { grid-area: slip; flex-direction: column; border: 0; padding: 0; }
 .app.empty .composer { border-color: var(--line); box-shadow: 0 1px 2px rgba(40, 30, 10, .05), 0 8px 24px rgba(40, 30, 10, .07); padding: 14px 14px 10px 16px; }
 .app.empty .composer textarea { min-height: 48px; font-size: 16px; }
-.hint { font-size: 12px; color: var(--faint); white-space: nowrap; } .app:not(.empty) .hint { display: none; }
 .app.empty .examples { grid-area: examples; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 28px; }
 .example { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); text-align: left; font-size: 13.5px; line-height: 1.4; color: var(--ink); }
 .example:hover { border-color: var(--accent); }
 .example .kind { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
-.app.empty .caps { grid-area: caps; gap: 24px; margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
-.caps strong { color: var(--ink); font-weight: 500; }
 .app.empty .home-recents { grid-area: recents; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding: 28px 24px; border-left: 1px solid var(--line); }
 .home-recents-head { display: flex; align-items: baseline; justify-content: space-between; }
 .linkish { padding: 0; border: 0; background: none; font-size: 12.5px; color: var(--muted); cursor: pointer; } .linkish:hover { color: var(--ink); }
@@ -454,10 +450,9 @@ dialog p code { padding: 1px 4px; border-radius: 3px; background: var(--wash); f
   .card.doc .card-body { padding: 20px 18px 28px; }
   .card-head { padding-left: 10px; }
   .hero h1 { font-size: 26px; }
-  .app.empty .talk { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto auto; grid-template-areas: "hero" "slip" "examples" "caps" "recents"; align-content: start; padding: 24px 0; overflow-y: auto; }
-  .app.empty .hero, .app.empty .slip, .app.empty .examples, .app.empty .caps { width: min(720px, 100% - 32px); }
+  .app.empty .talk { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto; grid-template-areas: "hero" "slip" "examples" "recents"; align-content: start; padding: 24px 0; overflow-y: auto; }
+  .app.empty .hero, .app.empty .slip, .app.empty .examples { width: min(720px, 100% - 32px); }
   .app.empty .examples { grid-template-columns: 1fr; }
-  .app.empty .caps { flex-direction: column; gap: 8px; }
   .app.empty .home-recents { border-left: 0; border-top: 1px solid var(--line); margin-top: 24px; padding: 20px 16px; }
   .turn-grid { grid-template-columns: minmax(0, 1fr); }
   .turn-sources { position: static; }
