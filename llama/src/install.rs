@@ -813,6 +813,7 @@ mod tests {
             reasoning_levels: model.reasoning_levels,
             license: model.license,
             small: model.small,
+            experimental: model.experimental,
         }
     }
 

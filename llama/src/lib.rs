@@ -26,8 +26,14 @@ const MIN_UNIFIED_MB: u64 = 31_000;
 
 /// The plan for a machine, or nothing when no GPU on it can run a model from the catalog (the
 /// caller then offers only the model servers the user sets up themselves). With several GPUs the
-/// one with the most memory is used; they are not added up.
-pub fn plan(os: release::Os, arch: release::Arch, gpus: &[gpu::Gpu]) -> Option<Plan> {
+/// one with the most memory is used; they are not added up. `experimental`: whether the user
+/// allows the catalog's experimental models, and which; one of those is then chosen where it fits.
+pub fn plan(
+    os: release::Os,
+    arch: release::Arch,
+    gpus: &[gpu::Gpu],
+    experimental: catalog::Experimental,
+) -> Option<Plan> {
     let gpu = gpus.iter().max_by_key(|g| g.budget_mb())?;
     // A Mac shares its memory with the model, and macOS, Docker and Cedar need theirs: below
     // 32 GB a model that works well for Cedar leaves them too little (the website asks for 32 GB
@@ -36,7 +42,7 @@ pub fn plan(os: release::Os, arch: release::Arch, gpus: &[gpu::Gpu]) -> Option<P
         return None;
     }
     let build = release::choose_build(os, arch, gpu)?;
-    let model = catalog::choose_model(gpu.budget_mb())?;
+    let model = catalog::choose_model(gpu.budget_mb(), experimental)?;
     Some(Plan {
         gpu: gpu.clone(),
         build,
@@ -47,6 +53,7 @@ pub fn plan(os: release::Os, arch: release::Arch, gpus: &[gpu::Gpu]) -> Option<P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use catalog::Experimental::{Any, Model, No};
     use gpu::{Gpu, Vendor};
     use release::{Arch, Build, Os};
 
@@ -57,7 +64,7 @@ mod tests {
             driver: Some((560, 94)),
             ..Gpu::dedicated(Vendor::Nvidia, "NVIDIA GeForce RTX 4090", 24564)
         };
-        let plan = plan(Os::Windows, Arch::X64, &[small.clone(), big.clone()]).unwrap();
+        let plan = plan(Os::Windows, Arch::X64, &[small.clone(), big.clone()], No).unwrap();
         assert_eq!(plan.gpu, big);
         assert_eq!(plan.build, Build::WinCuda);
         assert_eq!(plan.model.id, "qwen3.6-35b-a3b");
@@ -66,19 +73,19 @@ mod tests {
             driver: Some((560, 94)),
             ..Gpu::dedicated(Vendor::Nvidia, "NVIDIA GeForce RTX 3060", 12288)
         };
-        let plan = super::plan(Os::Windows, Arch::X64, &[twelve]).unwrap();
+        let plan = super::plan(Os::Windows, Arch::X64, &[twelve], No).unwrap();
         assert_eq!(
             (plan.model.id, plan.model.small, plan.build),
             ("gemma-4-12b", true, Build::WinCuda)
         );
         // The integrated one alone is not enough for any model.
-        assert_eq!(super::plan(Os::Windows, Arch::X64, &[small]), None);
-        assert_eq!(super::plan(Os::Windows, Arch::X64, &[]), None);
+        assert_eq!(super::plan(Os::Windows, Arch::X64, &[small], No), None);
+        assert_eq!(super::plan(Os::Windows, Arch::X64, &[], No), None);
     }
 
     #[test]
     fn macs_by_memory() {
-        let mac = |gb: u64| plan(Os::Macos, Arch::Arm64, &[Gpu::apple(gb << 30)]);
+        let mac = |gb: u64| plan(Os::Macos, Arch::Arm64, &[Gpu::apple(gb << 30)], No);
         assert_eq!(mac(16), None);
         // Two thirds of 24 GB would hold a small model, but leave the system too little.
         assert_eq!(mac(24), None);
@@ -90,6 +97,22 @@ mod tests {
         assert_eq!(mac(128).unwrap().model.id, "qwen3.5-122b-a10b");
         assert_eq!(mac(32).unwrap().build, Build::MacosMetal);
         // An Intel Mac has no build with Metal.
-        assert_eq!(plan(Os::Macos, Arch::X64, &[Gpu::apple(64 << 30)]), None);
+        assert_eq!(
+            plan(Os::Macos, Arch::X64, &[Gpu::apple(64 << 30)], No),
+            None
+        );
+    }
+
+    #[test]
+    fn experimental_models_when_allowed() {
+        let mac = |gb: u64| plan(Os::Macos, Arch::Arm64, &[Gpu::apple(gb << 30)], Any);
+        // A Mac too small for any model stays without one.
+        assert_eq!(mac(24), None);
+        assert_eq!(mac(32).unwrap().model.id, "inkling-2-mini");
+        assert_eq!(mac(64).unwrap().model.id, "inkling-2-mini");
+        assert_eq!(mac(128).unwrap().model.id, "qwen3.5-122b-a10b");
+        let gpus = [Gpu::apple(64 << 30)];
+        let named = plan(Os::Macos, Arch::Arm64, &gpus, Model("qwen3.8-27b"));
+        assert_eq!(named.unwrap().model.id, "qwen3.8-27b");
     }
 }

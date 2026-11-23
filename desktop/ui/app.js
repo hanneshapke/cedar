@@ -194,6 +194,9 @@ function render(s) {
 
   $('open-chat').disabled = !running;
   $('open-browser').disabled = !running;
+  // The way back to the chat, while there is one: this computer's, or the other computer's.
+  const chatReady = s.remote_server ? s.remote.state === 'connected' : running;
+  $('back-to-chat').classList.toggle('hidden', !chatReady);
 
   renderRemote(s);
   renderUpdate(s);
@@ -409,8 +412,10 @@ function renderModelChoice(s, p) {
     // A model the app runs and a model server can both be in use: cedar has an entry for each.
     const inUse = source === 'llama' ? !!l.model : s.model_source === source;
     // Until something is chosen: running a model here where the GPU can run one that does
-    // Cedar's work well, a provider where it cannot or only a small model fits.
-    const recommended = !s.configured && source === (l.offer && !l.offer.small ? 'llama' : 'hosted');
+    // Cedar's work well, a provider where it cannot, only a small model fits, or the model
+    // offered is an experimental one.
+    const tested = l.offer && !l.offer.small && !l.offer.experimental;
+    const recommended = !s.configured && source === (tested ? 'llama' : 'hosted');
     tag.textContent = inUse ? tr('pick.inUse') : recommended ? tr('pick.recommended') : '';
     tag.classList.toggle('hidden', !inUse && !recommended);
   }
@@ -487,9 +492,28 @@ function renderLlama(s, p) {
     });
     // All that fits is a small model: it is worth saying what to expect of it.
     if (offer.small) intro.textContent += ' ' + tr('llama.offerSmall', { model: offer.model });
+    // An experimental one: what to expect of that model.
+    if (offer.experimental) intro.textContent += ' ' + tr(`llama.experimental.${offer.model_id}`, { model: offer.model });
   } else {
     intro.textContent = '';
   }
+
+  // "Allow experimental models": shown while there is a choice to make, which is before a model
+  // is installed and where an experimental one fits this GPU.
+  const choosing = !installed && l.experimental_models.length > 0;
+  $('llama-experimental-row').classList.toggle('hidden', !choosing);
+  $('llama-experimental-note').classList.toggle('hidden', !choosing);
+  $('llama-experimental').checked = l.experimental;
+  $('llama-experimental').disabled = running;
+  // Which of them, where several fit: the one the offer names is the one selected.
+  const pick = $('llama-experimental-model');
+  pick.classList.toggle('hidden', !(l.experimental && l.experimental_models.length > 1));
+  pick.disabled = running;
+  pick.setAttribute('aria-label', tr('llama.experimentalModel'));
+  if (pick.options.length !== l.experimental_models.length) {
+    pick.replaceChildren(...l.experimental_models.map((m) => new Option(m.label, m.id)));
+  }
+  if (offer && offer.experimental) pick.value = offer.model_id;
 
   const install = $('llama-install');
   // Once installed there is nothing to set up, unless a newer llama.cpp could not be fetched.
@@ -797,6 +821,15 @@ $('docker-install').addEventListener('click', () => invoke('install_docker').the
 $('llama-install').addEventListener('click', (e) => {
   invoke(e.currentTarget.dataset.command || 'install_llama').then(refresh).catch((err) => alert(err));
 });
+// "Allow experimental models" and, where several fit, the one picked.
+function setExperimental(args) {
+  invoke('set_llama_experimental', args).then(refresh).catch((err) => {
+    alert(err);
+    refresh();
+  });
+}
+$('llama-experimental').addEventListener('change', (e) => setExperimental({ allow: e.currentTarget.checked }));
+$('llama-experimental-model').addEventListener('change', (e) => setExperimental({ allow: true, model: e.currentTarget.value }));
 $('llama-cancel').addEventListener('click', () => invoke('cancel_llama').then(refresh).catch((e) => alert(e)));
 $('llama-remove').addEventListener('click', () => {
   const model = (lastStatus && lastStatus.llama.model) || '';
@@ -1006,6 +1039,7 @@ $('copy-share-url').addEventListener('click', () => invoke('copy_share_url').cat
 $('share-copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
 
 $('open-chat').addEventListener('click', () => invoke('open_chat').catch((e) => alert(e)));
+$('back-to-chat').addEventListener('click', () => invoke('open_chat').catch((e) => alert(e)));
 $('open-browser').addEventListener('click', () => invoke('open_in_browser').catch((e) => alert(e)));
 $('copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
 // Links to other sites (Get Docker Desktop, Docker's terms, Tailscale) open in the default browser: the web view

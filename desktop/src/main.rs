@@ -90,6 +90,7 @@ fn main() {
             commands::install_llama,
             commands::cancel_llama,
             commands::remove_llama,
+            commands::set_llama_experimental,
             commands::set_browser,
             commands::set_computer,
             commands::open_chat,
