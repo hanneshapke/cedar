@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.1
 
 - **The desktop app starts Tailscale when it isn't running.** With *Share with the phone apps over Tailscale* on, the app used to report that Tailscale didn't answer and start without sharing. At its start it now opens Tailscale's app when the CLI gets no answer (macOS and Windows), runs `tailscale up` when Tailscale is turned off, and waits up to 45 seconds for one that is still connecting, as when both start at login. Logging in is still yours.
 
