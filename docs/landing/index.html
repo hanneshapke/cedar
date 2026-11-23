@@ -30,7 +30,6 @@ html{scroll-padding-top:96px}
 @keyframes floaty{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-16px) rotate(2deg)}}
 @keyframes floaty2{0%,100%{transform:translateY(0)}50%{transform:translateY(12px)}}
 @keyframes drift{0%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,-30px) scale(1.08)}100%{transform:translate(0,0) scale(1)}}
-@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
 @keyframes popin{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -115,14 +114,6 @@ html{scroll-padding-top:96px}
   </div>
 </section>
 
-<div style="padding:18px 0 10px;overflow:hidden;position:relative;mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)">
-  <div style="display:flex;gap:12px;width:max-content;animation:marquee 38s linear infinite">
-    <sc-for list="{{ marquee }}" as="m" hint-placeholder-count="12">
-      <span style="white-space:nowrap;padding:10px 18px;border-radius:999px;font-size:15px;font-weight:500;background:{{ m.bg }};color:{{ m.fg }}">{{ m.text }}</span>
-    </sc-for>
-  </div>
-</div>
-
 <section id="tour" data-screen-label="The tour" style="max-width:1160px;margin:0 auto;padding:60px 28px 0;display:flex;flex-direction:column;gap:32px;position:relative">
   <div data-reveal style="display:flex;flex-direction:column;gap:14px;max-width:720px">
     <span style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:#e5553a" data-i18n="index.tour.eyebrow">See it work</span>
@@ -148,25 +139,7 @@ html{scroll-padding-top:96px}
 
   <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
     <div style="display:flex;flex-direction:column;gap:14px">
-      <span style="width:46px;height:46px;border-radius:14px;background:#f2a21c;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#231f1b">01</span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1" data-i18n="index.does.map.title">Finds places and pins them on a map</h3>
-      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.does.map.body">A good flower shop, a quiet café, a trailhead for Saturday. Cedar searches, picks the best, and hands you a map with addresses, hours and the website for each.</p>
-    </div>
-    <div style="position:relative"><div style="position:absolute;inset:14% -8% -8% 10%;border-radius:28px;background:#f2a21c;transform:rotate(-3deg);animation:floaty 9s ease-in-out infinite"></div><img src="shots/map.png" alt="Cedar for Mac showing three flower shops pinned on a map of Portland" data-i18n-attr="alt:index.does.map.alt" style="position:relative;width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22)"></div>
-  </div>
-
-  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
-    <div style="position:relative;order:0"><div style="position:absolute;inset:-8% 10% 14% -8%;border-radius:28px;background:#e5553a;transform:rotate(3deg);animation:floaty2 8s ease-in-out infinite"></div><img src="shots/charts.png" alt="Cedar charting glucose readings against a 7-day average" data-i18n-attr="alt:index.does.charts.alt" style="position:relative;width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22)"></div>
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <span style="width:46px;height:46px;border-radius:14px;background:#e5553a;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#fff">02</span>
-      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1" data-i18n="index.does.charts.title">Reads your data and draws the chart</h3>
-      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.does.charts.body">Spreadsheets, PDFs, bank exports, even a connected health device. Cedar runs the numbers and explains them in plain words, with interactive charts you can hover over.</p>
-    </div>
-  </div>
-
-  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <span style="width:46px;height:46px;border-radius:14px;background:#3a5f4b;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#fff">03</span>
+      <span style="width:46px;height:46px;border-radius:14px;background:#3a5f4b;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#fff">01</span>
       <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1" data-i18n="index.does.schedule.title">Works on its own, even while you sleep</h3>
       <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.does.schedule.body">Turn any conversation into an agent that runs every morning at 7, or when something happens: a price drops, an email arrives, a meeting is about to start. It tells your desktop or phone when it's done.</p>
     </div>
@@ -174,9 +147,50 @@ html{scroll-padding-top:96px}
   </div>
 
   <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
-    <div style="position:relative"><div style="position:absolute;inset:-8% 10% 14% -8%;border-radius:28px;background:#f2a21c;transform:rotate(-3deg);animation:floaty2 8s ease-in-out infinite"></div><img src="shots/tools.png" alt="Cedar settings with a toggle for each tool" data-i18n-attr="alt:index.does.tools.alt" style="position:relative;width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22)"></div>
+    <div style="position:relative"><div style="position:absolute;inset:-8% 10% 14% -8%;border-radius:28px;background:#e5553a;transform:rotate(3deg);animation:floaty2 8s ease-in-out infinite"></div><div style="position:relative;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22);padding:clamp(18px,3vw,28px);display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:12px;background:#fbf4ea;font-size:16px;font-weight:500;line-height:1.35"><span aria-hidden="true" style="flex:none;width:28px;height:28px;border-radius:50%;background:#e5553a;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">1</span><span data-i18n="index.does.actions.p1">Record your screen while you do it once</span></div>
+      <div style="display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:12px;background:#fbf4ea;font-size:16px;font-weight:500;line-height:1.35"><span aria-hidden="true" style="flex:none;width:28px;height:28px;border-radius:50%;background:#e5553a;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">2</span><span data-i18n="index.does.actions.p2">Read the steps Cedar wrote, correct them, save them</span></div>
+      <div style="display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:12px;background:#fbf4ea;font-size:16px;font-weight:500;line-height:1.35"><span aria-hidden="true" style="flex:none;width:28px;height:28px;border-radius:50%;background:#e5553a;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">3</span><span data-i18n="index.does.actions.p3">Cedar follows them, in a browser or on a desktop</span></div>
+    </div></div>
     <div style="display:flex;flex-direction:column;gap:14px">
-      <span style="width:46px;height:46px;border-radius:14px;background:#f2a21c;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#231f1b">04</span>
+      <span style="width:46px;height:46px;border-radius:14px;background:#e5553a;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#fff">02</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1" data-i18n="index.does.actions.title">Learns your actions, and uses the computer</h3>
+      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.does.actions.body">When there's no tool for a job, show Cedar how: record your screen while you do it once, and it writes down the steps and follows them next time. For what only exists behind windows, it works a desktop with the mouse and keyboard: one in a container, or your own, where it asks before it acts.</p>
+    </div>
+  </div>
+
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <span style="width:46px;height:46px;border-radius:14px;background:#f2a21c;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#231f1b">03</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1" data-i18n="index.does.privateChat.title">Private chats, gone when you leave</h3>
+      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.does.privateChat.body">For something you want neither remembered nor kept. A private chat is in no list, search or inbox. Cedar brings nothing from memory into it and saves nothing from it, and it is deleted with its files when you leave it. On the web and in the phone apps.</p>
+    </div>
+    <div style="position:relative"><div style="position:absolute;inset:14% -8% -8% 10%;border-radius:28px;background:#f2a21c;transform:rotate(-3deg);animation:floaty 9s ease-in-out infinite"></div><div style="position:relative;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22);padding:clamp(18px,3vw,28px);display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:12px;background:#fbf4ea;font-size:16px;font-weight:500;line-height:1.35"><span aria-hidden="true" style="flex:none;width:14px;height:14px;border-radius:50%;background:#f2a21c"></span><span data-i18n="index.does.privateChat.p1">In no list, search or inbox</span></div>
+      <div style="display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:12px;background:#fbf4ea;font-size:16px;font-weight:500;line-height:1.35"><span aria-hidden="true" style="flex:none;width:14px;height:14px;border-radius:50%;background:#f2a21c"></span><span data-i18n="index.does.privateChat.p2">Nothing remembered, no trace kept</span></div>
+      <div style="display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:12px;background:#fbf4ea;font-size:16px;font-weight:500;line-height:1.35"><span aria-hidden="true" style="flex:none;width:14px;height:14px;border-radius:50%;background:#f2a21c"></span><span data-i18n="index.does.privateChat.p3">Deleted when you leave it</span></div>
+    </div></div>
+  </div>
+
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
+    <div style="position:relative"><div style="position:absolute;inset:-8% 10% 14% -8%;border-radius:28px;background:#231f1b;transform:rotate(3deg);animation:floaty2 8s ease-in-out infinite"></div><div style="position:relative;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22);padding:clamp(18px,3vw,28px);display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:12px;background:#fbf4ea;font-size:16px;font-weight:500;line-height:1.35"><span aria-hidden="true" style="flex:none;width:14px;height:14px;border-radius:4px;background:#3a5f4b"></span><span data-i18n="index.does.trusted.p1">A container for each conversation</span></div>
+      <div style="display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:12px;background:#fbf4ea;font-size:16px;font-weight:500;line-height:1.35"><span aria-hidden="true" style="flex:none;width:14px;height:14px;border-radius:4px;background:#3a5f4b"></span><span data-i18n="index.does.trusted.p2">No network unless you allow it</span></div>
+      <div style="display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:12px;border:1px solid #f0dcc8">
+        <span style="font-size:16px;font-weight:600;line-height:1.35;overflow-wrap:anywhere" data-i18n="index.does.trusted.ask">Let curl connect to example.com:443?</span>
+        <div aria-hidden="true" style="display:flex;gap:8px;flex-wrap:wrap"><span style="padding:8px 16px;border-radius:999px;font-size:14px;font-weight:600;background:#231f1b;color:#fbf4ea" data-i18n="index.does.trusted.allow">Allow</span><span style="padding:8px 16px;border-radius:999px;font-size:14px;font-weight:600;background:#fff;border:1px solid #f0dcc8" data-i18n="index.does.trusted.deny">Deny</span></div>
+      </div>
+    </div></div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <span style="width:46px;height:46px;border-radius:14px;background:#231f1b;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#fbf4ea">04</span>
+      <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1" data-i18n="index.does.trusted.title">Trusted execution, in containers and OpenShell</h3>
+      <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.does.trusted.body">Whatever the model runs, it runs in a container of the conversation's own, with no network unless you allow one. On Linux and macOS you can turn on NVIDIA OpenShell, which checks every connection: which program wants to reach which host. What it refuses, Cedar reports and asks you about.</p>
+    </div>
+  </div>
+
+  <div data-reveal style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:40px;align-items:center">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <span style="width:46px;height:46px;border-radius:14px;background:#f2a21c;display:inline-flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#231f1b">05</span>
       <h3 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:700;font-size:30px;letter-spacing:-.02em;line-height:1.1" data-i18n="index.does.tools.title">Every ability has a switch</h3>
       <p style="margin:0;font-size:17px;line-height:1.5;color:#4f4740;text-wrap:pretty" data-i18n="index.does.tools.body">Weather, maps, recipes, directions and transit, stocks, shopping, your email and calendar. Turn on what you want Cedar to reach. Everything else stays off.</p>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
@@ -185,6 +199,7 @@ html{scroll-padding-top:96px}
         </sc-for>
       </div>
     </div>
+    <div style="position:relative"><div style="position:absolute;inset:-8% 10% 14% -8%;border-radius:28px;background:#f2a21c;transform:rotate(-3deg);animation:floaty2 8s ease-in-out infinite"></div><img src="shots/tools.png" alt="Cedar settings with a toggle for each tool" data-i18n-attr="alt:index.does.tools.alt" style="position:relative;width:100%;height:auto;display:block;border-radius:14px;box-shadow:0 24px 60px rgba(60,30,10,.22)"></div>
   </div>
 </section>
 
@@ -559,11 +574,8 @@ class Component extends DCLogic {
   componentWillUnmount() { this.io && this.io.disconnect(); }
   renderVals() {
     const { os, cmp } = this.state;
-    const palette = [['#231f1b', '#fbf4ea'], ['#e5553a', '#fff'], ['#f2a21c', '#231f1b'], ['#fff', '#231f1b'], ['#3a5f4b', '#fbf4ea']];
-    const tasks = ['lisbon', 'receipts', 'summarize', 'airport', 'funds', 'weather', 'recipe', 'landlord', 'glucose', 'plumber'].map((t) => tr('index.task.' + t));
-    const marquee = [...tasks, ...tasks].map((text, i) => ({ text, bg: palette[i % palette.length][0], fg: palette[i % palette.length][1] }));
     return {
-      marquee, dl: this.downloadFor(os),
+      dl: this.downloadFor(os),
       macHref: this.state.dmg || 'https://github.com/hanneshapke/cedar/releases/latest',
       winHref: this.state.msi || 'https://github.com/hanneshapke/cedar/releases/latest',
       apkHref: this.state.apk || 'https://github.com/hanneshapke/cedar/releases/latest',
