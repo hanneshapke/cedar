@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The desktop app starts Tailscale when it isn't running.** With *Share with the phone apps over Tailscale* on, the app used to report that Tailscale didn't answer and start without sharing. At its start it now opens Tailscale's app when the CLI gets no answer (macOS and Windows), runs `tailscale up` when Tailscale is turned off, and waits up to 45 seconds for one that is still connecting, as when both start at login. Logging in is still yours.
+
 ## 0.12.0
 
 - **Computer use.** With `COMPUTER=on`, a model that reads images gets a `computer` tool: a desktop on a virtual screen (Xfce with Firefox and LibreOffice, the new `cedar-computer` image) that it works through screenshots, the mouse and the keyboard, for what only exists behind windows. Each run gets its own, started on first use and removed with the run, with the conversation's workspace mounted, so files move between the desktop and the other tools. Off by default; see "The computer" in the README, and its safety notes before giving the desktop a network.

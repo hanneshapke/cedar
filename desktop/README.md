@@ -519,6 +519,13 @@ Let's Encrypt certificate for the computer's tailnet name and proxies
 `https://<computer>.<tailnet>.ts.net` to the chat. Only devices on your tailnet can reach it, and
 both servers stay on loopback.
 
+While sharing is on, the app starts a Tailscale that isn't running when it starts itself: it opens
+Tailscale's app when the CLI gets no answer (macOS and Windows; on Linux `tailscaled` is a system
+service that takes root to start), runs `tailscale up` when Tailscale is turned off, and waits up
+to 45 seconds for one that is still connecting, as when both start at login. The servers start
+after that, so a Tailscale that never connects holds the chat up by that long. Logging in is left
+to you, and the section says so.
+
 1. Install Tailscale on the computer and log in. While it isn't installed, the section offers
    **Set up Tailscale for me** (see [Installing Tailscale from the setup
    page](#installing-tailscale-from-the-setup-page)); or install it yourself:
