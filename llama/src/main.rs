@@ -16,14 +16,17 @@ use tokio_util::sync::CancellationToken;
 const USAGE: &str = "\
 Sets up llama.cpp as Cedar's model server.
 
-  cedar-llama detect
-  cedar-llama install [--dir DIR] [--build BUILD] [--model MODEL]
-  cedar-llama serve   [--dir DIR] [--model MODEL] [--port PORT]
+  cedar-llama detect  [--experimental]
+  cedar-llama install [--dir DIR] [--build BUILD] [--model MODEL] [--experimental]
+  cedar-llama serve   [--dir DIR] [--model MODEL] [--port PORT] [--experimental]
 
   --dir DIR      where things are kept (default: $XDG_DATA_HOME/cedar or ~/.local/share/cedar)
   --build BUILD  the llama.cpp build, instead of the one chosen for the GPU
   --model MODEL  the model, instead of the one chosen for the GPU's memory
   --port PORT    the port llama-server listens on, on this computer only (default: 18081)
+  --experimental choose an experimental model where one fits the GPU: newer than the tested ones,
+                 and not run with Cedar for long. For `serve`: run the experimental model that
+                 is downloaded, where a tested one is too
 
 `cedar-llama detect` lists the builds and models. An API key for llama-server, if you want one,
 goes into the LLAMA_API_KEY environment variable of `serve`.";
@@ -35,6 +38,7 @@ struct Options {
     build: Option<Build>,
     model: Option<&'static Model>,
     port: u16,
+    experimental: bool,
 }
 
 fn parse(args: &[String]) -> Result<Options, String> {
@@ -43,9 +47,14 @@ fn parse(args: &[String]) -> Result<Options, String> {
         build: None,
         model: None,
         port: DEFAULT_PORT,
+        experimental: false,
     };
     let mut args = args.iter();
     while let Some(flag) = args.next() {
+        if flag == "--experimental" {
+            options.experimental = true;
+            continue;
+        }
         let value = args.next().ok_or_else(|| format!("{flag} needs a value"))?;
         match flag.as_str() {
             "--dir" => options.dir = PathBuf::from(value),
@@ -57,13 +66,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
                 );
             }
             "--model" => {
-                let known = || {
-                    catalog::MODELS
-                        .iter()
-                        .map(|m| m.id)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                };
+                let known = || catalog::all().map(|m| m.id).collect::<Vec<_>>().join(", ");
                 options.model = Some(
                     catalog::by_id(value)
                         .ok_or_else(|| format!("no model {value}; there are: {}", known()))?,
@@ -99,7 +102,8 @@ fn default_dir() -> Result<PathBuf, String> {
 async fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
-        Some("detect") if args.len() == 1 => detect().await,
+        Some("detect") if args.len() == 1 => detect(false).await,
+        Some("detect") if args[1..] == ["--experimental"] => detect(true).await,
         Some("install") => match parse(&args[1..]) {
             Ok(options) => install(options).await,
             Err(e) => Err(e),
@@ -133,7 +137,7 @@ fn gib(mb: u64) -> String {
     format!("{:.1} GB", mb as f64 / 1024.0)
 }
 
-async fn detect() -> Result<(), String> {
+async fn detect(experimental: bool) -> Result<(), String> {
     let machine = machine().await?;
     if machine.gpus.is_empty() {
         println!("GPU:    none found (NVIDIA cards need nvidia-smi from the driver; AMD cards the amdgpu driver)");
@@ -146,7 +150,7 @@ async fn detect() -> Result<(), String> {
         };
         println!("GPU:    {}, {}{shared}", gpu.name, gib(gpu.memory_mb));
     }
-    match cedar_llama::plan(machine.os, machine.arch, &machine.gpus) {
+    match cedar_llama::plan(machine.os, machine.arch, &machine.gpus, experimental) {
         Some(plan) => {
             println!(
                 "Build:  {} (llama.cpp {})",
@@ -159,17 +163,27 @@ async fn detect() -> Result<(), String> {
                 plan.model.label,
                 plan.model.size() as f64 / 1e9
             );
-            println!("\nRun `cedar-llama install` to download both.");
+            if plan.model.experimental {
+                println!("        An experimental model: newer than the tested ones, and not run with Cedar for long.");
+                println!("\nRun `cedar-llama install --experimental` to download both.");
+            } else {
+                println!("\nRun `cedar-llama install` to download both.");
+            }
         }
         None => {
             println!("\nNo GPU here has the memory for a model Cedar can use (12 GB at least).");
             println!("To install one anyway, name a build and a model:");
             println!("  builds: {}", Build::ALL.map(Build::id).join(", "));
-            for model in &catalog::MODELS {
+            for model in catalog::all() {
                 println!(
-                    "  model:  {} needs {} of GPU memory",
+                    "  model:  {} needs {} of GPU memory{}",
                     model.id,
-                    gib(model.min_budget_mb)
+                    gib(model.min_budget_mb),
+                    if model.experimental {
+                        " (experimental)"
+                    } else {
+                        ""
+                    }
                 );
             }
         }
@@ -194,7 +208,12 @@ fn show(what: &str) -> impl Fn(Event) + '_ {
 
 async fn install(options: Options) -> Result<(), String> {
     let machine = machine().await?;
-    let plan = cedar_llama::plan(machine.os, machine.arch, &machine.gpus);
+    let plan = cedar_llama::plan(
+        machine.os,
+        machine.arch,
+        &machine.gpus,
+        options.experimental,
+    );
     let build = options.build.or(plan.as_ref().map(|p| p.build));
     let model = options.model.or(plan.as_ref().map(|p| p.model));
     let (Some(build), Some(model)) = (build, model) else {
@@ -296,12 +315,21 @@ async fn serve(options: Options) -> Result<(), String> {
         .find_map(|b| install::installed_server(&root, &manifest.tag, b))
         .ok_or("llama.cpp is not installed here; run `cedar-llama install` first")?;
     let models = options.dir.join("models");
-    // The largest installed one, unless one was named.
+    // The largest installed one, unless one was named: of the tested models first, or of the
+    // experimental ones first with --experimental.
+    let (tested, new) = (
+        catalog::MODELS.iter().rev(),
+        catalog::EXPERIMENTAL.iter().rev(),
+    );
+    let order: Vec<&'static Model> = if options.experimental {
+        new.chain(tested).collect()
+    } else {
+        tested.chain(new).collect()
+    };
     let (model, file) = match options.model {
         Some(model) => install::installed_model(&models, model).map(|file| (model, file)),
-        None => catalog::MODELS
-            .iter()
-            .rev()
+        None => order
+            .into_iter()
             .find_map(|m| install::installed_model(&models, m).map(|file| (m, file))),
     }
     .ok_or("that model is not downloaded; run `cedar-llama install` first")?;
@@ -352,6 +380,9 @@ mod tests {
             (PathBuf::from("/data"), Some(Build::LinuxVulkan), 9000)
         );
         assert_eq!(o.model.unwrap().id, "gemma-4-12b");
+        assert!(!o.experimental);
+        let o = parse(&args(&["--experimental", "--model", "inkling-2-mini"])).unwrap();
+        assert!(o.experimental && o.model.unwrap().experimental);
         assert!(parse(&args(&["--model", "gpt-5"]))
             .err()
             .unwrap()

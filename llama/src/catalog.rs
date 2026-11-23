@@ -9,6 +9,10 @@
 //! Gemma 4 26B-A4B from 20 GB, Qwen3.6 35B-A3B from 24 GB, Qwen3.5 122B-A10B where 128 GB allow
 //! it. Keep the two in step. Mixture-of-experts models are preferred to dense ones of the same
 //! size, as there: they answer several times faster.
+//!
+//! Beside them are the experimental models ([`EXPERIMENTAL`]): newer ones that have not been run
+//! with Cedar for long, or whose support in llama.cpp is new. They are chosen only where the user
+//! allows them (the setup page's "Allow experimental models", `cedar-llama --experimental`).
 
 use serde::Serialize;
 
@@ -53,6 +57,9 @@ pub struct Model {
     /// A small model: it answers, but misses steps in longer tasks, so where it is all that fits
     /// a hosted provider serves Cedar better and stays the recommended way.
     pub small: bool,
+    /// Not one of the models Cedar is tested with: offered only where the user allows
+    /// experimental models, and then with a word of what to expect.
+    pub experimental: bool,
 }
 
 /// The context every model is run with. Cedar resends the whole conversation each turn, and its
@@ -108,6 +115,7 @@ pub static MODELS: [Model; 4] = [
         reasoning_levels: &[],
         license: "Apache-2.0",
         small: true,
+        experimental: false,
     },
     Model {
         id: "gemma-4-26b-a4b",
@@ -129,6 +137,7 @@ pub static MODELS: [Model; 4] = [
         reasoning_levels: &[],
         license: "Apache-2.0",
         small: false,
+        experimental: false,
     },
     Model {
         id: "qwen3.6-35b-a3b",
@@ -150,6 +159,7 @@ pub static MODELS: [Model; 4] = [
         reasoning_levels: &[],
         license: "Apache-2.0",
         small: false,
+        experimental: false,
     },
     Model {
         id: "qwen3.5-122b-a10b",
@@ -184,16 +194,66 @@ pub static MODELS: [Model; 4] = [
         reasoning_levels: &[],
         license: "Apache-2.0",
         small: false,
+        experimental: false,
     },
 ];
 
-/// The largest model that fits in `budget_mb` MiB of GPU memory, if any does.
-pub fn choose_model(budget_mb: u64) -> Option<&'static Model> {
-    MODELS.iter().rev().find(|m| m.min_budget_mb <= budget_mb)
+/// The experimental models, from the smallest to the largest.
+pub static EXPERIMENTAL: [Model; 1] = [Model {
+    id: "inkling-2-mini",
+    label: "Inkling 2 Mini",
+    repo: "ggml-org/Inkling-2-Mini-GGUF",
+    commit: "e8a2cecf0e78914f07cc27b9be711a9b2c7561d9",
+    // The 4-bit file: the experts of layers 0 to 19 at IQ4_NL, everything else at Q8_0.
+    weights: &[File {
+        path: "Inkling-2-Mini-IQ4_NL.gguf",
+        size: 17_627_940_768,
+        sha256: "cbdf3fa9dc50a4124977980f37da4f1fa764b0cfe800d275cd43d26ce2a81af4",
+    }],
+    mmproj: File {
+        path: "mmproj-Inkling-2-Mini-Q8_0.gguf",
+        size: 345_910_944,
+        sha256: "233287272ec5ac39b4168677aba54a4c024f202410f5629fac1830e1059f8abb",
+    },
+    // Not measured, which is one reason it is experimental. It is a looped model: 12 of its 24
+    // layers run three times for each token and every pass keeps a cache of its own. By its
+    // configuration that is 8 caches of the whole context and 40 of a 1024-token window, some
+    // 1.3 GB at CONTEXT, on top of 18 GB of files. This leaves about 2.5 GB beyond that, and
+    // leaves out a 20 GB card, where it would be too close.
+    min_budget_mb: 21_000,
+    max_tokens: 8192,
+    // Its template takes more (none, minimal, xhigh, max); these are the ones Cedar offers
+    // elsewhere. It thinks at `high` when none is asked for.
+    reasoning_levels: &["low", "medium", "high"],
+    license: "Apache-2.0",
+    small: false,
+    experimental: true,
+}];
+
+/// The largest model that fits in `budget_mb` MiB of GPU memory, if any does. With
+/// `experimental`, an experimental model that fits is chosen instead, unless the model it would
+/// replace is more than twice its size: a far larger model does the work better than a new one.
+pub fn choose_model(budget_mb: u64, experimental: bool) -> Option<&'static Model> {
+    let fits = |m: &&Model| m.min_budget_mb <= budget_mb;
+    let tested = MODELS.iter().rev().find(fits);
+    let new = EXPERIMENTAL
+        .iter()
+        .rev()
+        .find(fits)
+        .filter(|_| experimental);
+    match (tested, new) {
+        (Some(tested), Some(new)) if tested.size() > 2 * new.size() => Some(tested),
+        (tested, new) => new.or(tested),
+    }
+}
+
+/// Every model Cedar can install: the tested ones, then the experimental ones.
+pub fn all() -> impl Iterator<Item = &'static Model> {
+    MODELS.iter().chain(&EXPERIMENTAL)
 }
 
 pub fn by_id(id: &str) -> Option<&'static Model> {
-    MODELS.iter().find(|m| m.id == id)
+    all().find(|m| m.id == id)
 }
 
 #[cfg(test)]
@@ -202,7 +262,7 @@ mod tests {
 
     #[test]
     fn models_by_memory() {
-        let id = |mb| choose_model(mb).map(|m| m.id);
+        let id = |mb| choose_model(mb, false).map(|m| m.id);
         assert_eq!(id(8_192), None);
         assert_eq!(id(11_264), None); // an 11 GB card
         assert_eq!(id(12_288), Some("gemma-4-12b")); // a 12 GB card
@@ -219,10 +279,36 @@ mod tests {
     }
 
     #[test]
+    fn experimental_models_where_they_are_allowed() {
+        let id = |mb| choose_model(mb, true).map(|m| m.id);
+        // Too little for it: what is chosen without the option.
+        assert_eq!(id(8_192), None);
+        assert_eq!(id(12_288), Some("gemma-4-12b"));
+        assert_eq!(id(20_470), Some("gemma-4-26b-a4b")); // a 20 GB card
+        assert_eq!(id(21_845), Some("inkling-2-mini")); // a 32 GB Mac
+        assert_eq!(id(24_564), Some("inkling-2-mini")); // a 24 GB card
+        assert_eq!(id(65_536), Some("inkling-2-mini")); // a 96 GB Mac
+
+        // Where a model several times its size fits, that one stays: a 128 GB Mac.
+        assert_eq!(id(87_381), Some("qwen3.5-122b-a10b"));
+        assert!(EXPERIMENTAL.iter().all(|m| m.experimental && !m.small));
+        assert!(MODELS.iter().all(|m| !m.experimental));
+    }
+
+    #[test]
     fn the_catalog_is_well_formed() {
         let hex64 =
             |s: &str| s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
-        for (i, m) in MODELS.iter().enumerate() {
+        for (i, m) in MODELS
+            .iter()
+            .enumerate()
+            .chain(EXPERIMENTAL.iter().enumerate())
+        {
+            let list: &[Model] = if m.experimental {
+                &EXPERIMENTAL
+            } else {
+                &MODELS
+            };
             assert_eq!(by_id(m.id), Some(m));
             assert!(m
                 .id
@@ -261,12 +347,12 @@ mod tests {
             assert!(m.max_tokens < CONTEXT);
             if i > 0 {
                 assert!(
-                    MODELS[i - 1].min_budget_mb < m.min_budget_mb,
+                    list[i - 1].min_budget_mb < m.min_budget_mb,
                     "sorted by memory"
                 );
             }
-            // Only the smallest is a small model.
-            assert_eq!(m.small, i == 0, "{}", m.id);
+            // Only the smallest of the tested ones is a small model.
+            assert_eq!(m.small, i == 0 && !m.experimental, "{}", m.id);
         }
         // A split model's parts are in order, the first being the one llama-server is given.
         let split = by_id("qwen3.5-122b-a10b").unwrap();

@@ -409,8 +409,10 @@ function renderModelChoice(s, p) {
     // A model the app runs and a model server can both be in use: cedar has an entry for each.
     const inUse = source === 'llama' ? !!l.model : s.model_source === source;
     // Until something is chosen: running a model here where the GPU can run one that does
-    // Cedar's work well, a provider where it cannot or only a small model fits.
-    const recommended = !s.configured && source === (l.offer && !l.offer.small ? 'llama' : 'hosted');
+    // Cedar's work well, a provider where it cannot, only a small model fits, or the model
+    // offered is an experimental one.
+    const tested = l.offer && !l.offer.small && !l.offer.experimental;
+    const recommended = !s.configured && source === (tested ? 'llama' : 'hosted');
     tag.textContent = inUse ? tr('pick.inUse') : recommended ? tr('pick.recommended') : '';
     tag.classList.toggle('hidden', !inUse && !recommended);
   }
@@ -487,9 +489,18 @@ function renderLlama(s, p) {
     });
     // All that fits is a small model: it is worth saying what to expect of it.
     if (offer.small) intro.textContent += ' ' + tr('llama.offerSmall', { model: offer.model });
+    if (offer.experimental) intro.textContent += ' ' + tr('llama.offerExperimental', { model: offer.model });
   } else {
     intro.textContent = '';
   }
+
+  // "Allow experimental models": shown while there is a choice to make, which is before a model
+  // is installed and where an experimental one fits this GPU.
+  const choosing = !installed && l.experimental_fits;
+  $('llama-experimental-row').classList.toggle('hidden', !choosing);
+  $('llama-experimental-note').classList.toggle('hidden', !choosing);
+  $('llama-experimental').checked = l.experimental;
+  $('llama-experimental').disabled = running;
 
   const install = $('llama-install');
   // Once installed there is nothing to set up, unless a newer llama.cpp could not be fetched.
@@ -796,6 +807,12 @@ $('docker-install').addEventListener('click', () => invoke('install_docker').the
 // sequence again (renderLlama says which).
 $('llama-install').addEventListener('click', (e) => {
   invoke(e.currentTarget.dataset.command || 'install_llama').then(refresh).catch((err) => alert(err));
+});
+$('llama-experimental').addEventListener('change', (e) => {
+  invoke('set_llama_experimental', { allow: e.currentTarget.checked }).then(refresh).catch((err) => {
+    alert(err);
+    refresh();
+  });
 });
 $('llama-cancel').addEventListener('click', () => invoke('cancel_llama').then(refresh).catch((e) => alert(e)));
 $('llama-remove').addEventListener('click', () => {

@@ -342,6 +342,22 @@ memory that counts is two thirds of the Mac's: a 32 GB Mac gets Gemma 4 26B-A4B,
 a setup: the model would leave macOS and Docker too little. On Windows it is the memory of the graphics card
 with the most; several cards are not added up. Every model is under the Apache-2.0 license.
 
+Under the offer is **Allow experimental models**, where one fits the GPU. Experimental models are
+newer ones that have not been run with Cedar for long, or whose support in llama.cpp is new
+(`EXPERIMENTAL` in `llama/src/catalog.rs`). With the box ticked, the offer becomes the
+experimental model, the page says what to expect of it, and *Recommended* moves to the hosted
+provider. There is one so far:
+
+| GPU memory | Experimental model | Download |
+| --- | --- | --- |
+| 21 to 80 GB (a Mac with 32 to 96 GB) | Inkling 2 Mini | 18 GB |
+
+Inkling 2 Mini is a looped model: half of its layers run three times for each word. Its memory
+at Cedar's context has been worked out from its configuration, not measured, so it is not
+offered on a 20 GB card. Its makers say it can get stuck in long reasoning and may delete or
+overwrite files without asking. Where Qwen3.5 122B-A10B fits, that stays the offer. The box only
+changes what is offered: a model that is installed stays until you remove it.
+
 The button does this, with each step on the page:
 
 1. **Downloads llama.cpp.** A build of the release this version of Cedar pins, from

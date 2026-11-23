@@ -59,6 +59,9 @@ pub struct Config {
     pub llama: Option<Llama>,
     /// The port the app's llama-server listens on, on this computer only.
     pub llama_port: u16,
+    /// The setup page's "Allow experimental models": the model the app offers to run may be one
+    /// of cedar-llama's experimental ones (see `cedar_llama::catalog::EXPERIMENTAL`).
+    pub llama_experimental: bool,
     /// Extra environment for cedar, applied last (`SANDBOX_NETWORK`, `BRAVE_API_KEY`, ...).
     pub cedar_env: BTreeMap<String, String>,
     /// Extra environment for cedar-chat, applied last.
@@ -130,6 +133,7 @@ impl Default for Config {
             model_source: String::new(),
             llama: None,
             llama_port: 18081,
+            llama_experimental: false,
             cedar_env: BTreeMap::new(),
             chat_env: BTreeMap::new(),
             secrets: Secrets::default(),

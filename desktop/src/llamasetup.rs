@@ -37,6 +37,9 @@ pub struct Offer {
     /// The model is a small one (all a 12 GB card holds): it works, but a hosted provider serves
     /// Cedar better, so the page does not recommend this over one.
     pub small: bool,
+    /// The model is one of the experimental ones, which the user allowed: the page says what to
+    /// expect of it.
+    pub experimental: bool,
 }
 
 pub fn offer(plan: &Plan) -> Offer {
@@ -53,17 +56,14 @@ pub fn offer(plan: &Plan) -> Offer {
         license: plan.model.license.to_string(),
         download_bytes: build + plan.model.size(),
         small: plan.model.small,
+        experimental: plan.model.experimental,
     }
 }
 
 /// Looks at this computer's GPU once, when the app starts; the page offers the setup if a model
 /// fits it.
 pub async fn detect(app: AppHandle) {
-    let plan = match probe::machine().await {
-        Some(machine) => cedar_llama::plan(machine.os, machine.arch, &machine.gpus),
-        None => None,
-    };
-    app.state::<AppState>().set_llama_plan(plan);
+    app.state::<AppState>().set_llama_machine(probe::machine().await);
     crate::window::push_llama(&app);
 }
 
@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn the_offer_names_the_download() {
-        let plan = cedar_llama::plan(Os::Macos, Arch::Arm64, &[Gpu::apple(32 << 30)]).unwrap();
+        let plan = cedar_llama::plan(Os::Macos, Arch::Arm64, &[Gpu::apple(32 << 30)], false).unwrap();
         let offer = offer(&plan);
         assert_eq!((offer.gpu.as_str(), offer.memory_mb, offer.unified), ("Apple Silicon", 32768, true));
         assert_eq!(offer.model, "Gemma 4 26B-A4B");
@@ -259,10 +259,16 @@ mod tests {
         let json = serde_json::to_value(&offer).unwrap();
         assert_eq!(json["license"], "Apache-2.0");
         assert_eq!(json["small"], false);
+        assert_eq!(json["experimental"], false);
         // A 12 GB card is offered the small model, and the page is told that it is one.
         let card = Gpu::dedicated(cedar_llama::gpu::Vendor::Amd, "AMD Radeon RX 6700 XT", 12288);
-        let small = super::offer(&cedar_llama::plan(Os::Windows, Arch::X64, &[card]).unwrap());
+        let small = super::offer(&cedar_llama::plan(Os::Windows, Arch::X64, &[card], false).unwrap());
         assert_eq!((small.model.as_str(), small.small), ("Gemma 4 12B", true));
+        // With experimental models allowed, a 32 GB Mac is offered one, and the page is told so.
+        let plan = cedar_llama::plan(Os::Macos, Arch::Arm64, &[Gpu::apple(32 << 30)], true).unwrap();
+        let new = super::offer(&plan);
+        assert_eq!((new.model.as_str(), new.experimental, new.small), ("Inkling 2 Mini", true, false));
+        assert_eq!(new.model_page, "https://huggingface.co/ggml-org/Inkling-2-Mini-GGUF");
     }
 
     #[test]
