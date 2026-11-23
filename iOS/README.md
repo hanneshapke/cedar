@@ -232,7 +232,7 @@ What the app does on each canvas:
 Left for the fold APIs in the iOS 27.1 SDK: when the open phone is held sideways the fold is
 horizontal and the one-column-each split no longer matches it (the composer sits in the lower
 half, which suits a half-folded, laptop-like posture), and the app does not yet read the hinge's
-angle or exact position. The Duo simulator ships with Xcode 27.1; CI still tests on the iPhone 16
+angle or exact position. The Duo simulator ships with Xcode 27.1; CI tests on the iPhone 17
 simulator, which the layout code's unit tests (`FoldLayoutTests`) cover for the canvas sizes.
 
 ## How it talks to the server
@@ -313,14 +313,14 @@ Run them in Xcode with ⌘U, or from the command line:
 ```sh
 cd iOS
 xcodebuild test -project Cedar.xcodeproj -scheme Cedar \
-  -destination 'platform=iOS Simulator,name=iPhone 16'
+  -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
 ### Continuous integration
 
-`.github/workflows/ios.yml` runs the same tests on a macOS runner for every pull request and
+`.github/workflows/ios.yml` runs the same tests on GitHub's Xcode 27 runner for every pull request and
 push to main that touches `iOS/`, and on request (Actions → iOS → Run workflow). It builds the
-app for the iPhone 16 simulator and runs the unit tests against it, then builds for a device
+app for the iPhone 17 simulator and runs the unit tests against it, then builds for a device
 unsigned, which checks the entitlements and the device SDK. When a run fails, the `.xcresult`
 is kept as an artifact for a week and opens in Xcode.
 

@@ -23,7 +23,9 @@ permissions:
 
 jobs:
   ipa:
-    runs-on: macos-15
+    # Xcode 27 (the iOS 27 SDK) comes on GitHub's xcode-27 image, which runs macOS 27; App Store
+    # Connect refuses builds made with an older SDK from April 2027 (ITMS-90725).
+    runs-on: xcode-27
     timeout-minutes: 45
     defaults:
       run:
@@ -36,7 +38,7 @@ jobs:
 
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '27'
 
       - name: Archive, unsigned
         run: |
