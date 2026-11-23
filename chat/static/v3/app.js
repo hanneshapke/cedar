@@ -1,23 +1,24 @@
 'use strict';
 
-// cedar-chat v3 ("Ledger"). Plain JavaScript, no build step. Talks only to /api on this origin.
-// The markdown renderer and the API/token helpers are the same as in /v2/app.js, and so is the
-// shape of the page: say on the left, show on the right.
+// cedar-chat's main page. Plain JavaScript, no build step. Talks only to /api on this origin.
 //
-// What v3 adds, on top of v2, is everything that lets a reader trust a run they did not watch:
-//   - the plan Cedar commits to before it starts (a `plan` event), shown as a checklist above
-//     the thread; until the run starts the steps are editable and "Looks good, start" sends them
-//     back (POST /api/turns/{id}/plan);
-//   - tool calls folded into one "Worked through N steps" line per run of steps, open while the
-//     run is live, closed once it is over;
+// One page, two layouts. Both show what lets a reader trust a run they did not watch:
+//   - the plan Cedar commits to before it starts (a `plan` event); until the run starts the steps
+//     are editable and "Looks good, start" sends them back (POST /api/turns/{id}/plan);
+//   - a row per tool call, with the call's output as a card;
 //   - approval cards for risky calls (`approval.required` / `approval.resolved`), answered with
 //     POST /api/turns/{id}/approvals/{approval_id};
 //   - the model's reasoning as a folded "Thought for N s" (`assistant.reasoning`);
-//   - [n] in Cedar's prose and in the document it wrote linked to the pages and files it read,
-//     which are listed in a sources rail beside the cards on the stage;
+//   - [n] in Cedar's prose and in the document it wrote linked to the pages and files it read;
 //   - what the turn cost, when the server prices tokens (`usage.cost_usd`), and a sandbox line
 //     from `run.started`.
-// A server that sends none of the new events shows none of the new blocks. See chat/REDESIGN.md.
+// A server that sends none of these events shows none of the blocks. See chat/REDESIGN.md.
+//
+// This file is what the layouts share: the markdown renderer, the API and token helpers, the
+// cards, the event loop and the chrome. Where a turn's pieces go on the page is the layout's
+// business: ledger.js ("Ledger", /v3/: say on the left, show on the right) and dossier.js
+// ("Dossier", /v4/: one column, each turn a brief of Plan, Work, Result and Sources). Each
+// registers the same set of functions in `cedarLayouts`; the ones this file calls are named below.
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -29,8 +30,11 @@ const els = {
   tabs: $('tabs'), stageBadge: $('stage-badge'),
   cost: $('cost'), costFull: $('cost-full'), runDetails: $('run-details'),
   renameItem: $('rename-item'), examples: $('examples'), homeRecents: $('home-recents'), allChats: $('all-chats'), greeting: $('greeting'),
+  // Ledger's two panes (absent, so null, in Dossier).
   talk: $('talk'), notes: $('notes'), splitter: $('splitter'),
   stage: $('stage'), stageBody: $('stage-body'), stageEmpty: $('stage-empty'),
+  // Dossier's column and its sidebar outline (null in Ledger).
+  scroll: $('scroll'), briefs: $('briefs'), hero: $('hero'), slip: document.querySelector('.slip'), outline: $('outline'), outlineWrap: $('outline-wrap'),
   composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'),
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
@@ -39,10 +43,21 @@ const els = {
 const TERMINAL = new Set(['run.completed', 'run.failed', 'run.cancelled']);
 const ACTIVE = new Set(['queued', 'running']);
 const TOKEN_KEY = 'cedar-chat-token';
-const SPLIT_KEY = 'cedar-chat-v2-talk-width';
 const DOC_RE = /\.(md|markdown|txt)$/i;
 const NO_MODELS = () => tr('v3.noModels');
-const narrow = matchMedia('(max-width: 800px)');
+
+// The layout this page was opened with (index.html sets data-ui from the address), and the
+// functions it brings.
+const layout = cedarLayouts[document.documentElement.dataset.ui === 'v4' ? 'dossier' : 'ledger'];
+const {
+  startTurn, placeNote, placeCard, focusCard, addStep, stepFilled, documentFilled,
+  showPlan, planChanged, placeDecision, renderSources, putClosing, closeTurn, restOnResult,
+  chromeChanged, conversationsChanged, clearTurns, setPane, updateTabs,
+  openDrawer, closeDrawer, drawerOpen, narrowChanged, bindLayout,
+} = layout;
+const narrow = matchMedia(layout.narrow);
+/** The elements that scroll: the one the notes are in, and the one the cards are in. */
+const scrollers = layout.scrollers();
 
 const state = {
   config: { auth_required: false },
@@ -459,7 +474,7 @@ function linkHtml(url, label) {
   return /^https?:\/\//i.test(url) ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${text}</a>` : text;
 }
 
-// -- the stage: one card per tool call -----------------------------------------------------------
+// -- one card per tool call (where it goes is the layout's) --------------------------------------
 
 function downloadLink(path, primary) {
   const b = h('button', `copy-btn${primary ? ' primary' : ''}`, escapeHtml(tr('v3.download')));
@@ -495,45 +510,9 @@ function cardKind(tool) {
   return 'trace';
 }
 
-/** The stage group for a turn, made when its first card lands. */
-function ensureGroup(view) {
-  if (view.group) return view.group;
-  const group = h('section', 'turn');
-  group.dataset.turn = view.turn.id;
-  const n = state.order.indexOf(view.turn.id) + 1;
-  const head = h('div', 'turn-head');
-  head.append(t('span', 'n', tr('v3.turn', { n })), t('span', 'q', firstLine(view.turn.prompt).slice(0, 160)), t('span', 't', fmtTime(view.turn.created_at)));
-  head.querySelector('.q').title = view.turn.prompt;
-  group.append(head);
-  const grid = h('div', 'turn-grid');
-  const cards = h('div', 'turn-cards');
-  const sources = h('aside', 'turn-sources');
-  sources.setAttribute('aria-label', tr('v3.sources'));
-  grid.append(cards, sources);
-  group.append(grid);
-  view.cardsEl = cards;
-  view.sourcesEl = sources;
-  // Turns are replayed side by side when a conversation opens, so a group goes after the groups of earlier turns.
-  const later = state.order.slice(state.order.indexOf(view.turn.id) + 1).map((id) => state.views.get(id)?.group).find((g) => g?.isConnected);
-  if (later) els.stageBody.insertBefore(group, later); else els.stageBody.append(group);
-  view.group = group;
-  els.stageEmpty.hidden = true;
-  renderSources(view);
-  return group;
-}
-
-/** Put a card on the stage for `view`, following along if the reader was at the end. */
-function placeCard(view, card) {
-  const follow = nearEnd(els.stage, 240) || view === state.activeTurn;
-  ensureGroup(view);
-  view.cardsEl.append(card);
-  if (follow) els.stage.scrollTop = els.stage.scrollHeight;
-  if (narrow.matches && els.app.dataset.pane !== 'stage') { state.unseen++; updateTabs(); }
-}
-
-/** After a picture or map on the stage loads: stay at the end if the reader was there. */
+/** After a picture or map in a card loads: stay at the end if the reader was there. */
 function keepStageAtEnd() {
-  if (nearEnd(els.stage, 240)) els.stage.scrollTop = els.stage.scrollHeight;
+  if (nearEnd(scrollers.cards, 240)) scrollers.cards.scrollTop = scrollers.cards.scrollHeight;
 }
 
 function cardHead(iconName, titleHtml, { meta, actions, chevron } = {}) {
@@ -556,6 +535,7 @@ function cardFor(tool) {
   if (tool.card) return tool.card;
   const card = h('article', 'card');
   card.dataset.tool = tool.id;
+  card.cedarTool = tool;
   tool.card = card;
   fillCard(tool);
   return card;
@@ -617,6 +597,7 @@ function fillDocument(tool, card, done) {
     body.append(md);
   }
   card.append(body);
+  documentFilled(tool, actions, name);
 }
 
 function fillWidget(tool, card, done) {
@@ -753,21 +734,6 @@ function figuresCard(figures) {
   return card;
 }
 
-/** Scroll the stage to a tool's card (opening a folded one) and flash it. */
-function focusCard(tool) {
-  const card = tool.card;
-  if (!card || card.hidden) return;
-  if (narrow.matches) setPane('stage');
-  if (card.classList.contains('trace') && !tool.open) {
-    tool.open = true;
-    card.classList.add('open');
-    card.querySelector('.card-head')?.setAttribute('aria-expanded', 'true');
-  }
-  card.scrollIntoView({ block: 'center', behavior: narrow.matches ? 'auto' : 'smooth' });
-  card.classList.remove('flash');
-  requestAnimationFrame(() => card.classList.add('flash'));
-}
-
 // -- the conversation column -------------------------------------------------------------------
 
 function note(cls, who, html, view) {
@@ -786,28 +752,19 @@ function addTurn(turn) {
     abort: new AbortController(), done: false,
     workingEl: null,
     stepsEl: null,  // the open run of step rows; a note from Cedar closes it
-    workEl: null,   // the fold around it ("Worked through N steps")
-    works: [],      // every fold of this turn, to close when it ends
-    group: null,    // this turn's group of cards on the stage
-    cardsEl: null, sourcesEl: null,
     plan: null, planEl: null,    // the plan Cedar committed to, if the server sends one
     approvals: new Map(),        // approval id -> card
     approvalsGranted: 0,
     reasoningEl: null,           // the open reasoning fold, closed by the next text
     sources: [],                 // what the turn read, numbered, for [n] citations
     started: null,               // run.started data (model, sandbox)
+    startedAt: Date.now(),
   };
   state.views.set(turn.id, view);
   state.order.push(turn.id);
-  const user = note('user', escapeHtml(tr('v3.you', { time: fmtTime(turn.created_at) })));
-  user.firstChild.append(cedarTrace.button(turn.id), cedarActions.button(turn));
-  if (turn.attachments?.length) user.lastChild.append(cedarAttach.chips(turn.attachments));
-  user.lastChild.append(document.createTextNode(turn.prompt));
-  cedarClarify.settle(els.notes); // this message answers any question still open above it
-  els.notes.append(user);
   view.workingEl = h('div', 'working');
   view.workingEl.append(h('span', 'spinner'), t('span', '', tr('v3.thinking')));
-  els.notes.append(view.workingEl);
+  startTurn(view, turn); // the layout shows the prompt and puts the working line where its notes will go
   if (ACTIVE.has(turn.status)) state.activeTurn = view;
   updateChrome();
   followEvents(view);
@@ -816,13 +773,7 @@ function addTurn(turn) {
 
 /** After a picture in the conversation loads: stay at the end if the reader was there. */
 function keepNotesAtEnd() {
-  if (nearEnd(els.notes)) els.notes.scrollTop = els.notes.scrollHeight;
-}
-
-function placeNote(view, el) {
-  const follow = nearEnd(els.notes) || view === state.activeTurn;
-  els.notes.insertBefore(el, view.workingEl);
-  if (follow) els.notes.scrollTop = els.notes.scrollHeight;
+  if (nearEnd(scrollers.notes)) scrollers.notes.scrollTop = scrollers.notes.scrollHeight;
 }
 
 /** What the turn is doing, for the header; the working line under the notes just says so, since
@@ -830,37 +781,6 @@ function placeNote(view, el) {
 function setWorking(view, text) {
   view.doing = text;
   if (view.workingEl) view.workingEl.lastChild.textContent = text === tr('v3.thinking') ? tr('v3.thinking') : tr('v3.working');
-}
-
-/** A step row for a tool call, in the conversation, that jumps to its card. */
-function addStep(view, tool) {
-  if (!view.stepsEl) {
-    const work = h('div', 'work live');
-    const sum = h('button', 'work-sum');
-    sum.type = 'button';
-    sum.append(h('span', 'work-text'), t('span', 'work-toggle', tr('v3.hide')));
-    sum.addEventListener('click', () => {
-      work.classList.toggle('open');
-      sum.lastChild.textContent = work.classList.contains('open') || work.classList.contains('live') ? tr('v3.hide') : tr('v3.show');
-    });
-    const steps = h('div', 'steps');
-    work.append(sum, steps);
-    work.cedarTools = [];
-    view.stepsEl = steps;
-    view.workEl = work;
-    view.works.push(work);
-    placeNote(view, work);
-  }
-  view.workEl.cedarTools.push(tool);
-  tool.work = view.workEl;
-  const row = h('button', 'step running');
-  row.type = 'button';
-  row.append(t('span', 'i', String(view.tools.length)), h('span', 'what'), t('span', 'ms', ''));
-  row.addEventListener('click', () => focusCard(tool));
-  tool.step = row;
-  view.stepsEl.append(row);
-  fillStep(tool);
-  if (nearEnd(els.notes, 200) || view === state.activeTurn) els.notes.scrollTop = els.notes.scrollHeight;
 }
 
 function fillStep(tool) {
@@ -872,36 +792,7 @@ function fillStep(tool) {
   row.querySelector('.ms').textContent = !done ? '…' : tool.is_error ? tr('v3.failed') : fmtMs(tool.duration_ms);
   const where = cardKind(tool) === 'none' ? '' : ` · ${tr('v3.clickToSee')}`;
   row.title = toolText(tool, done) + where;
-  if (tool.work) updateWork(tool.work);
-}
-
-/** "Worked through 5 steps · searched twice, read 1 page, wrote 1 file", or what is running. */
-function updateWork(work) {
-  const tools = work.cedarTools;
-  const running = tools.find((tool) => tool.output === undefined);
-  const text = work.querySelector('.work-text');
-  if (running) { text.textContent = tr('v3.work.step', { n: tools.length, doing: toolText(running, false) }); return; }
-  const n = (names) => tools.filter((tool) => names.includes(tool.name)).length;
-  const times = (k, key) => (k === 0 ? '' : tr(key, { count: k }));
-  const parts = [
-    times(n(['web_search']), 'v3.work.searched'),
-    times(n(['fetch_url', 'download_file', 'read_file', 'read_document']), 'v3.work.read'),
-    times(n(['bash', 'run_python']), 'v3.work.ran'),
-    times(n(['write_file', 'generate_pdf', 'generate_chart']), 'v3.work.wrote'),
-    times(tools.filter((tool) => tool.is_error).length, 'v3.count.failed'),
-  ].filter(Boolean);
-  text.textContent = `${tr('v3.work.summary', { count: tools.length })}${parts.length ? ` · ${parts.join(', ')}` : ''}`;
-}
-
-/** The run is over: the folds close (a failure stays open, since it is worth reading). */
-function settleWork(view) {
-  for (const work of view.works) {
-    work.classList.remove('live');
-    const failed = work.cedarTools.some((tool) => tool.is_error);
-    work.classList.toggle('open', failed);
-    work.querySelector('.work-toggle').textContent = failed ? tr('v3.hide') : tr('v3.show');
-    updateWork(work);
-  }
+  stepFilled(tool);
 }
 
 // -- the plan, approvals, reasoning and sources ------------------------------------------------
@@ -909,33 +800,17 @@ function settleWork(view) {
 /** The sources a turn has read so far, numbered in the order it read them. */
 const sourcesOf = (view) => cedarTrust.sources.collect(view.tools, parseSearchResults);
 
-/** The plan Cedar sent: editable while the run waits on it, a checklist once it is going. */
-function showPlan(view, data, awaiting) {
-  const plan = cedarTrust.plan.parse(data);
-  if (!plan) return;
-  view.plan = plan;
-  const el = cedarTrust.plan.element(plan, {
-    awaiting: awaiting && !view.done,
-    note: awaiting ? cedarTrust.plan.awaitingNote(plan) : tr('v3.plan.agreed'),
-    onApprove: (steps) => approvePlan(view, steps),
-  });
-  if (view.planEl) view.planEl.replaceWith(el); else placeNote(view, el);
-  view.planEl = el;
-  view.stepsEl = null;
-  if (awaiting && !view.done) setWorking(view, tr('v3.waitingPlan'));
-}
-
 async function approvePlan(view, steps) {
   try {
     await api('POST', `/turns/${view.turn.id}/plan`, { steps });
   } catch (e) { toast(e.message); throw e; }
   showPlan(view, { steps }, false);
-  view.planEl.cedarPlan.setNote(tr('v3.plan.agreedChanges'));
+  planChanged(view);
   setWorking(view, tr('v3.thinking'));
 }
 
 /** A risky call waits on the reader: the card with Allow once / Always / Skip. */
-function showApproval(view, d) {
+function showApproval(view, d, at) {
   const spec = { id: d.id, tool: d.tool, input: d.input || {}, reason: d.reason, scope: d.scope, rule: d.rule };
   const el = cedarTrust.approval.element(spec, {
     onDecide: async (decision) => {
@@ -946,48 +821,22 @@ function showApproval(view, d) {
     },
   });
   view.approvals.set(String(d.id), el);
-  placeNote(view, el);
+  placeNote(view, el, at);
   view.stepsEl = null;
   setWorking(view, tr('v3.waitingOk'));
 }
 
 /** Cedar's reasoning, folded; text for the same stretch of thinking is appended to one fold. */
-function showReasoning(view, d) {
+function showReasoning(view, d, at) {
   if (!view.reasoningEl) {
     view.reasoningEl = cedarTrust.reasoning.element(d.text || '', d.duration_ms);
-    placeNote(view, view.reasoningEl);
+    placeNote(view, view.reasoningEl, at);
     view.stepsEl = null;
   } else {
     view.reasoningEl.cedarReasoning.append(d.text || '');
     if (typeof d.duration_ms === 'number') view.reasoningEl.cedarReasoning.done(d.duration_ms);
   }
   if (d.done) view.reasoningEl = null;
-}
-
-/** The sources rail beside a turn's cards: what it read, the files it saved, how it ran. */
-function renderSources(view) {
-  const aside = view.sourcesEl;
-  if (!aside) return;
-  aside.textContent = '';
-  const sources = view.sources = sourcesOf(view);
-  if (sources.length) {
-    aside.append(t('div', 'label', tr('v3.sourcesCount', { count: sources.length })));
-    aside.append(cedarTrust.sources.element(sources, { onOpen: (s) => s.path && downloadFile(workspacePath(s.path)) }));
-  }
-  const files = [...new Set(view.tools.filter((tool) => FILE_TOOLS.has(tool.name) && tool.output !== undefined && !tool.is_error).map((tool) => workspacePath(tool.input?.path)).filter(Boolean))];
-  if (files.length) {
-    aside.append(t('div', 'label', tr('v3.workspace')));
-    const list = h('div', 'files');
-    for (const path of files) {
-      const b = t('button', '', path);
-      b.type = 'button';
-      b.title = tr('v3.downloadPath', { path });
-      b.addEventListener('click', () => downloadFile(path, b));
-      list.append(b);
-    }
-    aside.append(list);
-  }
-  if (view.done) aside.append(t('div', 'sandbox', cedarTrust.sandbox.text(view.started, view.approvalsGranted)));
 }
 
 // -- events ------------------------------------------------------------------------------------
@@ -1043,18 +892,19 @@ function applyEvent(view, event) {
   switch (event.type) {
     case 'run.started':
       view.started = d;
+      view.startedAt = new Date(event.created_at || Date.now()).getTime();
       return;
     case 'plan':
-      showPlan(view, d, d.awaiting !== false);
+      showPlan(view, { ...d, created_at: event.created_at }, d.awaiting !== false);
       break;
     case 'plan.updated':
-      showPlan(view, d, false);
+      showPlan(view, { ...d, created_at: event.created_at }, false);
       break;
     case 'assistant.reasoning':
-      showReasoning(view, d);
+      showReasoning(view, d, event.created_at);
       break;
     case 'approval.required':
-      showApproval(view, d);
+      showApproval(view, d, event.created_at);
       break;
     case 'approval.resolved': {
       const el = view.approvals.get(String(d.id));
@@ -1071,7 +921,7 @@ function applyEvent(view, event) {
       view.sources = sourcesOf(view);
       const n = note('cedar', 'Cedar', renderMarkdown(d.text), view);
       view.textNotes.push(n);
-      placeNote(view, n);
+      placeNote(view, n, event.created_at);
       view.stepsEl = null; // the next tool call starts a new run of steps, after this note
       setWorking(view, tr('v3.thinking'));
       break;
@@ -1095,42 +945,35 @@ function applyEvent(view, event) {
         if (tool.is_error) tool.open = true; // a failure is worth reading
         fillStep(tool);
         if (tool.stepId != null) view.planEl?.cedarPlan.mark(tool.stepId, tool.is_error ? 'error' : 'done');
-        renderSources(view);
+        view.sources = sourcesOf(view); // before the card is filled: a document cites them
         const wasHidden = tool.card.hidden;
-        const follow = nearEnd(els.stage, 240) || view === state.activeTurn;
+        const follow = nearEnd(scrollers.cards, 240) || view === state.activeTurn;
         fillCard(tool);
         if (wasHidden && !tool.card.hidden) placeCard(view, tool.card);
-        else if (follow && !tool.card.hidden) els.stage.scrollTop = els.stage.scrollHeight;
+        else if (follow && !tool.card.hidden) scrollers.cards.scrollTop = scrollers.cards.scrollHeight;
+        renderSources(view);
         // Questions for the user are a form in the conversation, closed if a later message answered them.
         const spec = tool.name === 'ask_user' && !tool.is_error && cedarClarify.parse(tool.output);
         if (spec) {
           const answered = state.order[state.order.length - 1] !== view.turn.id;
           const n = note('clarify', escapeHtml(tr('v3.cedarAsks')), '');
           n.lastChild.append(cedarClarify.element(spec, { answered, onSubmit: answerQuestions }));
-          placeNote(view, n);
+          placeNote(view, n, event.created_at);
           view.stepsEl = null;
         }
-        // A suggested follow-up is a card in the conversation, with the buttons that decide about it.
+        // A suggested follow-up is a card with the buttons that decide about it.
         const followUp = tool.name === 'suggest_follow_up' && !tool.is_error && cedarFollowUp.parse(tool.output);
-        if (followUp) {
-          const n = note('clarify', escapeHtml(tr('followup.suggests')), '');
-          n.lastChild.append(cedarFollowUp.element(followUp, { turnId: view.turn.id, callId: tool.id }));
-          placeNote(view, n);
-          view.stepsEl = null;
-        }
+        if (followUp) placeDecision(view, cedarFollowUp.element(followUp, { turnId: view.turn.id, callId: tool.id }), tr('followup.suggests'));
         // Something Cedar could not do offers to be sent as feedback; a call held for approval
         // instead of made shows what would go out, with the buttons that decide about it.
         const limitation = tool.name === 'report_limitation' && !tool.is_error && cedarHandover.limitation.parse(tool.output);
         const held = !limitation && !tool.is_error && cedarHandover.held.parse(tool.output);
         if (limitation || held) {
-          const n = note('clarify', escapeHtml(tr(limitation ? 'handover.limitation.heading' : 'handover.held.heading')), '');
-          n.lastChild.append(limitation ? cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: tool.id }) : cedarHandover.held.element(held));
-          placeNote(view, n);
-          // Once the reply is written this goes below it (see finishTurn), where it is seen.
-          if (limitation) (view.limitNotes ||= []).push(n);
-          view.stepsEl = null;
+          const card = limitation ? cedarHandover.limitation.element(limitation, { turnId: view.turn.id, callId: tool.id }) : cedarHandover.held.element(held);
+          // What Cedar couldn't do is brought into view once the reply is written (see closeTurn).
+          placeDecision(view, card, tr(limitation ? 'handover.limitation.heading' : 'handover.held.heading'), Boolean(limitation));
         }
-        // The images a call produced are shown on the stage once each, after the reply: see finishTurn.
+        // The images a call produced are shown once each, after the reply: see finishTurn.
         // A chart drawn as a card isn't shown again.
         if (!tool.is_error && !(tool.name === 'generate_chart' && cedarChart.parse(tool.output, tool.input))) {
           for (const path of cedarImages.produced(tool.name, tool.input, tool.output)) {
@@ -1164,7 +1007,8 @@ function finishTurn(view, event) {
   // notes are already in the column (a conversation's turns are replayed side by side).
   const anchor = view.workingEl;
   view.workingEl = null;
-  const put = (node) => (anchor?.isConnected ? els.notes.insertBefore(node, anchor) : els.notes.append(node));
+  view.endedAt = new Date(event.created_at || Date.now()).getTime();
+  const put = (node) => putClosing(view, node, anchor, event.created_at);
   const d = event.data || {};
   // Pictures the reply itself places, in its notes or in the document it wrote, are not shown again.
   const shown = new Set([...view.textNotes, view.group].flatMap((n) => [...cedarImages.shown(n)]));
@@ -1184,25 +1028,12 @@ function finishTurn(view, event) {
   for (const tool of view.tools) {
     if (tool.output === undefined) { Object.assign(tool, { output: '', is_error: true }); fillStep(tool); fillCard(tool); }
   }
-  // What Cedar couldn't do, with its buttons, belongs after what it says about it: left where
-  // the call was made, the answer written afterwards pushes it out of sight.
-  for (const n of view.limitNotes || []) put(n);
-  if (view.usage.input || view.usage.output) {
-    put(note('usage', '', cedarTrust.cost.text(view.usage)));
-  }
-  anchor?.remove();
-  view.planEl?.cedarPlan.finish(event.type === 'run.completed');
-  settleWork(view);
-  renderSources(view);
+  closeTurn(view, event, anchor, put);
   if (state.activeTurn === view) {
     state.activeTurn = null;
     // Watched to the end: not news. Hidden tabs leave it unread, for the inbox and the title.
     markSeen();
-    els.notes.scrollTop = els.notes.scrollHeight;
-    // Once the turn is over, the stage rests on the top of its main result: the document it wrote,
-    // else its map, recipe, trip or stock card; a turn of searches and commands stays at the end.
-    const main = view.tools.find((tool) => tool.card && cardKind(tool) === 'doc') || view.tools.find((tool) => tool.card && cardKind(tool) === 'widget');
-    if (main) main.card.scrollIntoView({ block: 'start' });
+    restOnResult(view);
   }
   view.lastEvent = event.type;
   updateChrome();
@@ -1218,15 +1049,6 @@ function hasCompletedTurn() {
     if (view.lastEvent === 'run.completed' || (!view.lastEvent && view.turn.status === 'completed')) return true;
   }
   return false;
-}
-
-/** 128,397 → "128K" in the page's language. */
-function compactNumber(n) {
-  try {
-    return new Intl.NumberFormat(cedarI18n.locale, { notation: 'compact', maximumFractionDigits: n < 10_000 ? 1 : 0 }).format(n);
-  } catch (e) {
-    return String(n);
-  }
 }
 
 function updateChrome() {
@@ -1250,20 +1072,13 @@ function updateChrome() {
     : latest ? (latest.lastEvent === 'run.failed' ? tr('v3.status.failed') : latest.lastEvent === 'run.cancelled' ? tr('v3.status.stopped') : tr('v3.status.done')) : tr('v3.status.idle');
   els.send.disabled = state.sending || busy || state.noModels || !els.input.value.trim();
   els.input.placeholder = state.noModels ? NO_MODELS()
-    : busy ? tr('v3.placeholder.busy') : c ? tr('v3.placeholder.reply') : tr('v3.placeholder.new');
+    : busy ? tr('v3.placeholder.busy') : tr(layout.key(c ? 'placeholder.reply' : 'placeholder.new'));
   const total = { input: 0, output: 0 };
   for (const view of state.views.values()) {
     total.input += view.usage.input; total.output += view.usage.output;
     if (typeof view.usage.cost_usd === 'number') total.cost_usd = (total.cost_usd || 0) + view.usage.cost_usd;
   }
-  // The bar shows a short total ("128K tokens"); the split and the price are in its tooltip and
-  // in More › Run details.
-  const used = c && (total.input || total.output);
-  const full = used ? cedarTrust.cost.text(total) : '';
-  els.cost.textContent = used ? tr('v3.tokensShort', { n: compactNumber(total.input + total.output) }) : '';
-  els.cost.title = full;
-  els.costFull.textContent = full;
-  els.runDetails.hidden = !c || !(full || els.when.textContent);
+  chromeChanged(c, total);
   // A private chat's title stays out of the tab and the browser's history.
   cedarNotify.setTitle(c?.private ? `${tr('private.title')} – Cedar` : c?.title ? `${c.title} – Cedar` : 'Cedar');
 }
@@ -1278,102 +1093,11 @@ function markSeen() {
   cedarNotify.seen(c.id);
 }
 
-// -- the two panes on a narrow screen ----------------------------------------------------------
-
-function setPane(pane) {
-  els.app.dataset.pane = pane;
-  if (pane === 'stage') state.unseen = 0;
-  updateTabs();
-}
-
-function updateTabs() {
-  for (const tab of els.tabs.querySelectorAll('.tab')) tab.setAttribute('aria-selected', String(tab.dataset.pane === els.app.dataset.pane));
-  els.stageBadge.hidden = !state.unseen;
-  els.stageBadge.textContent = state.unseen > 99 ? '99+' : String(state.unseen);
-}
-
-// -- the splitter ------------------------------------------------------------------------------
-
-const TALK_MIN = 300;
-const talkMax = () => Math.max(TALK_MIN, Math.min(720, window.innerWidth - 560));
-
-function setTalkWidth(px, save) {
-  const w = Math.round(Math.min(talkMax(), Math.max(TALK_MIN, px)));
-  document.documentElement.style.setProperty('--talk-w', `${w}px`);
-  if (save) storage('set', SPLIT_KEY, String(w));
-}
-
-function bindSplitter() {
-  const saved = Number(storage('get', SPLIT_KEY));
-  if (saved) setTalkWidth(saved, false);
-  let startX = 0;
-  let startW = 0;
-  els.splitter.addEventListener('pointerdown', (e) => {
-    startX = e.clientX;
-    startW = els.talk.getBoundingClientRect().width;
-    els.splitter.setPointerCapture(e.pointerId);
-    els.splitter.classList.add('active');
-    els.app.classList.add('resizing');
-  });
-  els.splitter.addEventListener('pointermove', (e) => {
-    if (!els.splitter.hasPointerCapture(e.pointerId)) return;
-    setTalkWidth(startW + e.clientX - startX, false);
-  });
-  const end = (e) => {
-    if (!els.splitter.hasPointerCapture(e.pointerId)) return;
-    els.splitter.releasePointerCapture(e.pointerId);
-    els.splitter.classList.remove('active');
-    els.app.classList.remove('resizing');
-    setTalkWidth(els.talk.getBoundingClientRect().width, true);
-  };
-  els.splitter.addEventListener('pointerup', end);
-  els.splitter.addEventListener('pointercancel', end);
-  els.splitter.addEventListener('dblclick', () => { document.documentElement.style.removeProperty('--talk-w'); storage('del', SPLIT_KEY); });
-  els.splitter.addEventListener('keydown', (e) => {
-    const step = e.key === 'ArrowLeft' ? -24 : e.key === 'ArrowRight' ? 24 : 0;
-    if (!step) return;
-    e.preventDefault();
-    setTalkWidth(els.talk.getBoundingClientRect().width + step, true);
-  });
-  window.addEventListener('resize', () => {
-    const w = parseInt(document.documentElement.style.getPropertyValue('--talk-w'), 10);
-    if (w && w > talkMax()) setTalkWidth(w, false);
-  });
-}
-
-// -- the conversations drawer ------------------------------------------------------------------
-
-function openDrawer() {
-  els.drawer.hidden = false;
-  els.backdrop.hidden = false;
-  els.chatsBtn.setAttribute('aria-expanded', 'true');
-  renderRecents();
-  (els.recents.querySelector('.conv.active') || els.recents.querySelector('.conv') || els.drawerClose).focus();
-}
-
-function closeDrawer() {
-  if (els.drawer.hidden) return;
-  els.drawer.hidden = true;
-  els.backdrop.hidden = true;
-  els.chatsBtn.setAttribute('aria-expanded', 'false');
-}
-
-/** The welcome screen's rail: the latest conversations, with when they were started. */
-function renderHomeRecents() {
-  els.homeRecents.textContent = '';
-  if (!state.conversations.length) { els.homeRecents.append(t('div', 'empty-list', tr('v3.homeEmpty'))); return; }
-  for (const c of state.conversations.slice(0, 6)) {
-    const a = h('a', 'home-conv');
-    a.href = `#/c/${c.id}`;
-    a.append(t('span', 'name', c.title || tr('v3.newChat')));
-    const when = c.created_at ? new Date(c.created_at).toLocaleDateString(cedarI18n.locale, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
-    a.append(t('span', 'sub', [c.schedule_id ? tr('agents.badge') : null, when].filter(Boolean).join(' · ')));
-    els.homeRecents.append(a);
-  }
-}
+// -- the conversations list ---------------------------------------------------------------------
+// (Opening and closing it is the layout's: a drawer in Ledger, a sidebar in Dossier.)
 
 function renderRecents() {
-  renderHomeRecents();
+  conversationsChanged();
   els.recents.textContent = '';
   if (!state.conversations.length) { els.recents.append(t('div', 'empty-list', tr('v3.noConversations'))); return; }
   for (const c of state.conversations) {
@@ -1406,10 +1130,7 @@ function resetView() {
   state.order = [];
   state.activeTurn = null;
   state.unseen = 0;
-  els.notes.textContent = '';
-  els.stageBody.textContent = '';
-  els.stageEmpty.hidden = false;
-  updateTabs();
+  clearTurns();
   if (els.filesDialog.open) els.filesDialog.close();
 }
 
@@ -1711,8 +1432,7 @@ els.filesBtn.addEventListener('click', openFiles);
 els.agentBtn.addEventListener('click', () => state.current && cedarAgents.newFrom(state.current, { model: els.model.value, reasoning: els.reasoning.value }));
 $('files-refresh').addEventListener('click', loadFiles);
 $('files-close').addEventListener('click', () => els.filesDialog.close());
-els.chatsBtn.addEventListener('click', () => (els.drawer.hidden ? openDrawer() : closeDrawer()));
-els.allChats.addEventListener('click', openDrawer);
+els.chatsBtn.addEventListener('click', () => (drawerOpen() ? closeDrawer() : openDrawer()));
 els.examples.addEventListener('click', (e) => {
   const ex = e.target.closest('.example');
   if (!ex) return;
@@ -1723,12 +1443,11 @@ els.examples.addEventListener('click', (e) => {
 });
 {
   const hour = new Date().getHours();
-  els.greeting.textContent = tr(hour < 12 ? 'v3.greeting.morning' : hour < 18 ? 'v3.greeting.afternoon' : 'v3.greeting.evening');
+  els.greeting.textContent = tr(layout.key(hour < 12 ? 'greeting.morning' : hour < 18 ? 'greeting.afternoon' : 'greeting.evening'));
 }
 els.drawerClose.addEventListener('click', closeDrawer);
 els.backdrop.addEventListener('click', closeDrawer);
 $('drawer-new').addEventListener('click', () => { closeDrawer(); if (!state.current) els.input.focus(); });
-els.tabs.addEventListener('click', (e) => { const tab = e.target.closest('.tab'); if (tab) setPane(tab.dataset.pane); });
 els.title.addEventListener('click', startRename);
 els.titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') finishRename(true); if (e.key === 'Escape') finishRename(false); });
 els.titleInput.addEventListener('blur', () => finishRename(true));
@@ -1739,9 +1458,9 @@ document.addEventListener('click', (e) => {
 window.addEventListener('hashchange', route);
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); location.hash = '#/'; }
-  if (e.key === 'Escape' && !els.drawer.hidden) { closeDrawer(); els.chatsBtn.focus(); }
+  if (e.key === 'Escape' && drawerOpen()) { closeDrawer(); els.chatsBtn.focus(); }
 });
-narrow.addEventListener('change', () => { if (!narrow.matches) { state.unseen = 0; updateTabs(); } });
+narrow.addEventListener('change', narrowChanged);
 
 async function init() {
   await cedarLanguage.ready; // a new browser is asked for its language before anything else
@@ -1770,8 +1489,7 @@ async function init() {
   });
   // The Private button goes after the paperclip; its note sits above the message box.
   cedarPrivate.init({ api, toast, form: els.composer, anchor: els.reasoning, before: els.input });
-  bindSplitter();
-  updateTabs();
+  bindLayout();
   try { state.config = await (await fetch('/api/config')).json(); } catch { toast(tr('v3.unreachable')); }
   sendMenu = cedarModels.sendMenu({ send: els.send, modelSelect: els.model, levelSelect: els.reasoning });
   cedarNotify.init({ api, authHeaders, toast, button: els.inboxBtn, current: () => state.current, onChange: () => { loadConversations(); cedarAgents.refresh(); } });

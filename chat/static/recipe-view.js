@@ -1,6 +1,6 @@
 'use strict';
 
-// Recipe display for cedar's `show_recipe` tool, shared by both UIs (/v1 and /v2). The tool's result
+// Recipe display for cedar's `show_recipe` tool, shared by every UI. The tool's result
 // is a JSON object, {"title", "description"?, "servings"?, "prep_time"?, "cook_time"?, "total_time"?,
 // "ingredients": [{"quantity"?, "item"}], "steps": [{"title"?, "text", "duration"?}], "tips"?: [text],
 // "image"?: {"url", "page_url", "title", "source"}}, and this turns it into a card: the photo of the

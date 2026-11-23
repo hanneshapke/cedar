@@ -1,6 +1,6 @@
 'use strict';
 
-// Map display for cedar's `show_map` tool, shared by both UIs (/v1 and /v2). The tool's result is a
+// Map display for cedar's `show_map` tool, shared by every UI. The tool's result is a
 // JSON object, {"title"?, "markers": [{"label", "latitude", "longitude"}], "not_found"?: [names]},
 // and this turns it into a card with a map, numbered pins, and a list of the places:
 //

@@ -1,6 +1,6 @@
 'use strict';
 
-// Clarifying questions for cedar's `ask_user` tool, shared by both UIs (/v1 and /v2). The tool's
+// Clarifying questions for cedar's `ask_user` tool, shared by every UI. The tool's
 // result is a JSON object, {"questions": [{"question", "header"?, "multi_select", "options":
 // [{"label", "description"?}]}], "note"}, and this turns it into a form: each question's options as
 // radio buttons (one answer) or checkboxes (multi_select), always with a free-form answer of the

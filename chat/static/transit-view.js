@@ -1,6 +1,6 @@
 'use strict';
 
-// Trip display for cedar's `plan_trip` tool, shared by both UIs (/v1 and /v2). The tool's result is a
+// Trip display for cedar's `plan_trip` tool, shared by every UI. The tool's result is a
 // JSON object, {"title"?, "from", "to", "depart_at"? | "arrive_by"?, "recommendation": {"mode",
 // "option", "reason"}, "options": [...], "unavailable"?: [{"mode", "reason"}], "attribution"}, and
 // this turns it into a card: the recommendation, a map of the chosen option's route, the options to
