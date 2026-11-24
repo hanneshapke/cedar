@@ -684,6 +684,30 @@ impl Inner {
                 event_kind: event::RUN_FAILED,
                 event_data: json!({ "error": message }),
             },
+            Err(AgentError::Refused { message, code, model_id }) => {
+                // Where to top up or reconnect: the refusing entry's account page.
+                let model_id = model_id.as_deref().unwrap_or(&run.model_id);
+                let account_url = self
+                    .env
+                    .integrations
+                    .models()
+                    .iter()
+                    .find(|m| m.id == model_id)
+                    .and_then(|m| m.account_url.clone());
+                Finish {
+                    status: RunStatus::Failed,
+                    final_text: None,
+                    stop_reason: None,
+                    error: Some(message),
+                    event_kind: event::RUN_FAILED,
+                    event_data: json!({
+                        "error": message,
+                        "error_code": code,
+                        "model_id": model_id,
+                        "account_url": account_url,
+                    }),
+                }
+            }
         };
 
         match self.store.finish_run(run.id, finish).await {

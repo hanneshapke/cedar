@@ -132,6 +132,14 @@ pub struct ModelSpec {
     /// `null` removes it.
     #[serde(default, deserialize_with = "present")]
     pub price: Option<Option<Price>>,
+    /// The service that registers the entry (`cedar-private-inference`). Absent keeps the saved
+    /// value; empty clears it.
+    #[serde(default)]
+    pub service: Option<String>,
+    /// Where the user tops up a service's credit (`https` only). Absent keeps the saved value;
+    /// empty clears it.
+    #[serde(default)]
+    pub account_url: Option<String>,
 }
 
 /// What an admin sends to see which models a server lists before registering one
@@ -512,7 +520,8 @@ impl Integrations {
             for entry in &entries {
                 let key = self.model_api_key(&entry.id).await;
                 let client = ChatCompletionsClient::new(entry.base_url.clone(), key)
-                    .with_context(|| format!("model {}", entry.id))?;
+                    .with_context(|| format!("model {}", entry.id))?
+                    .with_activation_grace(entry.activation_grace());
                 clients.insert(entry.id.clone(), Arc::new(client));
             }
             router.replace_all(clients);
@@ -583,6 +592,8 @@ impl Integrations {
                 listed_models: listed,
                 created_at: now,
                 updated_at: now,
+                service: None,
+                account_url: None,
             };
             self.store.upsert_model(&entry).await?;
             if let Some(key) = &api_key {
@@ -670,6 +681,24 @@ impl Integrations {
             Some(None) => None,
             None => existing.as_ref().and_then(|e| e.price),
         };
+        let service = match spec.service.as_deref().map(str::trim) {
+            Some("") => None,
+            Some(crate::models::PRIVATE_INFERENCE_SERVICE) => {
+                Some(crate::models::PRIVATE_INFERENCE_SERVICE.to_string())
+            }
+            Some(other) => {
+                return Err(AppError::BadRequest(format!("unknown service {other:?}")))
+            }
+            None => existing.as_ref().and_then(|e| e.service.clone()),
+        };
+        let account_url = match spec.account_url.as_deref().map(str::trim) {
+            Some("") => None,
+            Some(u) => match reqwest::Url::parse(u) {
+                Ok(parsed) if parsed.scheme() == "https" && u.len() <= 2048 => Some(u.to_string()),
+                _ => return Err(AppError::BadRequest("account_url must be an https URL".into())),
+            },
+            None => existing.as_ref().and_then(|e| e.account_url.clone()),
+        };
 
         let key_name = secrets::model_api_key(&id);
         let key = match spec.api_key.as_deref().map(str::trim) {
@@ -738,6 +767,8 @@ impl Integrations {
             listed_models: Some(listed),
             created_at: existing.as_ref().map_or(now, |e| e.created_at),
             updated_at: now,
+            service,
+            account_url,
         };
         let saved = self.store.upsert_model(&entry).await?;
         match (spec.api_key.as_deref(), &key) {

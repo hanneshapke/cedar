@@ -285,6 +285,8 @@ mod tests {
             listed_models: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            service: None,
+            account_url: None,
         }
     }
 

@@ -1873,9 +1873,9 @@ async fn the_registered_models_are_listed_to_any_key() {
         body,
         json!({ "models": [
             { "id": TEST_MODEL, "label": TEST_MODEL, "model": TEST_MODEL, "is_default": true,
-              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true, "video": false, "max_tokens": 16384, "context_window": null, "price": null },
+              "reasoning_levels": TEST_MODEL_LEVELS, "default_reasoning": null, "multimodal": true, "video": false, "max_tokens": 16384, "context_window": null, "price": null, "service": null, "account_url": null },
             { "id": "small", "label": "small", "model": "small-model", "is_default": false,
-              "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false, "video": false, "max_tokens": 16384, "context_window": null, "price": null },
+              "reasoning_levels": ["low"], "default_reasoning": null, "multimodal": false, "video": false, "max_tokens": 16384, "context_window": null, "price": null, "service": null, "account_url": null },
         ] , "model_selection": false })
     );
     let (_, defaults) = app.get("/v1/defaults", KEY_A).await;
@@ -2163,4 +2163,38 @@ async fn compaction_needs_a_finished_run_or_a_transcript() {
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     app.state.manager.cancel(Uuid::parse_str(&id).unwrap());
     app.wait_status(KEY_A, &id, "cancelled").await;
+}
+
+#[tokio::test]
+async fn a_model_out_of_credit_or_refusing_its_key_fails_the_run_with_a_code() {
+    for (status, body, code) in [
+        (
+            402,
+            r#"{"error":{"message":"Spend cap exceeded","code":"spend_cap_exceeded"}}"#,
+            "out_of_credit",
+        ),
+        (403, r#"{"error":{"message":"Forbidden","code":"forbidden"}}"#, "key_inactive"),
+    ] {
+        let app = TestApp::new(vec![Step::ApiError(status, body)]).await;
+        let id = id_of(&app.create_run(KEY_A, "x").await);
+        app.wait_status(KEY_A, &id, "failed").await;
+        let events = app.events(KEY_A, &id, None).await;
+        let failed = events.last().unwrap();
+        assert_eq!(failed.event, "run.failed");
+        let data = &failed.data["data"];
+        assert_eq!(data["error_code"], code, "{status}");
+        assert_eq!(data["model_id"], TEST_MODEL);
+        // The test model was set up by hand: no account page to link to.
+        assert_eq!(data["account_url"], Value::Null);
+        assert_eq!(app.llm.call_count(), 1, "neither is retried");
+    }
+
+    // Other failures carry no code.
+    let app = TestApp::new(vec![Step::ApiError(500, r#"{"error":{"message":"boom"}}"#)]).await;
+    let id = id_of(&app.create_run(KEY_A, "x").await);
+    app.wait_status(KEY_A, &id, "failed").await;
+    let events = app.events(KEY_A, &id, None).await;
+    let data = &events.last().unwrap().data["data"];
+    assert_eq!(data["error"], "LLM API error 500 Internal Server Error: boom");
+    assert!(data.get("error_code").is_none());
 }

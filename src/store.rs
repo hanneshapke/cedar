@@ -30,7 +30,7 @@ const NOTIFICATION_COLS: &str = "n.id, n.run_id, n.seq, r.status, r.stop_reason,
 const MODEL_COLS: &str =
     "id, label, model, base_url, reasoning_levels, default_reasoning, multimodal, video, max_tokens, \
     context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, position, listed_models, created_at, \
-    updated_at";
+    updated_at, service, account_url";
 
 pub(crate) fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
@@ -124,6 +124,8 @@ fn model_from_row(r: &SqliteRow) -> Result<ModelEntry> {
             .transpose()?,
         created_at: to_dt(r.try_get("created_at")?),
         updated_at: to_dt(r.try_get("updated_at")?),
+        service: r.try_get("service")?,
+        account_url: r.try_get("account_url")?,
     })
 }
 
@@ -1306,14 +1308,15 @@ impl Store {
         sqlx::query(
             "INSERT INTO models (id, label, model, base_url, reasoning_levels, default_reasoning, \
              multimodal, video, max_tokens, context_window, is_default, price_input_usd_per_m, price_output_usd_per_m, \
-             position, listed_models, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             position, listed_models, created_at, updated_at, service, account_url) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT (id) DO UPDATE SET label = excluded.label, model = excluded.model, \
              base_url = excluded.base_url, reasoning_levels = excluded.reasoning_levels, \
              default_reasoning = excluded.default_reasoning, multimodal = excluded.multimodal, video = excluded.video, \
              max_tokens = excluded.max_tokens, context_window = excluded.context_window, is_default = excluded.is_default, price_input_usd_per_m = excluded.price_input_usd_per_m, \
              price_output_usd_per_m = excluded.price_output_usd_per_m, listed_models = excluded.listed_models, \
-             updated_at = excluded.updated_at",
+             updated_at = excluded.updated_at, service = excluded.service, \
+             account_url = excluded.account_url",
         )
         .bind(&entry.id)
         .bind(&entry.label)
@@ -1338,6 +1341,8 @@ impl Store {
         )
         .bind(created_at)
         .bind(now)
+        .bind(&entry.service)
+        .bind(&entry.account_url)
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
