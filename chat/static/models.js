@@ -23,6 +23,12 @@
 //                                      nothing to pick (fewer than two models and no `blank`)
 //   fillLevels(select, modelId, selected) -> boolean   the reasoning picker; false when hidden
 //   bindPair(modelSelect, levelSelect) refill the levels when the model changes
+//   refusalNotice(data) -> Node[] | null
+//                                      what a `run.failed` event's data says the user can act
+//                                      on: a model out of credit (`error_code` `out_of_credit`,
+//                                      with a Top up link to `account_url`) or a key its server
+//                                      refused (`key_inactive`, with Settings -> Models to
+//                                      connect again); null for other failures
 //   sendMenu({send, modelSelect, levelSelect}) -> {refresh}
 //                                      the send button's menu: a label next to the button names
 //                                      the chosen model and level and opens a menu of the models
@@ -59,6 +65,39 @@ const cedarModels = (() => {
   const levelsFor = (id) => resolve(id)?.reasoning_levels || [];
   // While cedar chooses, an image goes to a model that takes images, if any does.
   const multimodal = (id) => (selection ? Boolean(resolve(id)?.multimodal) : list.some((m) => m.multimodal));
+
+  /** The registry's service of Cedar Private Inference's models. */
+  const PRIVATE_INFERENCE = 'cedar-private-inference';
+
+  function refusalNotice(d) {
+    const code = d?.error_code;
+    if (code !== 'out_of_credit' && code !== 'key_inactive') return null;
+    const service = byId(d.model_id)?.service === PRIVATE_INFERENCE || Boolean(d.account_url);
+    const text = document.createElement('span');
+    text.textContent = code === 'out_of_credit'
+      ? tr(service ? 'models.refused.credit' : 'models.refused.cap')
+      : tr(service ? 'models.refused.inactive' : 'models.refused.key');
+    const parts = [text];
+    const action = (label, onClick, href) => {
+      const a = document.createElement('a');
+      a.className = 'cedar-refusal-action';
+      a.textContent = label;
+      if (href) {
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noreferrer';
+      } else {
+        a.href = '#';
+        a.addEventListener('click', (e) => { e.preventDefault(); onClick(); });
+      }
+      parts.push(document.createTextNode(' '), a);
+    };
+    if (code === 'out_of_credit' && /^https?:\/\//.test(d.account_url || '')) action(tr('models.refused.topUp'), null, d.account_url);
+    if (code === 'key_inactive' && typeof cedarSettingsShell !== 'undefined') {
+      action(tr(service ? 'models.refused.reconnect' : 'models.refused.settings'), () => cedarSettingsShell.open('model'));
+    }
+    return parts;
+  }
 
   /** A reasoning level as shown: the common ones in the page's language, others as registered. */
   function levelName(level) {
@@ -235,5 +274,5 @@ const cedarModels = (() => {
     return { refresh };
   }
 
-  return { load, selectable, all, loaded, byId, defaultId, levelsFor, multimodal, levelName, fillSelect, fillLevels, bindPair, sendMenu };
+  return { load, selectable, all, loaded, byId, defaultId, levelsFor, multimodal, levelName, fillSelect, fillLevels, bindPair, sendMenu, refusalNotice };
 })();

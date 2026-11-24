@@ -18,6 +18,7 @@ mod macsetup;
 mod models;
 mod notify;
 mod paths;
+mod private;
 mod proc;
 mod pull;
 mod recorder;
@@ -91,6 +92,9 @@ fn main() {
             commands::cancel_llama,
             commands::remove_llama,
             commands::set_llama_experimental,
+            commands::connect_private_inference,
+            commands::cancel_private_inference,
+            commands::disconnect_private_inference,
             commands::set_browser,
             commands::set_computer,
             commands::open_chat,

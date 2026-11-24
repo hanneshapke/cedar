@@ -5267,3 +5267,86 @@ async fn a_private_conversation_nobody_ended_is_deleted_once_idle() {
     assert_eq!(*h.cedar.deleted.lock().unwrap(), [run_id]);
     assert_eq!(cedar_chat::private::sweep(&h.state).await.unwrap(), 0);
 }
+
+/// A cedar-plg that hands its grant over at the first poll, as if the user approved at once.
+async fn fake_private_inference() -> String {
+    use axum::routing::post;
+    let app = axum::Router::new()
+        .route(
+            "/api/connect/start",
+            post(|Json(body): Json<Value>| async move {
+                assert_eq!(body["client_name"], "Cedar at chat.example");
+                Json(json!({
+                    "user_code": "NHKK-KZGJ", "verification_uri": "http://plg.test/connect",
+                    "verification_uri_complete": format!("http://plg.test/connect?challenge={}", body["challenge"].as_str().unwrap()),
+                    "expires_in": 900, "interval": 0,
+                }))
+            }),
+        )
+        .route(
+            "/api/connect/poll",
+            post(|| async {
+                Json(json!({
+                    "base_url": "https://api.doubleword.ai/v1", "api_key": "sk-granted", "provider": "doubleword",
+                    "models": [
+                        { "id": "kimi-k3.1-pro", "name": "Kimi K3.1 Pro 2.8T", "role": "large", "params_b": 2800 },
+                        { "id": "deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash 120B", "role": "small", "params_b": 120 },
+                    ],
+                    "account_url": "http://plg.test/account",
+                }))
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn cedar_private_inference_is_connected_from_settings_and_its_models_registered() {
+    // Only this test sets it, in this test binary.
+    std::env::set_var("CEDAR_PRIVATE_INFERENCE_URL", fake_private_inference().await);
+    let h = Harness::new(&[("CHAT_ACCESS_TOKEN", "access"), ("CHAT_ADMIN_TOKEN", "admin"), ("CHAT_MODELS_ACCESS", "admins"), ("CHAT_PUBLIC_URL", "https://chat.example")]).await;
+    let (status, _) = admin_call(&h, Method::POST, "/api/integrations/private-inference/connect", None, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "like the other model routes");
+
+    let (status, got) = admin_call(&h, Method::GET, "/api/integrations/private-inference", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(got, json!({ "available": true, "connect": { "state": "idle" } }));
+    let (status, started) = admin_call(&h, Method::POST, "/api/integrations/private-inference/connect", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::OK, "{started}");
+    assert_eq!(started["state"], "waiting");
+    assert_eq!(started["user_code"], "NHKK-KZGJ");
+    assert!(started["url"].as_str().unwrap().starts_with("http://plg.test/connect?challenge="));
+
+    // The server polls (the first poll waits a second) and registers both models.
+    let mut connect = Value::Null;
+    for _ in 0..100 {
+        connect = admin_call(&h, Method::GET, "/api/integrations/private-inference", Some("admin"), None).await.1["connect"].clone();
+        if connect["state"] == "connected" || connect["state"] == "failed" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(connect["state"], "connected", "{connect}");
+    let calls = h.cedar.admin_calls.lock().unwrap().clone();
+    let puts: Vec<_> = calls.iter().filter(|(r, _)| r.starts_with("put_model:")).collect();
+    assert_eq!(puts.iter().map(|(r, _)| r.as_str()).collect::<Vec<_>>(), ["put_model:private-small", "put_model:private-large"]);
+    assert_eq!(
+        puts[0].1,
+        json!({ "base_url": "https://api.doubleword.ai/v1", "model": "deepseek-v4.1-flash", "label": "DeepSeek V4.1 Flash 120B",
+                "api_key": "sk-granted", "service": "cedar-private-inference", "account_url": "http://plg.test/account",
+                "detect_images": true, "is_default": true })
+    );
+    assert_eq!(puts[1].1["label"], "Kimi K3.1 Pro 2.8T");
+    assert!(puts[1].1.get("is_default").is_none());
+
+    // Disconnect removes both.
+    let (status, _) = admin_call(&h, Method::DELETE, "/api/integrations/private-inference", Some("admin"), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let calls = h.cedar.admin_calls.lock().unwrap().clone();
+    let deletes: Vec<_> = calls.iter().map(|(r, _)| r.as_str()).filter(|r| r.starts_with("delete_model:")).collect();
+    assert_eq!(deletes, ["delete_model:private-small", "delete_model:private-large"]);
+    let (_, got) = admin_call(&h, Method::GET, "/api/integrations/private-inference", Some("admin"), None).await;
+    assert_eq!(got["connect"]["state"], "idle");
+}

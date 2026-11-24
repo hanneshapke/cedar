@@ -170,6 +170,26 @@ pub async fn remove_llama(app: AppHandle) -> Result<(), String> {
     crate::llamasetup::remove(app).await.map_err(fail)
 }
 
+/// Connects Cedar Private Inference: gets a code from the service and opens the page where the
+/// user approves it. The page follows along in `private_inference.connect`; once approved, its
+/// models are registered and the small one becomes the default.
+#[tauri::command]
+pub async fn connect_private_inference(app: AppHandle) -> Result<(), String> {
+    crate::private::connect(app).await.map_err(fail)
+}
+
+/// Stops waiting for the approval.
+#[tauri::command]
+pub fn cancel_private_inference(app: AppHandle) {
+    crate::private::cancel(&app);
+}
+
+/// Removes Cedar Private Inference's models from cedar and forgets the key on this computer.
+#[tauri::command]
+pub async fn disconnect_private_inference(app: AppHandle) -> Result<(), String> {
+    crate::private::disconnect(app).await.map_err(fail)
+}
+
 /// Turns the browser tool on or off; on pulls its image and restarts cedar with `BROWSER=on`.
 #[tauri::command]
 pub fn set_browser(app: AppHandle, enabled: bool) -> Result<(), String> {

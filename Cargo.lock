@@ -371,6 +371,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
+ "cedar-private-inference",
  "chacha20poly1305",
  "chrono",
  "chrono-tz",
@@ -407,6 +408,7 @@ dependencies = [
  "base64 0.22.1",
  "cedar-contrib-schema",
  "cedar-pairing",
+ "cedar-private-inference",
  "chrono",
  "chrono-tz",
  "futures-util",
@@ -497,6 +499,23 @@ dependencies = [
  "qrcode",
  "serde",
  "serde_json",
+ "url",
+]
+
+[[package]]
+name = "cedar-private-inference"
+version = "0.12.1"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "rand 0.8.8",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
  "url",
 ]
 

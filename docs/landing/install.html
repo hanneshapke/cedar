@@ -227,9 +227,19 @@ ol.setup strong{color:var(--ink);font-weight:600}
     if (s.os === 'linux') return s.arch === 'x64' ? 'gpu' : 'arm';
     return '';
   }
+  // Cedar Private Inference's address. Empty until the service is open to everyone: the guide
+  // offers it only with one, as the apps do (cedar_private_inference::PRODUCTION_URL).
+  const PRIVATE_INFERENCE = '';
+  // A referral code from the guide's address (?ref=), kept in it and handed to the service's
+  // sign-up page, which takes it as its own ?ref=.
+  const REF = (() => {
+    const ref = new URLSearchParams(location.search).get('ref') || '';
+    return /^[A-Za-z0-9_-]{1,64}$/.test(ref) ? ref : '';
+  })();
+
   // The answers that are not rows of the picker: they are chosen in "Your model".
   const CHOICES = {
-    model: ['cedar', 'hosted', 'own'], provider: ['doubleword', 'baseten', 'nebius', 'other'],
+    model: ['cedar', 'private', 'hosted', 'own'], provider: ['doubleword', 'baseten', 'nebius', 'other'],
     serve: ['llamacpp', 'lmstudio', 'ollama', 'vllm'],
   };
 
@@ -334,6 +344,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
       if (s.model === 'hosted' && state.provider) q.set('provider', state.provider);
       if (s.model === 'own' && state.serve) q.set('serve', state.serve);
     }
+    if (REF) q.set('ref', REF);
     const qs = q.toString();
     history.replaceState(null, '', (qs ? '?' + qs : location.pathname) + location.hash);
   }
@@ -372,6 +383,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const plan = cedarPlan(s);
     if (remote(s)) { /* its model is the other computer's */ }
     else if (s.model === 'cedar' && plan.model) chips.push(`<span class="chip done">${tr('install.chip.cedar', { model: esc(MODELS[plan.model].name) })}</span>`);
+    else if (s.model === 'private') chips.push(`<span class="chip done">${tr('install.chip.private')}</span>`);
     else if (s.model === 'hosted') chips.push(`<span class="chip done">${tr('install.chip.hostedModel', { provider: !s.provider || s.provider === 'other' ? tr('install.chip.anotherProvider') : PROVIDERS[s.provider].name })}</span>`);
     else if (s.model === 'own') chips.push(`<span class="chip done">${tr('install.chip.ownModel', { server: SERVERS[s.serve || 'llamacpp'].name })}</span>`);
     else chips.push(`<span class="chip todo">${tr('install.chip.pickModel')}</span>`);
@@ -543,22 +555,23 @@ ol.setup strong{color:var(--ink);font-weight:600}
     return list ? list.text.map((id) => MODELS[id]) : [];
   }
 
-  // Which of the three to suggest: Cedar's own where it can run a model that does the work well,
-  // a server of one's own on the two machines that come with their own way (vLLM on a Spark,
-  // Ollama on a Jetson), and a provider otherwise. '' while the page cannot tell yet. The page
-  // starts with this one selected.
+  // Which way to suggest: Cedar's own where it can run a model that does the work well, a server
+  // of one's own on the two machines that come with their own way (vLLM on a Spark, Ollama on a
+  // Jetson), and Cedar Private Inference otherwise (a provider, while the service isn't open).
+  // '' while the page cannot tell yet. The page starts with this one selected.
   function recommended(s) {
     const plan = cedarPlan(s);
     if (plan.model && !plan.small) return 'cedar';
     if (s.mem === 'spark' || s.mem === 'jetson') return 'own';
-    return plan.no === 'os' || plan.no === 'pickMem' ? '' : 'hosted';
+    if (plan.no === 'os' || plan.no === 'pickMem') return '';
+    return PRIVATE_INFERENCE ? 'private' : 'hosted';
   }
 
   // The answers as the step builders read them: the recommended way where none was clicked (or
   // the clicked one is not possible here), and the defaults of a way filled in.
   function view(state) {
     const s = { ...state };
-    if (!s.model || (s.model === 'cedar' && !cedarPlan(s).model)) s.model = recommended(s);
+    if (!s.model || (s.model === 'cedar' && !cedarPlan(s).model) || (s.model === 'private' && !PRIVATE_INFERENCE)) s.model = recommended(s);
     if (s.model === 'own') {
       if (!s.serve) s.serve = s.mem === 'spark' ? 'vllm' : s.mem === 'jetson' ? 'ollama' : 'llamacpp';
     }
@@ -584,10 +597,13 @@ ol.setup strong{color:var(--ink);font-weight:600}
     const ways = [
       { id: 'cedar', title: tr('install.way.cedar'), what: tr('install.way.cedarWhat'), off: !plan.model,
         verdict: plan.model ? tr('install.way.cedarYes', { model: MODELS[plan.model].name, gb: CEDAR_GB[plan.model] }) : tr('install.cedar.no.' + plan.no) },
+      PRIVATE_INFERENCE && { id: 'private', title: tr('install.way.private'), what: tr('install.way.privateWhat'), verdict: tr('install.way.privateYes') },
       { id: 'hosted', title: tr('install.way.hosted'), what: tr('install.way.hostedWhat'), verdict: tr('install.way.hostedYes') },
       { id: 'own', title: tr('install.way.own'), what: tr('install.way.ownWhat'),
         verdict: picks(s).length ? tr('install.way.ownYes', { model: picks(s)[0].name }) : tr('install.way.ownAny') },
-    ];
+    ].filter(Boolean);
+    // Four ways where the service is open, three otherwise.
+    document.getElementById('model-lede').textContent = tr(PRIVATE_INFERENCE ? 'install.model.ledeFour' : 'install.model.lede');
     const cards = ways.map((w, i) => `<button type="button" class="way" data-way="${w.id}" aria-pressed="${s.model === w.id}"${w.off ? ' disabled' : ''}>
         <span class="way-num">${i + 1}</span>
         <span class="way-title">${esc(w.title)}</span>
@@ -606,6 +622,12 @@ ol.setup strong{color:var(--ink);font-weight:600}
         <p>${tr(s.os === 'linux' ? 'install.panel.cedarLinux' : 'install.panel.cedar')}</p>
         ${card(m, true, plan.small ? `<p class="note">${tr('install.panel.small', { model: esc(m.name) })}</p>` : '', CEDAR_GB[plan.model])}
         <p class="note">${tr('install.panel.cedarOther')}</p>
+      </div>`;
+    }
+    if (s.model === 'private') {
+      return `<div class="way-panel">
+        <p>${tr('install.panel.private')}</p>
+        ${REF ? `<p>${tr('install.panel.privateRef', { url: esc(signUpUrl()) })}</p>` : ''}
       </div>`;
     }
     if (s.model === 'hosted') {
@@ -697,14 +719,20 @@ ol.setup strong{color:var(--ink);font-weight:600}
       keyHow: tr('install.provider.otherKey') },
   };
 
+  // The service's sign-up page, with the referral code the guide was opened with.
+  function signUpUrl() {
+    return PRIVATE_INFERENCE + '/' + (REF ? '?ref=' + encodeURIComponent(REF) : '');
+  }
+
   // What to choose in the setup window's model step (Mac and Windows) for the answers given.
   function modelChoice(s) {
     if (cedarServes(s)) return SERVERS.cedar.pick;
+    if (s.model === 'private') return tr('install.pick.private');
     if (s.model === 'own' && s.serve === 'vllm') return tr('install.pick.vllmNew');
     if (s.model === 'own' && s.serve) return tr('install.pick.presetNew', { name: SERVERS[s.serve].name });
     if (s.model === 'hosted' && s.provider === 'other') return tr('install.pick.providerOtherNew', { address: esc(PROVIDERS.other.addr) });
     if (s.model === 'hosted' && s.provider) return tr('install.pick.providerNew', { name: PROVIDERS[s.provider].name });
-    return tr('install.pick.anyNew');
+    return tr(PRIVATE_INFERENCE ? 'install.pick.anyNewFour' : 'install.pick.anyNew');
   }
 
   // "Let Cedar do it" was chosen, on a system where Cedar can.
@@ -729,6 +757,7 @@ ol.setup strong{color:var(--ink);font-weight:600}
       : `<p class="note">${tr('install.model.laterSetup', { choice: modelChoice(s) })}</p>`;
     const toolsNote = `<p class="note">${tr('install.model.toolsNote')}</p>`;
     if (cedarServes(s)) return cedarStep(s);
+    if (s.model === 'private') return privateStep(s);
     if (s.model === 'hosted') return providerStep(s, inSetup);
     if (s.model === 'own') {
       if (s.serve === 'ollama') return ollamaStep(s, shell, inSetup, toolsNote);
@@ -753,6 +782,18 @@ ol.setup strong{color:var(--ink);font-weight:600}
     }
     return step(tr('install.cedar.title'), `<p>${tr('install.cedar.body', what)}</p>
       <p class="note">${tr('install.model.laterSetup', { choice: modelChoice(s) })}</p>`, 'ok');
+  }
+
+  // Cedar Private Inference: nothing to install. The setup window (or Settings, or the CLI on a
+  // server) connects; the browser approves. On Linux it comes after the servers run.
+  function privateStep(s) {
+    const invited = REF ? `<p class="note">${tr('install.panel.privateRef', { url: esc(signUpUrl()) })}</p>` : '';
+    if (s.os === 'linux') {
+      return step(tr('install.private.title'), `<p>${tr('install.private.linux')}</p>
+        ${code("sudo sh -c 'set -a; . /etc/cedar/cedar.env; cedar private-inference connect'", 'Terminal')}
+        <p class="note">${tr('install.private.linuxNote')}</p>${invited}`);
+    }
+    return step(tr('install.private.title'), `<p>${tr('install.private.body')}</p>${invited}`, 'ok');
   }
 
   // llama.cpp run by hand: install it, then one command fetches the model and serves it.
@@ -990,7 +1031,8 @@ ol.setup strong{color:var(--ink);font-weight:600}
         ${code('curl -fsSL https://get.docker.com | sh\nsudo usermod -aG docker "$USER"   # then log out and back in\ndocker info --format \'{{.ServerVersion}}\'', 'Terminal')}
         <p class="note">${tr('install.linux.engineNote')}</p>`));
     }
-    if (!cedarServes(s)) steps.push(modelStep(s));
+    // Cedar Private Inference connects to the running cedar: after the servers, below.
+    if (!cedarServes(s) && s.model !== 'private') steps.push(modelStep(s));
     steps.push(step(tr('install.linux.installTitle', { arch }), `<p>${tr('install.linux.install')}</p>
       ${code(`V=${V}\nF=Cedar-$V-linux-${arch}\nU=https://github.com/hanneshapke/cedar/releases/download\ncurl -fLO $U/v$V/$F.tar.gz\ntar -xzf $F.tar.gz\nsudo install -m 0755 $F/cedar $F/cedar-chat /usr/local/bin/\n\n# the sealed box the agent's tools run in\ndocker pull ghcr.io/hanneshapke/cedar-sandbox:$V\ndocker tag ghcr.io/hanneshapke/cedar-sandbox:$V cedar-sandbox:latest`, 'Terminal')}
       <p class="note">${arch === 'arm64' ? tr('install.linux.spark') : ''}${tr('install.linux.fromSource')}</p>`));
@@ -1003,9 +1045,10 @@ ol.setup strong{color:var(--ink);font-weight:600}
       ${code(`sudo tee /etc/systemd/system/cedar.service >/dev/null <<'EOF'\n[Unit]\nDescription=cedar agent server\nAfter=network-online.target docker.service\nWants=network-online.target\nRequires=docker.service\n\n[Service]\nUser=cedar\nGroup=cedar\nEnvironmentFile=/etc/cedar/cedar.env\nWorkingDirectory=/var/lib/cedar\nExecStart=/usr/local/bin/cedar\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=30\n\n[Install]\nWantedBy=multi-user.target\nEOF\n\nsudo tee /etc/systemd/system/cedar-chat.service >/dev/null <<'EOF'\n[Unit]\nDescription=cedar chat UI\nAfter=network-online.target cedar.service\nWants=cedar.service\n\n[Service]\nUser=cedar\nGroup=cedar\nEnvironmentFile=/etc/cedar/chat.env\nWorkingDirectory=/var/lib/cedar\nExecStart=/usr/local/bin/cedar-chat\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target\nEOF`, 'Terminal')}
       </details>
       ${code('sudo systemctl daemon-reload\nsudo systemctl enable --now cedar cedar-chat\ncurl -s -o /dev/null -w \'%{http_code}\\n\' http://127.0.0.1:8080/readyz   # 200', 'Terminal')}`));
+    if (s.model === 'private') steps.push(modelStep(s));
     steps.push(step(tr('install.linux.chatTitle'), `<p>${tr('install.linux.chatOpen')}</p>
       ${code('ssh -N -L 3000:127.0.0.1:3000 <you>@<server>', tr('install.shell.laptop'))}
-      <p>${tr(s.model === 'hosted' ? 'install.linux.chatModelKey' : s.serve === 'vllm' ? 'install.linux.chatModelGpu' : 'install.linux.chatModel', { address: esc(modelAddress(s)) })}</p>`));
+      <p>${s.model === 'private' ? tr('install.linux.chatPrivate') : tr(s.model === 'hosted' ? 'install.linux.chatModelKey' : s.serve === 'vllm' ? 'install.linux.chatModelGpu' : 'install.linux.chatModel', { address: esc(modelAddress(s)) })}</p>`));
     steps.push(step(tr('install.linux.updatesTitle'), `<p>${tr('install.linux.updates')}</p>
       ${code(`V=${V}\nF=Cedar-$V-linux-${arch}\nsudo install -m 0755 $F/cedar-update /usr/local/sbin/cedar-update\nsudo install -m 0644 $F/cedar-update.path $F/cedar-update.service /etc/systemd/system/\nsudo install -d -o cedar -g cedar -m 0750 /var/lib/cedar/update\necho "CHAT_UPDATE_DIR=/var/lib/cedar/update" | sudo tee -a /etc/cedar/chat.env\n\n# also pull the matching sealed box with each update\necho "CEDAR_UPDATE_PULL_IMAGE=1" | sudo tee /etc/cedar/update.env\n\nsudo systemctl daemon-reload\nsudo systemctl enable --now cedar-update.path\nsudo systemctl restart cedar-chat`, 'Terminal')}
       <p class="note">${tr('install.linux.updatesNote', { url: LINUX + '#updates' })}</p>`, 'optional', tr('install.tag.optional')));

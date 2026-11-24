@@ -87,11 +87,38 @@ pub struct Completion {
 pub enum AgentError {
     Cancelled,
     Failed(String),
+    /// The model's server refused in a way the user can act on: `code` is `out_of_credit` or
+    /// `key_inactive` (see [`crate::llm::failure_code`]), the `error_code` of `run.failed`.
+    Refused {
+        message: String,
+        code: &'static str,
+        /// The registered model that refused, when known (else the run's).
+        model_id: Option<String>,
+    },
 }
 
 impl From<anyhow::Error> for AgentError {
     fn from(e: anyhow::Error) -> Self {
-        AgentError::Failed(format!("{e:#}"))
+        match crate::llm::failure_code(&e) {
+            Some(code) => AgentError::Refused {
+                message: format!("{e:#}"),
+                code,
+                model_id: None,
+            },
+            None => AgentError::Failed(format!("{e:#}")),
+        }
+    }
+}
+
+/// A failed call to the registered model `model_id`, as the run's error.
+fn model_failure(e: anyhow::Error, model_id: &str) -> AgentError {
+    match AgentError::from(e) {
+        AgentError::Refused { message, code, .. } => AgentError::Refused {
+            message,
+            code,
+            model_id: Some(model_id.to_string()),
+        },
+        other => other,
     }
 }
 
@@ -450,7 +477,9 @@ pub async fn run_agent(
                 messages: sent,
             };
             let started = Instant::now();
-            let resp = call_model(env, run, llm.as_ref(), &req, trace::AGENT, turn, cancel).await??;
+            let resp = call_model(env, run, llm.as_ref(), &req, trace::AGENT, turn, cancel)
+                .await?
+                .map_err(|e| model_failure(e, &run.model_id))?;
             // The smallest model reached for a complex tool: the turn is asked again of the
             // biggest (below), and nothing of this reply is shown.
             let dropped = on_small && calls_complex_tool(&resp);

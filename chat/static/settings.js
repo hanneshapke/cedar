@@ -1191,10 +1191,99 @@ const cedarSettings = (() => {
     };
   }
 
+  /** The registry's service of Cedar Private Inference's two models. */
+  const PRIVATE_INFERENCE = 'cedar-private-inference';
+
+  /** `{available, connect}` from this server, or null when it can't say. */
+  async function privateInferenceStatus() {
+    try { return await adminApi('GET', '/integrations/private-inference'); } catch { return null; }
+  }
+
+  /**
+   * Connecting Cedar Private Inference from here: Connect gets a code from the service, which the
+   * user approves on its page in any browser (this one, or one on another machine); the server
+   * waits for the approval and registers the two models. The form follows along until it is
+   * done, and says why when it fails, with Try again.
+   */
+  function privateInferenceForm(onDone) {
+    const form = el('div', 'cedar-set-inline cedar-set-endpoint cedar-set-private');
+    const state = el('div', 'cedar-set-private-state');
+    const connect = button(tr('settings.private.connect'), () => start(), 'primary');
+    const cancel = button(tr('settings.cancel'), async () => {
+      try { await adminApi('DELETE', '/integrations/private-inference/connect'); } catch { /* nothing to stop */ }
+      onDone();
+    });
+    form.append(note(tr('settings.private.about')), state, connect, cancel);
+    let timer = null;
+    const show = (c) => {
+      state.replaceChildren();
+      connect.hidden = c.state === 'waiting' || c.state === 'registering';
+      connect.textContent = tr(c.state === 'failed' ? 'settings.private.retry' : 'settings.private.connect');
+      if (c.state === 'waiting') {
+        const code = el('p', 'cedar-set-code', c.user_code);
+        const link = el('a', '', tr('settings.private.openPage'));
+        link.href = c.url;
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        const where = note('');
+        where.append(link);
+        state.append(note(tr('settings.private.code')), code, where);
+      } else if (c.state === 'registering') {
+        state.append(note(tr('settings.private.registering')));
+      } else if (c.state === 'failed') {
+        const reason = ['denied', 'expired', 'unreachable', 'unavailable'].includes(c.reason) ? c.reason : 'error';
+        state.append(note(tr(`settings.private.failed.${reason}`, { error: c.error || '' }), 'cedar-set-error'));
+      }
+    };
+    const follow = async () => {
+      if (!form.isConnected) { clearInterval(timer); return; }
+      const got = await privateInferenceStatus();
+      const c = got?.connect;
+      if (!c) return;
+      show(c);
+      if (c.state === 'connected') {
+        clearInterval(timer);
+        deps.toast(tr('settings.private.connected', { models: (c.models || []).join(', ') }));
+        await modelsChanged();
+        onDone();
+        refreshModels();
+      } else if (c.state !== 'waiting' && c.state !== 'registering') {
+        clearInterval(timer);
+      }
+    };
+    const start = async () => {
+      connect.disabled = true;
+      try {
+        const c = await adminApi('POST', '/integrations/private-inference/connect');
+        show(c);
+        if (c.state === 'waiting') {
+          // A click's own window, where the browser allows it; the link stays for when it doesn't.
+          window.open(c.url, '_blank', 'noreferrer');
+          clearInterval(timer);
+          timer = setInterval(follow, 2000);
+        }
+      } catch (e) {
+        show({ state: 'failed', reason: 'error', error: e.message });
+      } finally {
+        connect.disabled = false;
+      }
+    };
+    // One started earlier (another tab, a reload) is picked up where it is.
+    privateInferenceStatus().then((got) => {
+      const c = got?.connect;
+      if (c && (c.state === 'waiting' || c.state === 'registering')) {
+        show(c);
+        timer = setInterval(follow, 2000);
+      }
+    });
+    return form;
+  }
+
   /**
    * What "Add a model" opens: run one here with llama.cpp (the desktop app does that, on its
-   * setup page), use a hosted provider, or use a model server that already runs. The last two
-   * open the form under the options. `onDone` closes it all.
+   * setup page), Cedar Private Inference (in the desktop app, on its setup page too), use a
+   * hosted provider, or use a model server that already runs. The last three open their form
+   * under the options. `onDone` closes it all.
    */
   async function modelChooser(status, entries, onDone) {
     const servers = await modelServers();
@@ -1221,6 +1310,22 @@ const cedarSettings = (() => {
     const llama = llamaOption(entries);
     const llamaCard = card(tr('settings.add.llama'), llama.text, () => { window.location.href = SETUP_MODEL_PATH; });
     llamaCard.disabled = !llama.available;
+    // Where this server knows the service. In the desktop app the app keeps the key and the
+    // entries, so its setup page connects; anywhere else this server does.
+    const pi = await privateInferenceStatus();
+    if (pi?.available) {
+      const piCard = card(tr('settings.add.private'), tr('settings.add.privateText'), (b) => {
+        if (inDesktopApp()) { window.location.href = SETUP_MODEL_PATH; return; }
+        form?.remove();
+        cancel.remove();
+        for (const other of cards.children) other.classList.toggle('open', other === b);
+        form = privateInferenceForm(onDone);
+        wrap.append(form);
+        form.querySelector('button')?.focus();
+      });
+      // First where llama.cpp can't run here, as on the setup page.
+      if (!llama.available) cards.prepend(piCard);
+    }
     card(tr('settings.add.hosted'), tr('settings.add.hostedText'), open('hosted'));
     card(tr('settings.add.own'), tr('settings.add.ownText'), open('own'));
     wrap.append(cards, cancel);
@@ -1332,6 +1437,8 @@ const cedarSettings = (() => {
     // of the registry alone, its server would keep running and the entry come back.
     const runByApp = entry.id === LLAMA_ID && inDesktopApp();
     if (runByApp) side.append(badge(tr('settings.models.runByCedar')));
+    const privateEntry = entry.service === PRIVATE_INFERENCE;
+    if (privateEntry) side.append(badge(tr('settings.add.private')));
     if (entry.is_default) side.append(badge(tr('settings.models.default'), 'ok'));
     if (entry.api_key_set) side.append(badge(tr('settings.models.keySet')));
     if (entry.multimodal) side.append(badge(tr('settings.models.images')));
@@ -1379,7 +1486,22 @@ const cedarSettings = (() => {
         } catch (err) { deps.toast(err.message); }
       }));
     }
-    if (!runByApp) side.append(button(tr('settings.remove'), async () => {
+    // Cedar Private Inference's two models go together: Disconnect removes both. In the desktop
+    // app, which keeps the key, its setup page does that.
+    if (privateEntry) {
+      if (/^https?:\/\//.test(entry.account_url || '')) {
+        side.append(button(tr('settings.private.account'), () => window.open(entry.account_url, '_blank', 'noreferrer')));
+      }
+      if (inDesktopApp()) side.append(button(tr('settings.models.manage'), () => { window.location.href = SETUP_MODEL_PATH; }));
+      else side.append(button(tr('settings.private.disconnect'), async () => {
+        if (!(await cedarConfirm(tr('settings.private.confirmDisconnect'), { ok: tr('settings.private.disconnect') }))) return;
+        try {
+          await adminApi('DELETE', '/integrations/private-inference');
+          await modelsChanged();
+          refreshModels();
+        } catch (err) { deps.toast(err.message); }
+      }));
+    } else if (!runByApp) side.append(button(tr('settings.remove'), async () => {
       if (!(await cedarConfirm(tr('settings.models.confirmRemove', { name: entry.label || entry.id }), { ok: tr('settings.remove') }))) return;
       try {
         await adminApi('DELETE', `/integrations/models/${encodeURIComponent(entry.id)}`);

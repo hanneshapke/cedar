@@ -1,0 +1,25 @@
+[package]
+name = "cedar-private-inference"
+version.workspace = true
+edition = "2021"
+description = "Connecting Cedar to Cedar Private Inference: the connect flow that hands over a key and models"
+license = "Apache-2.0"
+
+# Shared by the desktop app (its model step), cedar-chat (Settings -> Models) and the `cedar` CLI,
+# so all three speak the same contract with the service. Only the hand-off goes through the
+# service; prompts go from Cedar to the provider's `base_url` directly.
+[dependencies]
+base64 = "0.22"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["time"] }
+tracing = "0.1"
+url = "2"
+
+[dev-dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }

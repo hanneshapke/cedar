@@ -451,6 +451,7 @@ dependencies = [
  "block2",
  "cedar-llama",
  "cedar-pairing",
+ "cedar-private-inference",
  "futures-util",
  "hex",
  "libc",
@@ -501,6 +502,22 @@ dependencies = [
  "qrcode",
  "serde",
  "serde_json",
+ "url",
+]
+
+[[package]]
+name = "cedar-private-inference"
+version = "0.12.1"
+dependencies = [
+ "base64 0.22.1",
+ "rand 0.8.8",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
  "url",
 ]
 

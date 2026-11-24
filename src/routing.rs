@@ -43,11 +43,11 @@ pub async fn set_selection(store: &Store, on: bool) -> Result<()> {
         .await
 }
 
-/// The parameter count in `name`, in billions: `7b`, `1.5B`, `270m`, `E4B` (Gemma's effective
-/// count) or `8x7b` (a mixture of experts), standing as a word of its own between separators.
-/// The largest wins when a name has several (`Qwen3-30B-A3B`). `None` when the name has none;
-/// quantization (`Q4_K_M`, `4bit`), context sizes (`4k`) and versions (`v4`, `3.5`) are not
-/// counts.
+/// The parameter count in `name`, in billions: `7b`, `1.5B`, `270m`, `2.8T`, `E4B` (Gemma's
+/// effective count) or `8x7b` (a mixture of experts), standing as a word of its own between
+/// separators. The largest wins when a name has several (`Qwen3-30B-A3B`). `None` when the name
+/// has none; quantization (`Q4_K_M`, `4bit`), context sizes (`4k`) and versions (`v4`, `3.5`) are
+/// not counts.
 pub fn param_count(name: &str) -> Option<f64> {
     let name = name.to_ascii_lowercase();
     let name = name
@@ -63,6 +63,7 @@ pub fn param_count(name: &str) -> Option<f64> {
 fn count_word(word: &str) -> Option<f64> {
     let (number, unit) = word.split_at(word.len().checked_sub(1)?);
     let scale = match unit {
+        "t" => 1000.0,
         "b" => 1.0,
         "m" => 0.001,
         _ => return None,
@@ -284,6 +285,8 @@ mod tests {
             listed_models: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            service: None,
+            account_url: None,
         }
     }
 
@@ -303,6 +306,8 @@ mod tests {
             // The total, not the active parameters.
             ("Qwen3-30B-A3B", Some(30.0)),
             ("gpt-oss-120b", Some(120.0)),
+            ("Kimi K3.1 Pro 2.8T", Some(2800.0)),
+            ("DeepSeek V4.1 Flash 120B", Some(120.0)),
             // Not counts: quantization, context sizes, versions, embeddings' names.
             ("mlx-community/model-4bit", None),
             ("phi-3-mini-4k-instruct", None),
@@ -311,6 +316,7 @@ mod tests {
             ("claude-3.5-sonnet", None),
             ("bge-m3", None),
             ("model-q8_0", None),
+            ("mlx-community/model-8bit", None),
             ("b", None),
             ("", None),
         ];

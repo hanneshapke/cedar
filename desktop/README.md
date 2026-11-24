@@ -18,7 +18,9 @@ outside the app, and so does the model server unless the app sets one up:
   pick one. A hosted provider such as Baseten, Nebius or Doubleword works the same way, with an
   API key. On a computer whose GPU has the memory for it, the app can instead download
   llama.cpp and a model and run them itself (see
-  [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)).
+  [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)). Or Cedar Private
+  Inference sets a hosted model up after you sign in with your email, with trial credit (see
+  [Using Cedar Private Inference](#using-cedar-private-inference)).
 
 ```
 Cedar (menu bar / tray) ──┬── cedar-chat :13000 ──▶ cedar :18080 ──▶ model server (yours, or llama-server :18081)
@@ -187,10 +189,14 @@ Running everything here, the setup window shows three steps:
   app starts cedar with this computer as the default, and also pulls `cedar-computer` (about
   1.4 GB), so the desktop in a container can be chosen instead under Settings → Advanced in the
   chat. If that pull fails, the app carries on without it and tries again at the next launch.
-- **Model server**: three options, each opening its form under it. The one in use is marked.
+- **Model server**: four options, each opening its form under it. The one in use is marked.
   - *Run a model here with llama.cpp*: the app downloads llama.cpp and a model and runs them
     (see [Setting a model up with llama.cpp](#setting-a-model-up-with-llamacpp)). Greyed out
     when no GPU here has the memory for it.
+  - *Cedar Private Inference*: click *Connect*, sign in with your email in the browser window
+    that opens and approve the code the page shows (see
+    [Using Cedar Private Inference](#using-cedar-private-inference)). Listed first where this
+    computer can't run a model, and only in a build that knows the service's address.
   - *Use a hosted provider*: pick the provider, enter its API key, click *List models*, choose
     one, and *Save* (see [Using a hosted provider](#using-a-hosted-provider)).
   - *Use a model server you already run*: click a preset (Ollama, LM Studio, vLLM, llama.cpp,
@@ -200,12 +206,13 @@ Running everything here, the setup window shows three steps:
     Then choose a model and *Save*.
 
   Until one is chosen, the page marks one as *Recommended*: running a model here where the GPU
-  can, a hosted provider where it cannot.
+  can, Cedar Private Inference where it cannot (a hosted provider, in a build without it).
 
   The app registers what is chosen in cedar's model registry, which cedar keeps in its database:
   a hosted provider or a server of your own as the entry `default`, a model the app runs with
-  llama.cpp as the entry `llama`. The two are independent, so llama.cpp can run beside a provider
-  and each conversation picks its model. The one chosen last here is the model new chats use,
+  llama.cpp as the entry `llama`, and Cedar Private Inference's two models as `private-small`
+  and `private-large`. They are independent, so llama.cpp can run beside a provider and each
+  conversation picks its model. The one chosen last here is the model new chats use,
   until another is made the default in the chat's Settings.
 
 The window switches to the chat once both servers answer and the model is registered.
@@ -432,6 +439,32 @@ Neither form asks whether the model reads images. The app looks the model up in 
 models (`chat/static/suggested-models.json`); for one the list does not name, cedar tries it with one
 small image when it is registered, and keeps the answer while the model stays the same. The chat's
 Settings → Models → *Edit* → *Advanced* can overrule it.
+
+### Using Cedar Private Inference
+
+The second option is a hosted model without an account at a provider: Cedar's service gives you
+trial credit and hands this app a key for its inference provider, with two models (a small one
+and a large one). *Connect* asks the service for a short code and opens its page in your browser;
+sign in there with your email (a new address gets a sign-in link), check that the code matches
+the one the setup page shows, and approve. The app then registers both models, makes the small
+one the default, and the chat's routing moves a run to the large one when the task needs it. The
+key works a few seconds after it is created, so registering may take up to a minute.
+
+- **What leaves the computer.** As with a hosted provider: your conversations, the system prompt
+  and what the agent's tools return go to the inference provider with every model call, straight
+  from this computer. The provider keeps none of it (zero data retention, by contract). Cedar's
+  service only hands over the key and keeps track of your credit; no prompt goes through it.
+- **Credit.** When it is used up, the provider refuses further calls: the chat says *Your Cedar
+  Private Inference credit is used up* with a *Top up* link to the account page, which *Balance
+  and top-up* on the setup page opens too. After a top-up the same key works again a few seconds
+  later, without connecting again.
+- **Connect again, Disconnect.** *Connect again* runs the same flow and replaces both entries
+  (needed after rotating the key on the account page). *Disconnect* removes both from cedar and
+  the key from `config.json`; the key stays valid until you revoke it on the account page.
+
+Declining in the browser, or not approving within 15 minutes, leaves the option *Not connected*
+with *Try again*; nothing else is chosen in its place. `CEDAR_PRIVATE_INFERENCE_URL` in the app's
+environment points it at another instance of the service, a local one for testing say.
 
 ## Updates
 
@@ -701,6 +734,9 @@ or `hosted`; in a file from before the page had the options it is missing, and t
 decides. `llama` (`{"build": "macos-arm64", "model": "gemma-4-26b-a4b"}`, or `null`) names what the
 app installed when it runs a model with llama.cpp, on `llama_port` (18081) with the key in
 `secrets.llama_api_key`. It is separate from the `llm_*` fields, which may be empty beside it.
+`private_inference` is what Cedar Private Inference handed over (`{"base_url", "api_key",
+"provider", "account_url", "models": [{"id": "private-small", "model", "label"}, …]}`), or `null`
+while it isn't connected.
 
 `locale` is the language picked on the setup page, which asks for it first on a first launch and
 has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,

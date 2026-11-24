@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn what_cedar_is_sent_for_an_entry() {
-        let own = Entry { id: REGISTRY_ID, base_url: "x", api_key: " key ", model: " qwen3:30b ", extras: None, make_default: false };
+        let own = Entry { id: REGISTRY_ID, base_url: "x", api_key: " key ", model: " qwen3:30b ", extras: None, service: None, make_default: false };
         let json = serde_json::to_value(spec(&own, "http://127.0.0.1:11434/v1")).unwrap();
         assert_eq!(json, serde_json::json!({
             "base_url": "http://127.0.0.1:11434/v1", "model": "qwen3:30b", "label": "qwen3:30b", "api_key": "key",
@@ -292,7 +292,7 @@ mod tests {
             "detect_images": true,
         }));
         // A model the list names goes with what the list says.
-        let listed = Entry { id: REGISTRY_ID, base_url: "x", api_key: "", model: "zai-org/GLM-5.3", extras: None, make_default: false };
+        let listed = Entry { id: REGISTRY_ID, base_url: "x", api_key: "", model: "zai-org/GLM-5.3", extras: None, service: None, make_default: false };
         let json = serde_json::to_value(spec(&listed, "https://api.doubleword.ai/v1")).unwrap();
         assert_eq!((&json["detect_images"], &json["images_hint"]), (&serde_json::json!(true), &serde_json::json!(false)));
         assert_eq!(listed_images("deepseek-ai/DeepSeek-V4.1-Flash"), Some(true));
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(listed_images("some/unknown-model"), None);
         // The one just chosen becomes the default; one the app installed brings what it knows.
         let extras = Extras { label: "Gemma 4 12B", max_tokens: Some(8192), reasoning_levels: &["low", "high"], multimodal: true };
-        let llama = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-12b", extras: Some(extras), make_default: true };
+        let llama = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-12b", extras: Some(extras), service: None, make_default: true };
         let json = serde_json::to_value(spec(&llama, "http://127.0.0.1:18081/v1")).unwrap();
         assert_eq!(json, serde_json::json!({
             "base_url": "http://127.0.0.1:18081/v1", "model": "gemma-4-12b", "label": "Gemma 4 12B", "api_key": "k",
@@ -309,8 +309,23 @@ mod tests {
         }));
         // An entry cedar already has keeps its reply limit: none is sent.
         let extras = Extras { label: "Gemma 4 12B", max_tokens: None, reasoning_levels: &[], multimodal: true };
-        let kept = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-12b", extras: Some(extras), make_default: false };
+        let kept = Entry { id: LLAMA_ID, base_url: "x", api_key: "k", model: "gemma-4-12b", extras: Some(extras), service: None, make_default: false };
         assert!(serde_json::to_value(spec(&kept, "x")).unwrap().get("max_tokens").is_none());
+        // A Cedar Private Inference model: its own name as the label, and the service with where
+        // to top up, so the chat can link there when the credit runs out.
+        let service = Service { label: "DeepSeek V4.1 Flash 120B", account_url: "https://plg.example/account" };
+        let private = Entry {
+            id: PRIVATE_SMALL_ID, base_url: "x", api_key: "sk", model: "deepseek-v4.1-flash", extras: None,
+            service: Some(service), make_default: true,
+        };
+        let json = serde_json::to_value(spec(&private, "https://api.doubleword.ai/v1")).unwrap();
+        assert_eq!(json["label"], "DeepSeek V4.1 Flash 120B");
+        assert_eq!(json["model"], "deepseek-v4.1-flash");
+        assert_eq!(json["service"], "cedar-private-inference");
+        assert_eq!(json["account_url"], "https://plg.example/account");
+        assert_eq!(json["is_default"], true);
+        // Not for the user's own entries.
+        assert!(serde_json::to_value(spec(&own, "x")).unwrap().get("service").is_none());
     }
 }
 
@@ -318,8 +333,21 @@ mod tests {
 /// the model the app runs with llama.cpp. The chat's Settings page can add others beside them.
 pub const REGISTRY_ID: &str = "default";
 pub const LLAMA_ID: &str = "llama";
+/// Cedar Private Inference's two models (see private.rs). Fixed, so connecting again replaces them.
+pub const PRIVATE_SMALL_ID: &str = cedar_private_inference::SMALL_ID;
+pub const PRIVATE_LARGE_ID: &str = cedar_private_inference::LARGE_ID;
+pub const PRIVATE_IDS: [&str; 2] = [PRIVATE_SMALL_ID, PRIVATE_LARGE_ID];
+
+/// An entry a service registered: cedar remembers which service, and where to top up its credit.
+#[derive(Clone, Copy)]
+pub struct Service<'a> {
+    /// The name the service gave the model, shown in the pickers.
+    pub label: &'a str,
+    pub account_url: &'a str,
+}
 
 /// What the app knows about a model beyond its name: the ones it installs for llama.cpp.
+#[derive(Clone, Copy)]
 pub struct Extras<'a> {
     pub label: &'a str,
     /// The reply limit a new entry starts with. `None` leaves the entry's own, which the chat's
@@ -358,9 +386,14 @@ struct ModelSpec<'a> {
     detect_images: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     images_hint: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    service: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    account_url: Option<&'a str>,
 }
 
 /// One entry for cedar's registry.
+#[derive(Clone, Copy)]
 pub struct Entry<'a> {
     /// [`REGISTRY_ID`] or [`LLAMA_ID`].
     pub id: &'a str,
@@ -368,6 +401,8 @@ pub struct Entry<'a> {
     pub api_key: &'a str,
     pub model: &'a str,
     pub extras: Option<Extras<'a>>,
+    /// Set for Cedar Private Inference's models.
+    pub service: Option<Service<'a>>,
     /// The user just chose this one: it becomes the model new chats use.
     pub make_default: bool,
 }
@@ -375,10 +410,11 @@ pub struct Entry<'a> {
 fn spec<'a>(entry: &'a Entry<'a>, base: &'a str) -> ModelSpec<'a> {
     let model = entry.model.trim();
     let extras = entry.extras.as_ref();
+    let service = entry.service.as_ref();
     ModelSpec {
         base_url: base,
         model,
-        label: extras.map_or(model, |e| e.label),
+        label: extras.map(|e| e.label).or(service.map(|s| s.label)).unwrap_or(model),
         api_key: entry.api_key.trim(),
         is_default: entry.make_default.then_some(true),
         max_tokens: extras.and_then(|e| e.max_tokens),
@@ -387,6 +423,8 @@ fn spec<'a>(entry: &'a Entry<'a>, base: &'a str) -> ModelSpec<'a> {
         multimodal: extras.map(|e| e.multimodal),
         detect_images: extras.is_none().then_some(true),
         images_hint: if extras.is_none() { listed_images(model) } else { None },
+        service: service.map(|_| cedar_private_inference::SERVICE),
+        account_url: service.map(|s| s.account_url),
     }
 }
 
@@ -454,4 +492,22 @@ pub async fn register(cedar_url: &str, cedar_api_key: &str, entry: Entry<'_>) ->
         .and_then(|v| v["error"]["message"].as_str().map(str::to_string))
         .unwrap_or(body);
     bail!("cedar did not accept the model ({status}): {message}")
+}
+
+/// [`register`], tried again for up to a minute: a provider refuses a key for a few seconds after
+/// it is created or topped up, and cedar checks the key by listing the provider's models.
+pub async fn register_retrying(cedar_url: &str, cedar_api_key: &str, entry: Entry<'_>) -> Result<()> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    let mut wait = Duration::from_secs(2);
+    loop {
+        match register(cedar_url, cedar_api_key, entry).await {
+            Ok(()) => return Ok(()),
+            Err(e) if std::time::Instant::now() + wait < deadline => {
+                eprintln!("registering {}: {e:#}; trying again in {}s", entry.id, wait.as_secs());
+                tokio::time::sleep(wait).await;
+                wait = (wait * 2).min(Duration::from_secs(10));
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }

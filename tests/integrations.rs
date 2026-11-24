@@ -1496,6 +1496,14 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
             "gpu",
             json!({ "base_url": server_url, "model": "m-1", "context_window": 100 }),
         ),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "service": "someone-else" }),
+        ),
+        (
+            "gpu",
+            json!({ "base_url": server_url, "model": "m-1", "account_url": "http://plain.example/top-up" }),
+        ),
     ] {
         let (code, resp) = put_model(&app, id, body.clone()).await;
         assert_eq!(code, StatusCode::BAD_REQUEST, "{body} -> {resp}");
@@ -1532,7 +1540,8 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
         app.get("/v1/models", KEY_A).await.1["models"][0],
         json!({ "id": "gpu", "label": "GPU box", "model": "m-1", "is_default": true,
                 "reasoning_levels": ["none", "high"], "default_reasoning": null, "multimodal": true, "video": false,
-                "max_tokens": 16384, "context_window": null, "price": null })
+                "max_tokens": 16384, "context_window": null, "price": null,
+                "service": null, "account_url": null })
     );
 
     // The next run talks to the server, with its key and the level asked for.
@@ -1598,6 +1607,44 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(body["context_window"], 32768);
     let (_, body) = put_model(&app, "gpu", json!({ "base_url": server_url, "model": "m-1" })).await;
     assert_eq!(body["context_window"], 32768, "absent keeps the saved window");
+    // A service's entry remembers the service and where to top up; absent keeps both, and the
+    // public list shows them so the chat can link to the account page.
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "service": "cedar-private-inference",
+                "account_url": "https://cedar.example/account" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["service"], "cedar-private-inference");
+    let (_, body) = put_model(&app, "gpu", json!({ "base_url": server_url, "model": "m-1" })).await;
+    assert_eq!(body["account_url"], "https://cedar.example/account");
+    // Plain http only for a service on this machine.
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "account_url": "http://localhost:3000/account" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let (code, _) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "account_url": "https://cedar.example/account" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    let public = &app.get("/v1/models", KEY_A).await.1["models"][0];
+    assert_eq!(public["service"], "cedar-private-inference");
+    assert_eq!(public["account_url"], "https://cedar.example/account");
+    let (_, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "service": "", "account_url": "" }),
+    )
+    .await;
+    assert_eq!((&body["service"], &body["account_url"]), (&Value::Null, &Value::Null));
     // An empty api_key removes it (and the server then refuses the check).
     let (code, body) = put_model(
         &app,

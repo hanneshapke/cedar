@@ -143,6 +143,9 @@
   .choice.open { border-color: var(--accent); }
   .choice:disabled:hover { border-color: var(--line); }
   .source-panel { margin: -2px 0 6px; padding: 0 14px; }
+  /* The code to approve in the browser while Cedar Private Inference connects. */
+  .user-code { margin: 10px 0; font: 600 28px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.12em; color: var(--text); }
 </style>
 </head>
 <body>
@@ -309,7 +312,8 @@
   <h2><span class="dot" id="model-dot"></span><span data-i18n="model.title">Model server</span></h2>
   <p id="model-text" class="muted" data-i18n="model.notChosen">Not chosen yet.</p>
   <p class="detail" id="model-detail"></p>
-  <!-- Three ways to get a model. A card opens its form right under it; see renderModelChoice. -->
+  <!-- Four ways to get a model. A card opens its form right under it; see renderModelChoice, which
+       also moves Cedar Private Inference to the top where this computer can't run a model. -->
   <div class="choices sources">
     <button type="button" class="choice" id="pick-llama" data-source="llama" aria-expanded="false" aria-controls="llama">
       <strong><span data-i18n="pick.llama">Run a model on this computer</span><span class="tag hidden" id="pick-llama-tag"></span></strong>
@@ -333,6 +337,34 @@
       <p id="llama-text" class="muted"></p>
       <p class="detail" id="llama-detail"></p>
       <p class="muted fine" id="llama-license"></p>
+    </div>
+
+    <button type="button" class="choice hidden" id="pick-private" data-source="private" aria-expanded="false" aria-controls="private">
+      <strong><span data-i18n="pick.private">Cedar Private Inference</span><span class="tag hidden" id="pick-private-tag"></span></strong>
+      <span data-i18n="pick.privateText">Free trial credit, no GPU needed. Sign in with your email, and Cedar sets up the models for you.</span>
+    </button>
+    <div id="private" class="source-panel hidden">
+      <p class="muted" data-i18n="private.about">Your conversations, and what the agent’s tools return, go from this computer straight to the inference provider, which keeps none of them. Cedar’s service only hands over the key and keeps track of your credit; it never sees your conversations.</p>
+      <div class="row" id="private-start">
+        <button class="primary" id="private-connect" data-i18n="private.connect">Connect</button>
+      </div>
+      <div id="private-waiting" class="hidden">
+        <p class="muted" data-i18n="private.codeIntro">In the browser window that opened, sign in and approve this code:</p>
+        <p class="user-code" id="private-code" aria-live="polite"></p>
+        <p class="muted fine"><a id="private-link" href="#" target="_blank" rel="noreferrer" data-i18n="private.openAgain">Open the page again</a></p>
+        <div class="row">
+          <button id="private-cancel" data-i18n="private.cancel">Cancel</button>
+        </div>
+      </div>
+      <div id="private-connected" class="hidden">
+        <p id="private-models" class="muted"></p>
+        <div class="row">
+          <button id="private-account" data-i18n="private.account">Balance and top-up</button>
+          <button id="private-reconnect" data-i18n="private.reconnect">Connect again</button>
+          <button id="private-disconnect" data-i18n="private.disconnect">Disconnect</button>
+        </div>
+      </div>
+      <p id="private-error" class="error"></p>
     </div>
 
     <button type="button" class="choice" id="pick-hosted" data-source="hosted" aria-expanded="false" aria-controls="hosted">

@@ -46,9 +46,69 @@ pub struct ChatCompletionsClient {
     api_key: Option<String>,
     max_attempts: u32,
     retry_base: Duration,
+    /// Until when a 403 means "key not active yet" and is retried (see `with_activation_grace`).
+    activation_grace: Option<std::time::SystemTime>,
 }
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
+
+/// How long a 403 is retried during a key's activation grace period.
+pub const ACTIVATION_RETRY_WINDOW: Duration = Duration::from_secs(60);
+
+/// An error status from the model's server, kept typed so callers can tell an empty balance from an
+/// outage. Travels inside `anyhow::Error`; find it with `ApiError::find`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiError {
+    pub status: u16,
+    /// `error.code` (or `error.type`) from the body, when the server sent one.
+    pub code: Option<String>,
+    pub message: String,
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let status = reqwest::StatusCode::from_u16(self.status)
+            .map_or_else(|_| self.status.to_string(), |s| s.to_string());
+        write!(f, "LLM API error {status}: {}", self.message)
+    }
+}
+
+impl std::error::Error for ApiError {}
+
+impl ApiError {
+    pub fn from_body(status: u16, body: &str) -> Self {
+        Self {
+            status,
+            code: error_code(body),
+            message: error_message(body),
+        }
+    }
+
+    /// The `ApiError` in `err`'s chain, if there is one.
+    pub fn find(err: &anyhow::Error) -> Option<&ApiError> {
+        err.chain().find_map(|e| e.downcast_ref::<ApiError>())
+    }
+
+    /// The provider refused because the key's spending cap is reached: 402 with
+    /// `spend_cap_exceeded`. A 403 is never this.
+    pub fn is_out_of_credit(&self) -> bool {
+        self.status == 402 && self.code.as_deref() == Some("spend_cap_exceeded")
+    }
+}
+
+/// What a failed model call means to the user, as the `error_code` of `run.failed`.
+pub fn failure_code(err: &anyhow::Error) -> Option<&'static str> {
+    let api = ApiError::find(err)?;
+    if api.is_out_of_credit() {
+        Some("out_of_credit")
+    } else if api.status == 403 {
+        Some("key_inactive")
+    } else if api.code.as_deref() == Some("attestation_failed") {
+        Some("attestation_failed")
+    } else {
+        None
+    }
+}
 
 impl ChatCompletionsClient {
     /// `base_url` includes the version prefix, e.g. `http://localhost:8000/v1`. The key is sent as
@@ -65,8 +125,23 @@ impl ChatCompletionsClient {
             api_key,
             max_attempts: 4,
             retry_base: Duration::from_secs(1),
+            activation_grace: None,
         })
     }
+
+    /// Retry 403 while `until` hasn't passed, for up to `ACTIVATION_RETRY_WINDOW`: some providers
+    /// refuse a key for a few seconds after it is created, topped up or rotated. Outside the grace
+    /// period a 403 fails at once, like any other refusal.
+    pub fn with_activation_grace(mut self, until: Option<std::time::SystemTime>) -> Self {
+        self.activation_grace = until;
+        self
+    }
+
+    fn in_activation_grace(&self) -> bool {
+        self.activation_grace
+            .is_some_and(|until| std::time::SystemTime::now() < until)
+    }
+
 
     /// Total tries (first attempt included) and the first backoff delay, which doubles each time.
     pub fn with_retry(mut self, max_attempts: u32, base_delay: Duration) -> Self {
@@ -94,6 +169,9 @@ impl LlmClient for ChatCompletionsClient {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
 
         let mut attempt = 0;
+        let started = std::time::Instant::now();
+        let activating = self.in_activation_grace();
+        let mut activation_waits = 0;
         loop {
             attempt += 1;
             let mut request = self.http.post(&url).json(&body);
@@ -114,11 +192,29 @@ impl LlmClient for ChatCompletionsClient {
                         .map(Duration::from_secs);
                     match resp.text().await {
                         Ok(text) if status.is_success() => return parse_response(&text),
-                        Ok(text) => (
-                            anyhow!("LLM API error {status}: {}", error_message(&text)),
-                            status.as_u16() == 429 || status.is_server_error(),
-                            retry_after,
-                        ),
+                        Ok(text) => {
+                            let code = status.as_u16();
+                            if code == 403
+                                && activating
+                                && started.elapsed() < ACTIVATION_RETRY_WINDOW
+                            {
+                                // A key that isn't active yet: wait, without using up attempts.
+                                activation_waits += 1;
+                                let delay = self.backoff(activation_waits.min(3), retry_after);
+                                tracing::info!(
+                                    ?delay,
+                                    "model server refused a new key; waiting for it to activate"
+                                );
+                                attempt -= 1;
+                                tokio::time::sleep(delay).await;
+                                continue;
+                            }
+                            (
+                                anyhow::Error::new(ApiError::from_body(code, &text)),
+                                code == 429 || status.is_server_error(),
+                                retry_after,
+                            )
+                        }
                         Err(e) => (anyhow!(e).context("reading API response"), true, None),
                     }
                 }
@@ -326,6 +422,18 @@ fn error_message(body: &str) -> String {
         })
         .map(String::from)
         .unwrap_or_else(|| body.chars().take(300).collect())
+}
+
+/// `error.code` from an error body (Doubleword: `spend_cap_exceeded`, `forbidden`), else
+/// `error.type`, else a top-level string `code`.
+fn error_code(body: &str) -> Option<String> {
+    let v = serde_json::from_str::<Value>(body).ok()?;
+    let err = &v["error"];
+    err["code"]
+        .as_str()
+        .or_else(|| err["type"].as_str())
+        .or_else(|| v["code"].as_str())
+        .map(String::from)
 }
 
 fn parse_response(body: &str) -> Result<LlmResponse> {
@@ -1022,6 +1130,133 @@ mod tests {
         );
         assert_eq!(error_message(r#"{"error":"nope"}"#), "nope");
         assert_eq!(error_message("gateway timeout"), "gateway timeout");
+    }
+
+    #[test]
+    fn api_errors_keep_their_status_and_code() {
+        let body = r#"{"error":{"message":"Spend cap exceeded","code":"spend_cap_exceeded"}}"#;
+        let e = ApiError::from_body(402, body);
+        assert_eq!(e.code.as_deref(), Some("spend_cap_exceeded"));
+        assert_eq!(e.message, "Spend cap exceeded");
+        assert!(e.is_out_of_credit());
+        assert_eq!(
+            e.to_string(),
+            "LLM API error 402 Payment Required: Spend cap exceeded"
+        );
+
+        // Found through anyhow, under context.
+        let err = anyhow::Error::new(e).context("calling the model");
+        assert_eq!(ApiError::find(&err).map(|e| e.status), Some(402));
+        assert_eq!(failure_code(&err), Some("out_of_credit"));
+
+        // A 403 is never out of credit, whatever its body says.
+        let forbidden = ApiError::from_body(403, r#"{"error":{"code":"spend_cap_exceeded"}}"#);
+        assert!(!forbidden.is_out_of_credit());
+        assert_eq!(
+            failure_code(&anyhow::Error::new(forbidden)),
+            Some("key_inactive")
+        );
+
+        assert_eq!(
+            error_code(r#"{"error":{"type":"invalid_request_error"}}"#).as_deref(),
+            Some("invalid_request_error")
+        );
+        assert_eq!(
+            error_code(r#"{"object":"error","code":"x"}"#).as_deref(),
+            Some("x")
+        );
+        assert_eq!(error_code("gateway timeout"), None);
+        assert_eq!(failure_code(&anyhow!("connection refused")), None);
+        assert_eq!(
+            failure_code(&anyhow::Error::new(ApiError::from_body(500, ""))),
+            None
+        );
+    }
+
+    /// A server that answers each request with the next of `replies` (the last one repeats), and
+    /// counts the requests it got.
+    async fn stub(
+        replies: Vec<(u16, &'static str)>,
+    ) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let hits = Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+        let app = axum::Router::new().route(
+            "/v1/chat/completions",
+            axum::routing::post(move || {
+                let n = counter.fetch_add(1, Ordering::SeqCst);
+                let (status, body) = replies[n.min(replies.len() - 1)];
+                async move {
+                    (
+                        axum::http::StatusCode::from_u16(status).unwrap(),
+                        [("content-type", "application/json")],
+                        body,
+                    )
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{addr}/v1"), hits)
+    }
+
+    const OK: &str = r#"{"choices":[{"message":{"content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}"#;
+    const FORBIDDEN: &str = r#"{"error":{"message":"Forbidden","code":"forbidden"}}"#;
+    const SPENT: &str = r#"{"error":{"message":"Spend cap exceeded","code":"spend_cap_exceeded"}}"#;
+
+    fn hello() -> MessageRequest<'static> {
+        MessageRequest {
+            model: "m",
+            max_tokens: 10,
+            reasoning_effort: None,
+            system: "",
+            tools: &[],
+            messages: &[],
+        }
+    }
+
+    #[tokio::test]
+    async fn out_of_credit_is_not_retried() {
+        use std::sync::atomic::Ordering;
+        let (url, hits) = stub(vec![(402, SPENT)]).await;
+        let client = ChatCompletionsClient::new(url, Some("k".into()))
+            .unwrap()
+            .with_retry(4, Duration::from_millis(1));
+        let err = client.create_message(&hello()).await.unwrap_err();
+        assert_eq!(failure_code(&err), Some("out_of_credit"));
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_403_is_retried_only_while_a_key_is_activating() {
+        use std::sync::atomic::Ordering;
+        let soon = std::time::SystemTime::now() + Duration::from_secs(120);
+
+        // Inside the grace period: the 403s are waited out, even past max_attempts.
+        let (url, hits) = stub(vec![(403, FORBIDDEN), (403, FORBIDDEN), (200, OK)]).await;
+        let client = ChatCompletionsClient::new(url, None)
+            .unwrap()
+            .with_retry(1, Duration::from_millis(1))
+            .with_activation_grace(Some(soon));
+        let resp = client.create_message(&hello()).await.unwrap();
+        assert_eq!(resp.content[0]["text"], "hi");
+        assert_eq!(hits.load(Ordering::SeqCst), 3);
+
+        // Outside it (passed, or never set): fails at once.
+        for grace in [
+            None,
+            Some(std::time::SystemTime::now() - Duration::from_secs(1)),
+        ] {
+            let (url, hits) = stub(vec![(403, FORBIDDEN), (200, OK)]).await;
+            let client = ChatCompletionsClient::new(url, None)
+                .unwrap()
+                .with_retry(4, Duration::from_millis(1))
+                .with_activation_grace(grace);
+            let err = client.create_message(&hello()).await.unwrap_err();
+            assert_eq!(failure_code(&err), Some("key_inactive"));
+            assert_eq!(hits.load(Ordering::SeqCst), 1);
+        }
     }
 
     #[test]

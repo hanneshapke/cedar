@@ -78,6 +78,34 @@ pub enum ModelStatus {
     Failed(String),
 }
 
+/// Connecting Cedar Private Inference (see private.rs): the code to approve in the browser while
+/// the app waits for it.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "state", content = "detail", rename_all = "snake_case")]
+pub enum ConnectStatus {
+    Idle,
+    /// Asking the service for a code.
+    Starting,
+    /// Waiting for the user to approve `user_code` at `url`.
+    Waiting { user_code: String, url: String },
+    /// Declined, expired, or the service couldn't be reached: the page offers to try again.
+    Failed(String),
+}
+
+/// Cedar Private Inference on the setup page.
+#[derive(Serialize, Clone, Debug)]
+pub struct PrivateStatus {
+    /// This build knows where the service is (`cedar_private_inference::service_url`); without
+    /// it the page doesn't offer the option.
+    pub available: bool,
+    pub connect: ConnectStatus,
+    /// Connected: the provider and its models' names.
+    pub provider: Option<String>,
+    pub models: Vec<String>,
+    /// Where to see the balance and top up.
+    pub account_url: Option<String>,
+}
+
 /// The chat server on another computer, when one is set (see remote.rs).
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "state", content = "detail", rename_all = "snake_case")]
@@ -154,6 +182,9 @@ pub struct AppState {
     pub llama: LlamaServer,
     /// The entry to make cedar's default at the next registration (see [`Self::choose`]).
     chosen: Mutex<Chosen>,
+    private_connect: Mutex<ConnectStatus>,
+    /// Stops waiting for the approval that is under way.
+    private_cancel: Mutex<CancellationToken>,
     /// Only one launch sequence at a time.
     bootstrap: tokio::sync::Mutex<()>,
 }
@@ -202,6 +233,7 @@ pub struct Status {
     pub sandbox_image: String,
     pub update: UpdateStatus,
     pub llama: LlamaStatus,
+    pub private_inference: PrivateStatus,
     pub check_updates: bool,
     /// The language picked on the page; empty until one is (the page then asks first).
     pub locale: String,
@@ -217,6 +249,8 @@ impl AppState {
             llama_cancel: Mutex::new(CancellationToken::new()),
             llama: LlamaServer::new(paths.clone()),
             chosen: Mutex::new(Chosen::Neither),
+            private_connect: Mutex::new(ConnectStatus::Idle),
+            private_cancel: Mutex::new(CancellationToken::new()),
             paths,
             config: Mutex::new(config),
             docker: Mutex::new(DockerStatus::Checking),
@@ -383,7 +417,7 @@ impl AppState {
         *self.images.lock().unwrap() = s;
     }
 
-    fn set_model(&self, s: ModelStatus) {
+    pub fn set_model(&self, s: ModelStatus) {
         *self.model.lock().unwrap() = s;
     }
 
@@ -494,12 +528,45 @@ impl AppState {
             sandbox_image: cfg.sandbox_image(),
             update: self.update(),
             llama: self.llama_status(&cfg),
+            private_inference: self.private_status(&cfg),
             check_updates: cfg.check_updates,
             locale: cfg.locale.clone(),
         }
     }
 
-    /// Records which of the app's two entries the user just chose; the next registration makes it
+    fn private_status(&self, cfg: &Config) -> PrivateStatus {
+        let connected = cfg.private_inference.as_ref();
+        PrivateStatus {
+            available: cedar_private_inference::service_url().is_ok(),
+            connect: self.private_connect.lock().unwrap().clone(),
+            provider: connected.map(|p| p.provider.clone()),
+            models: connected.map_or_else(Vec::new, |p| p.models.iter().map(|m| m.label.clone()).collect()),
+            account_url: connected.map(|p| p.account_url.clone()),
+        }
+    }
+
+    pub fn set_private_connect(&self, s: ConnectStatus) {
+        *self.private_connect.lock().unwrap() = s;
+    }
+
+    /// Starts waiting for an approval, unless one is under way: the token that stops it.
+    pub fn begin_private_connect(&self) -> Option<CancellationToken> {
+        let mut status = self.private_connect.lock().unwrap();
+        if matches!(*status, ConnectStatus::Starting | ConnectStatus::Waiting { .. }) {
+            return None;
+        }
+        *status = ConnectStatus::Starting;
+        let token = CancellationToken::new();
+        *self.private_cancel.lock().unwrap() = token.clone();
+        Some(token)
+    }
+
+    pub fn cancel_private_connect(&self) {
+        self.private_cancel.lock().unwrap().cancel();
+        self.set_private_connect(ConnectStatus::Idle);
+    }
+
+    /// Records which of the app's entries the user just chose; the next registration makes it
     /// the model new chats use.
     pub fn choose(&self, chosen: Chosen) {
         *self.chosen.lock().unwrap() = chosen;
@@ -545,6 +612,7 @@ impl AppState {
                     // Every model the app installs comes with its vision projector.
                     multimodal: true,
                 }),
+                service: None,
                 make_default: chosen == Chosen::Llama,
             };
             result = models::register(&cedar, &key, entry).await;
@@ -564,10 +632,36 @@ impl AppState {
                 api_key: &cfg.llm_api_key,
                 model: &cfg.llm_model,
                 extras: None,
+                service: None,
                 make_default: chosen == Chosen::Server,
             };
             result = models::register(&cedar, &key, entry).await;
             names.push(format!("{} at {}", cfg.llm_model.trim(), cfg.llm_base_url.trim()));
+        }
+        if let (true, Some(private)) = (result.is_ok(), &cfg.private_inference) {
+            for (i, m) in private.models.iter().enumerate() {
+                // Registered when just connected, or when cedar lost the entry; otherwise cedar
+                // has it, and a launch needn't ask the provider again.
+                let known = models::registered_model(&cedar, &key, &m.id).await;
+                if chosen == Chosen::Private || known.as_deref() != Some(m.model.as_str()) {
+                    let entry = models::Entry {
+                        id: &m.id,
+                        base_url: &private.base_url,
+                        api_key: &private.api_key,
+                        model: &m.model,
+                        extras: None,
+                        service: Some(models::Service { label: &m.label, account_url: &private.account_url }),
+                        // The small one is the default: routing moves a run to the large one
+                        // when the task needs it.
+                        make_default: chosen == Chosen::Private && i == 0,
+                    };
+                    result = models::register_retrying(&cedar, &key, entry).await;
+                    if result.is_err() {
+                        break;
+                    }
+                }
+                names.push(m.label.clone());
+            }
         }
         match result {
             Ok(()) => {
@@ -591,6 +685,8 @@ pub enum Chosen {
     Server,
     /// The model the app runs with llama.cpp (`llama`).
     Llama,
+    /// Cedar Private Inference (`private-small`, `private-large`), just connected.
+    Private,
 }
 
 /// Marks a setup as started, unless it already runs.

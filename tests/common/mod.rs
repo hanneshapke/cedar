@@ -37,6 +37,8 @@ pub enum Step {
     /// Like `Reply`, but never consumed: every later call gets the same response.
     Repeat(LlmResponse),
     Error(&'static str),
+    /// The model's server answers with this status and JSON body.
+    ApiError(u16, &'static str),
     /// Never returns; the run has to be cancelled (or time out).
     Block,
     /// Returns once the semaphore has a permit.
@@ -88,6 +90,9 @@ impl LlmClient for ScriptedLlm {
         match step {
             Step::Reply(r) | Step::Repeat(r) => Ok(r),
             Step::Error(m) => Err(anyhow!(m)),
+            Step::ApiError(status, body) => {
+                Err(anyhow::Error::new(cedar::llm::ApiError::from_body(status, body)))
+            }
             Step::Block => std::future::pending().await,
             Step::Gate(gate, r) => {
                 gate.acquire().await.unwrap().forget();
@@ -730,6 +735,8 @@ pub async fn register_model(store: &Store, id: &str, name: &str, levels: &[&str]
             listed_models: None,
             created_at: now,
             updated_at: now,
+            service: None,
+            account_url: None,
         })
         .await
         .unwrap()

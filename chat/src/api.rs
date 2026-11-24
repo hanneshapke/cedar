@@ -309,6 +309,8 @@ pub struct AppState {
     google_in_browser: Arc<std::sync::Mutex<Vec<String>>>,
     /// The Slack app people talk to Cedar through, when one is set up (`slack`).
     pub slack: Arc<crate::slack::SlackHub>,
+    /// Connecting Cedar Private Inference from Settings -> Models (`private_inference`).
+    pub private_inference: Arc<crate::private_inference::Connector>,
 }
 
 /// How many "Connect Google" sign-ins started in the browser are remembered at once.
@@ -325,7 +327,7 @@ impl AppState {
         let apns = Arc::new(channels::Apns::new(cfg.apns_url.clone())?);
         let primary = store.user();
         let slack = Arc::new(crate::slack::SlackHub::new(cfg.slack.clone(), cfg.slack_api_url.clone())?);
-        Ok(Self { cfg: Arc::new(cfg), store, cedar, primary, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default(), slack })
+        Ok(Self { cfg: Arc::new(cfg), store, cedar, primary, token_digest, admin_digest, send_lock: Arc::default(), firing: Arc::default(), hook_limits: Arc::default(), notices, desktop, http, apns, fcm: Arc::default(), updates: Arc::default(), shutdown: CancellationToken::new(), google_in_browser: Arc::default(), slack, private_inference: Arc::default() })
     }
 }
 
@@ -452,6 +454,8 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/models/{id}/stats", get(get_model_stats))
         .route("/integrations/settings", get(get_server_settings).put(put_server_settings))
         .route("/integrations/model-selection", put(put_model_selection))
+        .route("/integrations/private-inference", get(get_private_inference).delete(disconnect_private_inference))
+        .route("/integrations/private-inference/connect", post(connect_private_inference).delete(cancel_private_inference))
         .route("/google", get(get_own_google).delete(delete_own_google))
         .route("/google/connect", post(connect_own_google))
         .route("/integrations/google", axum::routing::delete(delete_google))
@@ -2202,6 +2206,45 @@ async fn put_model_selection(
     require_models_access(&state, &headers)?;
     let saved = state.cedar.set_server_settings(&json!({ "model_selection": body.enabled })).await?;
     Ok(Json(json!({ "selection": saved["model_selection"].as_bool().unwrap_or(body.enabled) })))
+}
+
+/// Cedar Private Inference in Settings -> Models: `{available, connect}`, where `connect` is the
+/// connection started from Settings (`{state: idle | waiting | registering | connected |
+/// failed, ...}`; see `private_inference::ConnectStatus`). Which models it registered is in the
+/// model list, where their entries have `service: "cedar-private-inference"`.
+async fn get_private_inference(Scoped(state): Scoped, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    require_models_access(&state, &headers)?;
+    Ok(Json(json!({
+        "available": crate::private_inference::available(),
+        "connect": state.private_inference.status(),
+    })))
+}
+
+/// Starts connecting: answers `{state: "waiting", user_code, url}` for the page to show; the
+/// user approves the code at `url`, in any browser. The server waits for the approval and
+/// registers the models; the page follows along with `GET /api/integrations/private-inference`.
+async fn connect_private_inference(Scoped(state): Scoped, headers: HeaderMap) -> Result<Json<Value>, AppError> {
+    use crate::private_inference::StartError;
+    require_models_access(&state, &headers)?;
+    match crate::private_inference::start(&state).await {
+        Ok(status) => Ok(Json(json!(status))),
+        Err(StartError::Unavailable) => Err(AppError::NotFound("Cedar Private Inference is not available on this server")),
+        Err(StartError::Busy) => Err(AppError::Conflict("Cedar Private Inference is already being connected".into())),
+        Err(StartError::Failed(status)) => Ok(Json(json!(status))),
+    }
+}
+
+async fn cancel_private_inference(Scoped(state): Scoped, headers: HeaderMap) -> Result<StatusCode, AppError> {
+    require_models_access(&state, &headers)?;
+    state.private_inference.cancel();
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Removes Cedar Private Inference's models from cedar.
+async fn disconnect_private_inference(Scoped(state): Scoped, headers: HeaderMap) -> Result<StatusCode, AppError> {
+    require_models_access(&state, &headers)?;
+    crate::private_inference::disconnect(&state).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn delete_model(Scoped(state): Scoped, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, AppError> {

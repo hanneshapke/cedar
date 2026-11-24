@@ -13,6 +13,7 @@
   const old = new URLSearchParams(location.search);
   const q = new URLSearchParams();
   if (old.get('lang')) q.set('lang', old.get('lang'));
+  if (old.get('ref')) q.set('ref', old.get('ref'));
   const where = old.get('where'), hw = old.get('hw'), mem = old.get('mem');
   if (where === 'factory') q.set('model', 'hosted');
   else if (where === 'here' || where === 'box') q.set('model', 'own');

@@ -223,7 +223,19 @@ pub struct ModelEntry {
     pub listed_models: Option<Vec<String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// The service that registered the entry ([`PRIVATE_INFERENCE_SERVICE`]), or `None` for a model
+    /// the user set up themselves.
+    pub service: Option<String>,
+    /// Where the user sees their balance and tops up, for a service's entry.
+    pub account_url: Option<String>,
 }
+
+/// `ModelEntry::service` for the models Cedar Private Inference registers.
+pub const PRIVATE_INFERENCE_SERVICE: &str = "cedar-private-inference";
+
+/// How long after a service's entry changed a 403 is taken for a key that isn't active yet (some
+/// providers refuse a key for a few seconds after it is created, topped up or rotated).
+pub const KEY_ACTIVATION_GRACE_SECS: i64 = 120;
 
 impl ModelEntry {
     /// The public view: what any key may see through `GET /v1/models`.
@@ -240,7 +252,17 @@ impl ModelEntry {
             "context_window": self.context_window,
             "is_default": self.is_default,
             "price": self.price,
+            "service": self.service,
+            "account_url": self.account_url,
         })
+    }
+
+    /// Until when a 403 from this entry's server is retried as a key still activating: two
+    /// minutes after a service's entry last changed. `None` for the user's own models.
+    pub fn activation_grace(&self) -> Option<std::time::SystemTime> {
+        self.service.as_deref()?;
+        let until = self.updated_at + chrono::Duration::seconds(KEY_ACTIVATION_GRACE_SECS);
+        Some(until.into())
     }
 }
 

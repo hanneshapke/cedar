@@ -34,6 +34,7 @@ pub mod native;
 pub mod openshell;
 pub mod plan;
 pub mod policy;
+pub mod private_inference;
 pub mod polls;
 pub mod sandbox;
 pub mod secrets;
