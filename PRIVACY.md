@@ -1,16 +1,16 @@
 # Privacy Policy
 
-_Last updated: October 31, 2026_
+_Last updated: November 24, 2026_
 
 **cedar does not collect any data. Period.**
 
-This applies to the cedar server and to every cedar app: iOS, Android, desktop and the web chat.
+This applies to the cedar server and to every cedar app: iOS, Android, desktop and the web chat. The one service we run, Cedar Private Inference, is optional: you choose it instead of running a model yourself, and it keeps only what it needs to sell you credit (see [Cedar Private Inference](#cedar-private-inference-optional)).
 
 ## What that means
 
 - We don't collect, store, sell or share any personal data.
 - There are no analytics, no telemetry, no crash reporting, no ads and no tracking of any kind.
-- There are no accounts with us, and there is no cedar cloud service. We don't run any servers that your data passes through.
+- Using cedar needs no account with us. The only service we run is the optional Cedar Private Inference, and your conversations don't pass through it either.
 
 ## Where your data goes
 
@@ -21,6 +21,18 @@ To find out whether a newer version is out, the Mac and Windows app and the web 
 Only when you click *Set up Docker for me* or *Set up Tailscale for me*, the Mac and Windows app downloads that program's installer from its maker (Docker Desktop from desktop.docker.com, Tailscale from pkgs.tailscale.com) and installs it. Like any download, the request carries nothing about you or your conversations. `scripts/cedar-stack.sh` does the same on Linux (get.docker.com, tailscale.com) when you answer yes. Docker and Tailscale are then governed by their own privacy policies.
 
 Anything you choose to connect cedar to (for example your LLM server, or a third-party tool you install from the community registry) is governed by that service's own privacy policy, not by us.
+
+## Cedar Private Inference (optional)
+
+Instead of running a model yourself, you can connect Cedar Private Inference on the desktop app's setup page, in the web chat's Settings, or with `cedar private-inference connect`. It sells prepaid credit for a hosted model and starts you with a free trial. If you never connect it, nothing in this section applies to you.
+
+- **Your conversations go straight to the inference provider, never through us.** The service hands your cedar server a key for the provider, Doubleword (doubleword.ai), and from then on your cedar server sends every model call to Doubleword directly: your messages, the system prompt, your memory as far as a run is shown it, and what the agent's tools return. Doubleword runs the models on GPUs it rents from hosting providers. The key's account has zero data retention turned on, so Doubleword does not keep the prompts and replies of these calls; its own privacy policy applies to what it receives.
+- **What the service keeps:** your email address (to sign you in, with a link sent to it), your credit (the trial, your payments and what you have spent), and your key. Payments go through Stripe; we never see your card. What you spent comes from Doubleword as totals per key, in tokens and money, without any content. The service keeps none of your conversations, prompts, replies, files or memory.
+- **What a cedar app sends it**, only while you connect: a random one-time code and a name for the computer or server you connect (its computer name, the chat's address or the server's host name), shown on the page where you approve the connection.
+- **Its website** sets a cookie that keeps you signed in, and no other.
+- **Ending it.** Disconnecting removes the models and the key from your cedar. The key stays valid until you revoke it on your account page. To have your account and everything kept with it deleted, ask us (see [Contact](#contact)).
+
+This is not yet verified by hardware: today it rests on Doubleword's zero-retention commitment. Cedar will say so on the model when a provider can prove, through attestation that you can check yourself, that your prompts are processed only inside verified hardware.
 
 ## Memory
 
@@ -54,7 +66,7 @@ The apps ask for a few permissions, used only on your device and only for the fo
 
 ## Children
 
-Because we collect no data, we collect no data from children either.
+The cedar software collects no data, so it collects none from children either. Cedar Private Inference is meant for adults, and we don't knowingly keep a child's email address.
 
 ## Changes
 

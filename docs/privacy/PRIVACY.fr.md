@@ -1,19 +1,19 @@
-<!-- translated-from: PRIVACY.md 3c80f87a1240 -->
+<!-- translated-from: PRIVACY.md 4dabea162098 -->
 # Politique de confidentialité
 
-_Dernière mise à jour : 31 octobre 2026_
+_Dernière mise à jour : 24 novembre 2026_
 
 > Ceci est une traduction. Seule la [version anglaise](https://github.com/hanneshapke/cedar/blob/main/PRIVACY.md) fait foi.
 
 **cedar ne collecte aucune donnée. Point.**
 
-Cela vaut pour le serveur cedar et pour chaque application cedar : iOS, Android, ordinateur et le chat web.
+Cela vaut pour le serveur cedar et pour chaque application cedar : iOS, Android, ordinateur et le chat web. Le seul service que nous exploitons, Cedar Private Inference, est facultatif : vous le choisissez au lieu d'exécuter vous-même un modèle, et il ne conserve que ce dont il a besoin pour vous vendre du crédit (voir [Cedar Private Inference](#cedar-private-inference-facultatif)).
 
 ## Ce que cela signifie
 
 - Nous ne collectons, ne stockons, ne vendons ni ne partageons aucune donnée personnelle.
 - Il n'y a ni statistiques d'audience, ni télémétrie, ni rapports de plantage, ni publicité, ni pistage d'aucune sorte.
-- Vous n'avez pas de compte chez nous, et il n'existe pas de service cloud cedar. Nous n'exploitons aucun serveur par lequel passent vos données.
+- Utiliser cedar ne demande aucun compte chez nous. Le seul service que nous exploitons est Cedar Private Inference, facultatif, et vos conversations ne passent pas non plus par lui.
 
 ## Où vont vos données
 
@@ -24,6 +24,18 @@ Pour savoir si une nouvelle version est sortie, l'application Mac et Windows et 
 Uniquement lorsque vous cliquez sur *Configurer Docker pour moi* ou *Configurer Tailscale pour moi*, l'application Mac et Windows télécharge le programme d'installation de ce logiciel auprès de son éditeur (Docker Desktop depuis desktop.docker.com, Tailscale depuis pkgs.tailscale.com) et l'installe. Comme tout téléchargement, la requête ne contient rien sur vous ni sur vos conversations. `scripts/cedar-stack.sh` fait de même sous Linux (get.docker.com, tailscale.com) lorsque vous répondez oui. Docker et Tailscale sont ensuite régis par leurs propres politiques de confidentialité.
 
 Tout ce à quoi vous choisissez de connecter cedar (par exemple votre serveur LLM, ou un outil tiers que vous installez depuis le registre de la communauté) est régi par la politique de confidentialité de ce service, et non par la nôtre.
+
+## Cedar Private Inference (facultatif)
+
+Au lieu d'exécuter vous-même un modèle, vous pouvez connecter Cedar Private Inference : sur la page de configuration de l'application de bureau, dans les réglages du chat web ou avec `cedar private-inference connect`. Le service vend du crédit prépayé pour un modèle hébergé et commence par un crédit d'essai gratuit. Si vous ne le connectez jamais, rien dans cette section ne vous concerne.
+
+- **Vos conversations vont directement au fournisseur d'inférence, jamais par nous.** Le service remet à votre serveur cedar une clé pour le fournisseur, Doubleword (doubleword.ai), et dès lors votre serveur cedar envoie chaque appel au modèle directement à Doubleword : vos messages, le prompt système, votre mémoire dans la mesure où une exécution la voit, et ce que renvoient les outils de l'agent. Doubleword exécute les modèles sur des GPU qu'il loue à des hébergeurs. La conservation nulle des données (zero data retention) est activée pour le compte de la clé : Doubleword ne conserve donc pas les prompts et les réponses de ces appels ; sa propre politique de confidentialité s'applique à ce qu'il reçoit.
+- **Ce que le service conserve :** votre adresse e-mail (pour vous connecter, avec un lien qui y est envoyé), votre crédit (l'essai, vos paiements et ce que vous avez dépensé) et votre clé. Les paiements passent par Stripe ; nous ne voyons jamais votre carte. Ce que vous avez dépensé nous vient de Doubleword sous forme de totaux par clé, en jetons et en argent, sans aucun contenu. Le service ne conserve aucune de vos conversations, prompts, réponses, fichiers ni rien de votre mémoire.
+- **Ce qu'une application cedar lui envoie**, uniquement pendant la connexion : un code aléatoire à usage unique et un nom pour l'ordinateur ou le serveur que vous connectez (son nom d'ordinateur, l'adresse du chat ou le nom d'hôte du serveur), affiché sur la page où vous approuvez la connexion.
+- **Son site web** dépose un cookie qui vous garde connecté, et aucun autre.
+- **Y mettre fin.** Se déconnecter retire les modèles et la clé de votre cedar. La clé reste valide jusqu'à ce que vous la révoquiez sur la page de votre compte. Pour faire supprimer votre compte et tout ce qui y est conservé, demandez-le-nous (voir [Contact](#contact)).
+
+Ce n'est pas encore vérifié par le matériel : aujourd'hui, cela repose sur l'engagement de Doubleword à ne rien conserver. Cedar l'indiquera sur le modèle dès qu'un fournisseur pourra prouver, par une attestation que vous pouvez vérifier vous-même, que vos prompts ne sont traités que dans du matériel vérifié.
 
 ## Mémoire
 
@@ -57,7 +69,7 @@ Les applications demandent quelques autorisations, utilisées uniquement sur vot
 
 ## Enfants
 
-Comme nous ne collectons aucune donnée, nous n'en collectons pas non plus auprès des enfants.
+Le logiciel cedar ne collecte aucune donnée, et donc aucune auprès des enfants. Cedar Private Inference s'adresse aux adultes, et nous ne conservons pas sciemment l'adresse e-mail d'un enfant.
 
 ## Modifications
 
