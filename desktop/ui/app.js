@@ -11,6 +11,8 @@ let formTouched = false;
 // whether the user opened or closed one themselves; until then it follows the saved choice.
 let openSource = null;
 let sourceTouched = false;
+// The error of the last click on Cedar Private Inference's buttons, until the next click.
+let privateClickError = false;
 let hostedTouched = false;
 
 // The model servers people run themselves, for the own-server form: where each listens by
@@ -119,11 +121,15 @@ function render(s) {
   renderHosted(s);
   renderModelChoice(s, p);
   const m = s.model;
-  // What the line names: the model server, or with none, the model the app runs with llama.cpp.
-  const name = s.llm_model.trim() || s.llama.model || '';
+  const pi = s.private_inference;
+  // What the line names: the model server, or with none, the model the app runs with llama.cpp,
+  // or Cedar Private Inference's models.
+  const name = s.llm_model.trim() || s.llama.model || pi.models[0] || '';
   const using = s.llm_model.trim()
     ? tr('model.using', { model: s.llm_model.trim(), url: s.llm_base_url.trim() })
-    : tr('llama.running', { model: name, computer: p.text('computer') });
+    : s.llama.model
+      ? tr('llama.running', { model: name, computer: p.text('computer') })
+      : tr('private.using', { models: pi.models.join(', '), provider: providerName(s, pi.provider) });
   $('model-detail').textContent = '';
   if (m.state === 'registering') {
     dot($('model-dot'), 'busy');
@@ -385,24 +391,43 @@ function renderUpdate(s) {
 
 // Setting Docker up from here (Windows and macOS): offered while Docker is missing (on Windows,
 // also while it won't start), and shown until it has finished.
-// The Model server step's three options (see index.html): running a model on this computer with
-// llama.cpp, a hosted provider, or a server the user already runs. What is in use is tagged (the
-// first can be in use beside one of the others) and a form is open, until the user opens another; a llama.cpp setup that is running or failed
-// keeps its own open. The first is greyed out when no GPU here can run one of Cedar's models,
-// and the provider is the recommended one then.
+// The Model server step's four options (see index.html): running a model on this computer with
+// llama.cpp, Cedar Private Inference, a hosted provider, or a server the user already runs. What
+// is in use is tagged (llama.cpp and Cedar Private Inference can be in use beside one of the
+// others) and a form is open, until the user opens another; a llama.cpp setup that is running or
+// failed keeps its own open, and so does a connection waiting for its approval. The first is
+// greyed out when no GPU here can run one of Cedar's models; Cedar Private Inference then comes
+// first and is the recommended one (a hosted provider, in a build without it).
 function renderModelChoice(s, p) {
   const l = s.llama;
+  const pi = s.private_inference;
   const settingUp = l.setup.state === 'running' || l.setup.state === 'failed';
+  const connecting = pi.connect.state !== 'idle';
   const canLlama = !!l.offer || !!l.model || settingUp;
-  // What is in use is open: the model server's form, or with none, the llama.cpp one.
-  if (!sourceTouched) openSource = settingUp ? 'llama' : s.model_source || (l.model ? 'llama' : null);
+  const privateShown = pi.available || !!pi.provider;
+  // What is in use is open: the model server's form, or with none, the llama.cpp one, or
+  // Cedar Private Inference.
+  if (!sourceTouched) {
+    openSource = settingUp ? 'llama' : connecting ? 'private' : s.model_source || (l.model ? 'llama' : pi.provider ? 'private' : null);
+  }
   if (openSource === 'llama' && !canLlama) openSource = null;
+  if (openSource === 'private' && !privateShown) openSource = null;
+
+  // First where this computer can't run a model, else after llama.cpp. Moved only when it is in
+  // the wrong place, so a focused button keeps its focus.
+  const card = $('pick-private');
+  const choices = card.parentElement;
+  const first = !l.offer && !l.model;
+  if (first && choices.firstElementChild !== card) choices.prepend(card, $('private'));
+  if (!first && $('llama').nextElementSibling !== card) $('llama').after(card, $('private'));
+  card.classList.toggle('hidden', !privateShown);
+  renderPrivate(s);
 
   $('pick-llama').disabled = !canLlama;
   $('pick-llama-text').textContent = canLlama
     ? tr('pick.llamaText', { computer: p.text('computer') })
     : tr('pick.llamaNo', { computer: p.text('computer') });
-  for (const source of ['llama', 'own', 'hosted']) {
+  for (const source of ['llama', 'private', 'own', 'hosted']) {
     const card = $(`pick-${source}`);
     const open = openSource === source;
     card.classList.toggle('open', open);
@@ -410,15 +435,44 @@ function renderModelChoice(s, p) {
     $(source).classList.toggle('hidden', !open);
     const tag = $(`pick-${source}-tag`);
     // A model the app runs and a model server can both be in use: cedar has an entry for each.
-    const inUse = source === 'llama' ? !!l.model : s.model_source === source;
+    const inUse = source === 'llama' ? !!l.model : source === 'private' ? !!pi.provider : s.model_source === source;
     // Until something is chosen: running a model here where the GPU can run one that does
     // Cedar's work well, a provider where it cannot, only a small model fits, or the model
     // offered is an experimental one.
     const tested = l.offer && !l.offer.small && !l.offer.experimental;
-    const recommended = !s.configured && source === (tested ? 'llama' : 'hosted');
+    const recommended = !s.configured && source === (tested ? 'llama' : pi.available ? 'private' : 'hosted');
     tag.textContent = inUse ? tr('pick.inUse') : recommended ? tr('pick.recommended') : '';
     tag.classList.toggle('hidden', !inUse && !recommended);
   }
+}
+
+// A provider's name as the hosted list writes it ("doubleword" -> "Doubleword").
+function providerName(s, provider) {
+  if (!provider) return '';
+  const known = s.providers.find((item) => item.name.toLowerCase() === provider.toLowerCase());
+  return known ? known.name : provider;
+}
+
+// Cedar Private Inference's form: Connect; while connecting, the code to approve in the browser;
+// once connected, its models, the account page and Disconnect. A connection that failed says why,
+// and Connect becomes Try again; nothing else is chosen in its place.
+function renderPrivate(s) {
+  const pi = s.private_inference;
+  const c = pi.connect;
+  const waiting = c.state === 'starting' || c.state === 'waiting';
+  const connected = !!pi.provider;
+  $('private-start').classList.toggle('hidden', waiting || connected);
+  $('private-waiting').classList.toggle('hidden', !waiting);
+  $('private-connected').classList.toggle('hidden', waiting || !connected);
+  $('private-code').textContent = c.state === 'waiting' ? c.detail.user_code : '…';
+  $('private-link').classList.toggle('hidden', c.state !== 'waiting');
+  if (c.state === 'waiting') $('private-link').href = c.detail.url;
+  $('private-connect').textContent = tr(c.state === 'failed' ? 'private.retry' : 'private.connect');
+  $('private-models').textContent = connected
+    ? tr('private.connected', { provider: providerName(s, pi.provider), models: pi.models.join(', ') })
+    : '';
+  // A click's own error (shown until the next one) or the connection's.
+  if (!privateClickError) $('private-error').textContent = c.state === 'failed' ? `${tr('private.notConnected')} ${c.detail}` : '';
 }
 
 // The own-server form's presets: the one whose address is in the field is marked, with its hint
@@ -855,6 +909,29 @@ function openFromHash() {
   $('model').scrollIntoView({ block: 'start' });
 }
 window.addEventListener('hashchange', openFromHash);
+
+// Cedar Private Inference: connecting opens the approval page in the browser; the page follows
+// the connection in the status.
+function privateAction(command, args) {
+  return async () => {
+    privateClickError = false;
+    $('private-error').textContent = '';
+    try {
+      await invoke(command, args && args());
+    } catch (e) {
+      privateClickError = true;
+      $('private-error').textContent = String(e);
+    }
+    refresh();
+  };
+}
+$('private-connect').addEventListener('click', privateAction('connect_private_inference'));
+$('private-reconnect').addEventListener('click', privateAction('connect_private_inference'));
+$('private-cancel').addEventListener('click', privateAction('cancel_private_inference'));
+$('private-account').addEventListener('click', privateAction('open_url', () => ({ url: lastStatus.private_inference.account_url })));
+$('private-disconnect').addEventListener('click', () => {
+  if (confirm(tr('private.disconnectConfirm'))) privateAction('disconnect_private_inference')();
+});
 
 for (const card of document.querySelectorAll('.sources .choice')) {
   card.addEventListener('click', () => {

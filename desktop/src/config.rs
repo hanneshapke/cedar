@@ -57,6 +57,10 @@ pub struct Config {
     /// A model the app runs itself with llama.cpp (see llamasetup.rs), beside or instead of the
     /// model server above: cedar gets it as an entry of its own.
     pub llama: Option<Llama>,
+    /// Cedar Private Inference, once connected on the setup page (see private.rs): the key and
+    /// models the service handed over. cedar gets each model as an entry of its own, beside the
+    /// model server above and llama.cpp.
+    pub private_inference: Option<PrivateInference>,
     /// The port the app's llama-server listens on, on this computer only.
     pub llama_port: u16,
     /// The setup page's "Allow experimental models": the model the app offers to run may be one
@@ -98,6 +102,35 @@ pub struct Llama {
     pub model: String,
 }
 
+/// What Cedar Private Inference handed over when the user connected: the provider's address and
+/// key, and the models to register with it. Prompts go to `base_url` directly, never through the
+/// service.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct PrivateInference {
+    /// The provider's OpenAI-compatible address, e.g. `https://api.doubleword.ai/v1`.
+    pub base_url: String,
+    pub api_key: String,
+    /// The provider's name, e.g. `doubleword`.
+    pub provider: String,
+    /// Where the user sees the balance and tops up.
+    pub account_url: String,
+    /// The small one first.
+    pub models: Vec<PrivateModel>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct PrivateModel {
+    /// cedar's registry id: `private-small` or `private-large`.
+    pub id: String,
+    /// The provider's name for it, sent as `model`.
+    pub model: String,
+    /// The name the service gave it, with its size ("DeepSeek V4.1 Flash 120B"), so cedar's
+    /// routing can rank it.
+    pub label: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default)]
 pub struct Secrets {
@@ -135,6 +168,7 @@ impl Default for Config {
             run_locally: false,
             model_source: String::new(),
             llama: None,
+            private_inference: None,
             llama_port: 18081,
             llama_experimental: false,
             llama_experimental_model: String::new(),
@@ -241,9 +275,10 @@ impl Config {
         !self.llm_base_url.trim().is_empty() && !self.llm_model.trim().is_empty()
     }
 
-    /// There is a model to register with cedar: a model server, or one the app runs itself.
+    /// There is a model to register with cedar: a model server, one the app runs itself, or
+    /// Cedar Private Inference.
     pub fn configured(&self) -> bool {
-        self.has_server() || self.llama.is_some()
+        self.has_server() || self.llama.is_some() || self.private_inference.is_some()
     }
 
     pub fn sandbox_image(&self) -> String {
