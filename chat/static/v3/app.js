@@ -1016,7 +1016,10 @@ function finishTurn(view, event) {
   if (figures.length) placeCard(view, figuresCard(figures));
   if (event.type === 'run.failed') {
     const n = note('error', '');
-    n.lastChild.textContent = d.error || tr('v3.somethingWrong');
+    // Out of credit, or a key the model's server refused: what to do about it.
+    const refusal = cedarModels.refusalNotice(d);
+    if (refusal) n.lastChild.replaceChildren(...refusal);
+    else n.lastChild.textContent = d.error || tr('v3.somethingWrong');
     put(n);
   } else if (event.type === 'run.cancelled') {
     put(note('muted', '', escapeHtml(d.reason === 'server shutting down' ? tr('v3.stoppedShutdown') : tr('v3.stopped'))));

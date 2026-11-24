@@ -1508,6 +1508,32 @@ with `nvidia-smi` for NVIDIA cards and from the `amdgpu` driver for AMD ones; wi
 Only x86_64 is covered so far. Every download is checked against a size and SHA-256 compiled into
 `cedar-llama`. `scripts/systemd/cedar-llama.service` runs `serve` under systemd.
 
+#### Cedar Private Inference
+
+Cedar Private Inference is an optional hosted service: sign in with your email, get trial credit,
+and Cedar registers two models with a key for its inference provider (a small one, the default,
+and a large one, as `private-small` and `private-large`). Prompts go from cedar to the provider
+directly, never through the service, and the provider keeps none of them (zero data retention, by
+contract). Connect it from the desktop app's setup page, the chat's Settings → Models → *Add a
+model*, or, on a server without a browser:
+
+```sh
+cedar private-inference connect
+```
+
+It prints a code and a page to approve it on, in a browser anywhere, waits, and registers both
+models with the running cedar through `PUT /v1/admin/models/{id}`. With the server's own
+environment it finds cedar at `BIND_ADDR` and takes the first of `CEDAR_ADMIN_KEYS`; `--cedar` and
+`--key` say otherwise. `cedar private-inference disconnect` removes both models; the key stays
+valid until it is revoked on the account page.
+
+The entries carry `service: "cedar-private-inference"` and the `account_url` where the credit is
+topped up. When the credit is used up, the provider answers `402` with `spend_cap_exceeded`: the
+run fails with `error_code: "out_of_credit"` and that `account_url` in `run.failed`, and the chat
+says so with a *Top up* link. After a top-up the same key works again within seconds; a `403` from
+a service's entry is retried for up to a minute after the entry changed, while a new key
+activates. `CEDAR_PRIVATE_INFERENCE_URL` points every client at another instance of the service.
+
 ### Integrations
 
 Instead of putting `BRAVE_API_KEY`, `BESTBUY_API_KEY`, `SERPAPI_API_KEY`, `SLACK_BOT_TOKEN`, `GOOGLE_CLIENT_ID`,

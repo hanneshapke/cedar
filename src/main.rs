@@ -27,6 +27,10 @@ async fn main() -> Result<()> {
             std::process::exit(1);
         }
     }
+    // Cedar Private Inference for a server without a browser (see cedar::private_inference).
+    if args.first().map(String::as_str) == Some("private-inference") {
+        std::process::exit(cedar::private_inference::main(&args[1..]).await);
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn")),

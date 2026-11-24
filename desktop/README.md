@@ -454,10 +454,10 @@ key works a few seconds after it is created, so registering may take up to a min
   and what the agent's tools return go to the inference provider with every model call, straight
   from this computer. The provider keeps none of it (zero data retention, by contract). Cedar's
   service only hands over the key and keeps track of your credit; no prompt goes through it.
-- **Credit.** When it is used up, the provider refuses further calls and runs fail (with
-  `error_code` `out_of_credit` and the account page's address in their `run.failed` event) until
-  you top up on the account page, which *Balance and top-up* on the setup page opens. The same
-  key works again a few seconds later, without connecting again.
+- **Credit.** When it is used up, the provider refuses further calls: the chat says *Your Cedar
+  Private Inference credit is used up* with a *Top up* link to the account page, which *Balance
+  and top-up* on the setup page opens too. After a top-up the same key works again a few seconds
+  later, without connecting again.
 - **Connect again, Disconnect.** *Connect again* runs the same flow and replaces both entries
   (needed after rotating the key on the account page). *Disconnect* removes both from cedar and
   the key from `config.json`; the key stays valid until you revoke it on the account page.

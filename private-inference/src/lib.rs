@@ -215,6 +215,31 @@ impl Grant {
         }
     }
 
+    /// What to register in cedar: for each model, its registry id and the body of cedar's
+    /// `PUT /v1/admin/models/{id}`. The small one is made the default; routing moves a run to the
+    /// large one when the task needs it. Whether a model reads images is left to cedar to find
+    /// out (`detect_images`).
+    pub fn model_specs(&self) -> Vec<(&'static str, serde_json::Value)> {
+        self.entries()
+            .into_iter()
+            .map(|(id, m)| {
+                let mut spec = serde_json::json!({
+                    "base_url": self.base_url,
+                    "model": m.id,
+                    "label": m.name,
+                    "api_key": self.api_key,
+                    "service": SERVICE,
+                    "account_url": self.account_url,
+                    "detect_images": true,
+                });
+                if id == SMALL_ID {
+                    spec["is_default"] = true.into();
+                }
+                (id, spec)
+            })
+            .collect()
+    }
+
     fn check(&self) -> Result<(), Error> {
         let bad = |what: &str| Err(Error::Malformed(what.to_string()));
         if check_http_url(&self.base_url).is_err() {
@@ -235,6 +260,42 @@ impl Grant {
             }
         }
         Ok(())
+    }
+}
+
+/// How long registering a new key's models is retried: a provider refuses a key for a few seconds
+/// after it is created, topped up or rotated, and cedar checks the key by listing the models.
+pub const ACTIVATION_WAIT: Duration = Duration::from_secs(60);
+
+/// Runs `attempt` until it succeeds or [`ACTIVATION_WAIT`] has passed, waiting 2 s, then 4, 8
+/// and 10 s between tries. The last error is returned.
+pub async fn retry_while_activating<T, E, F, Fut>(attempt: F) -> Result<T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+    E: std::fmt::Display,
+{
+    retry_for(ACTIVATION_WAIT, Duration::from_secs(2), attempt).await
+}
+
+async fn retry_for<T, E, F, Fut>(limit: Duration, first: Duration, mut attempt: F) -> Result<T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, E>>,
+    E: std::fmt::Display,
+{
+    let deadline = Instant::now() + limit;
+    let mut wait = first;
+    loop {
+        match attempt().await {
+            Ok(v) => return Ok(v),
+            Err(e) if Instant::now() + wait < deadline => {
+                tracing::info!(error = %e, ?wait, "the new key isn't accepted yet; trying again");
+                tokio::time::sleep(wait).await;
+                wait = (wait * 2).min(first * 5);
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
 
@@ -446,6 +507,46 @@ mod tests {
         let mut bad = one;
         bad.api_key = " ".into();
         assert!(matches!(bad.check(), Err(Error::Malformed(_))));
+    }
+
+    #[test]
+    fn the_specs_register_both_models_with_the_service_and_the_small_one_as_default() {
+        let g = grant(serde_json::json!([
+            { "id": "big", "name": "Big 2.8T", "role": "large", "params_b": 2800 },
+            { "id": "small", "name": "Small 120B", "role": "small", "params_b": 120 },
+        ]));
+        let specs = g.model_specs();
+        assert_eq!(specs.len(), 2);
+        assert_eq!(specs[0].0, SMALL_ID);
+        assert_eq!(
+            specs[0].1,
+            serde_json::json!({
+                "base_url": "https://api.example/v1", "model": "small", "label": "Small 120B",
+                "api_key": "sk-1", "service": "cedar-private-inference",
+                "account_url": "https://plg.example/account", "detect_images": true, "is_default": true,
+            })
+        );
+        assert_eq!((specs[1].0, specs[1].1.get("is_default")), (LARGE_ID, None));
+    }
+
+    #[tokio::test]
+    async fn activation_retries_until_it_works_or_time_is_up() {
+        let tries = std::cell::Cell::new(0);
+        let ok = retry_for(Duration::from_secs(1), Duration::from_millis(1), || {
+            tries.set(tries.get() + 1);
+            let n = tries.get();
+            async move { if n < 3 { Err("403") } else { Ok(n) } }
+        })
+        .await;
+        assert_eq!(ok, Ok(3));
+        let tries = std::cell::Cell::new(0);
+        let failed: Result<(), _> = retry_for(Duration::from_millis(30), Duration::from_millis(5), || {
+            tries.set(tries.get() + 1);
+            async { Err("403") }
+        })
+        .await;
+        assert_eq!(failed, Err("403"));
+        assert!(tries.get() >= 2, "tried {} times", tries.get());
     }
 
     #[test]

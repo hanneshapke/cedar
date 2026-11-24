@@ -9,6 +9,8 @@ license = "Apache-2.0"
 anyhow = "1"
 # Settings -> Phone: the QR code the phone apps scan and the Tailscale checks, shared with the desktop app.
 cedar-pairing = { path = "../pairing" }
+# Settings -> Models -> Cedar Private Inference: the connect flow, shared with the desktop app and the CLI.
+cedar-private-inference = { path = "../private-inference" }
 # Contributing conversations: the bundle, its checks and the redaction scan, shared with the ingest.
 cedar-contrib-schema = { path = "../contrib-schema" }
 axum = { version = "0.8", features = ["macros"] }

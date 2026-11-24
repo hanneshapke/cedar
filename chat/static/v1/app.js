@@ -926,7 +926,10 @@ function finishTurn(view, event) {
   if (figures.length) view.body.append(...figures);
   if (event.type === 'run.failed') {
     const box = h('div', 'notice error');
-    box.textContent = d.error || tr('v1.failed');
+    // Out of credit, or a key the model's server refused: what to do about it.
+    const refusal = cedarModels.refusalNotice(d);
+    if (refusal) box.replaceChildren(...refusal);
+    else box.textContent = d.error || tr('v1.failed');
     view.body.append(box);
   } else if (event.type === 'run.cancelled') {
     const note = h('div', 'notice muted');

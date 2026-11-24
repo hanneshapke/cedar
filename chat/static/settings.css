@@ -313,3 +313,6 @@
 .cedar-set-reasoning { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
 .cedar-set-advanced { display: flex; flex-direction: column; gap: 8px; }
 .cedar-set-advanced[hidden] { display: none; }
+/* Cedar Private Inference's connect form: the code to approve in a browser, in large type. */
+.cedar-set-private-state:empty { display: none; }
+.cedar-set-code { margin: 4px 0; font: 600 24px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.12em; color: var(--ink); }
