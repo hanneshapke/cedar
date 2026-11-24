@@ -400,7 +400,13 @@ data folder (see [Where things are](#where-things-are)). The app starts `llama-s
 two servers and stops it when you quit; one that a crash of the app left running is ended the
 next time the app starts. `llama-server.log` in the logs folder is its output.
 
-*Remove* stops it, deletes llama.cpp and the model, and takes its entry out of cedar's registry.
+*Stop* ends `llama-server`, which frees the memory the model took, and keeps what was
+downloaded; *Start* loads the model again. While it is stopped, a chat that uses this model
+fails (one that uses a provider or server chosen beside it goes on), and the app does not load
+it when it starts: it stays stopped until *Start*.
+
+*Remove* asks first, then stops it, deletes llama.cpp and the model, and takes its entry out of
+cedar's registry.
 A provider or server chosen beside it is not touched, and choosing one does not stop llama.cpp.
 The app runs one model with llama.cpp at a time; to run another, remove this one first. An
 update of Cedar that pins a newer llama.cpp downloads that build on its first start; the model
@@ -700,7 +706,7 @@ the app starts nothing meanwhile.
 or `hosted`; in a file from before the page had the options it is missing, and the address
 decides. `llama` (`{"build": "macos-arm64", "model": "gemma-4-26b-a4b"}`, or `null`) names what the
 app installed when it runs a model with llama.cpp, on `llama_port` (18081) with the key in
-`secrets.llama_api_key`. It is separate from the `llm_*` fields, which may be empty beside it.
+`secrets.llama_api_key`; `llama_stopped` is the page's *Stop*. It is separate from the `llm_*` fields, which may be empty beside it.
 
 `locale` is the language picked on the setup page, which asks for it first on a first launch and
 has a Language menu at the top after that: `en`, `en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH`,

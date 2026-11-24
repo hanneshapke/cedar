@@ -181,6 +181,7 @@ async fn run(state: &AppState, cancel: &CancellationToken) -> Result<(), Stop> {
     state
         .update_config(|c| {
             c.llama = Some(Llama { build: plan.build.id().to_string(), model: plan.model.id.to_string() });
+            c.llama_stopped = false;
         })
         .map_err(failed)?;
     Ok(())
@@ -219,7 +220,10 @@ pub async fn remove(app: AppHandle) -> anyhow::Result<()> {
         return Ok(());
     };
     state.llama.stop().await;
-    state.update_config(|c| c.llama = None)?;
+    state.update_config(|c| {
+        c.llama = None;
+        c.llama_stopped = false;
+    })?;
     let _ = tokio::fs::remove_dir_all(state.paths.llama()).await;
     if let Some(model) = catalog::by_id(&llama.model) {
         let _ = tokio::fs::remove_dir_all(install::model_dir(&state.paths.models(), model)).await;

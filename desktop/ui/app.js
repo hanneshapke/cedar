@@ -123,13 +123,14 @@ function render(s) {
   const name = s.llm_model.trim() || s.llama.model || '';
   const using = s.llm_model.trim()
     ? tr('model.using', { model: s.llm_model.trim(), url: s.llm_base_url.trim() })
-    : tr('llama.running', { model: name, computer: p.text('computer') });
+    : tr(s.llama.stopped ? 'llama.installedStopped' : 'llama.running', { model: name, computer: p.text('computer') });
   $('model-detail').textContent = '';
   if (m.state === 'registering') {
     dot($('model-dot'), 'busy');
     $('model-text').textContent = tr('model.registering', { model: name });
   } else if (m.state === 'registered') {
-    dot($('model-dot'), 'ok');
+    // Only a model the user stopped: nothing answers a chat until it is started.
+    dot($('model-dot'), !s.llm_model.trim() && s.llama.stopped ? 'warn' : 'ok');
     // m.detail says the same in English; the page words it in the user's language.
     $('model-text').textContent = using;
   } else if (m.state === 'failed') {
@@ -467,6 +468,10 @@ function llamaProgress(l) {
   return typeof l.progress === 'number' ? l.progress : -1;
 }
 
+// Whether "Remove" is waiting for its answer, and what the last Start, Stop or Remove failed with.
+let confirmingRemove = false;
+let llamaError = '';
+
 // llama.cpp as the model server, set up and run by the app (src/llamasetup.rs): offered when this
 // computer's GPU can run one of Cedar's models, with the download's progress while it is set up,
 // and what it runs once it is.
@@ -481,7 +486,7 @@ function renderLlama(s, p) {
   const gb = (bytes) => Math.round(bytes / 1e9);
   const intro = $('llama-intro');
   if (installed) {
-    intro.textContent = tr('llama.running', { model: l.model, computer: p.text('computer') });
+    intro.textContent = tr(l.stopped ? 'llama.installedStopped' : 'llama.running', { model: l.model, computer: p.text('computer') });
   } else if (offer) {
     intro.textContent = tr(offer.unified ? 'llama.offerUnified' : 'llama.offer', {
       computer: p.text('computer'),
@@ -522,7 +527,17 @@ function renderLlama(s, p) {
   install.textContent = failed ? tr('common.tryAgain') : tr('llama.install');
   install.dataset.command = installed ? 'recheck' : 'install_llama';
   $('llama-cancel').classList.toggle('hidden', !(running && typeof l.progress === 'number'));
+  // "Stop" frees the GPU's memory and keeps what was downloaded; "Start" loads the model again.
+  $('llama-start').classList.toggle('hidden', !installed || running || !l.stopped);
+  $('llama-stop').classList.toggle('hidden', !installed || running || l.stopped);
+  // "Remove" asks first, on the page: its question takes the buttons' place until answered.
+  if (!installed || running) confirmingRemove = false;
   $('llama-remove').classList.toggle('hidden', !installed || running);
+  for (const id of ['llama-start', 'llama-stop', 'llama-remove']) $(id).disabled = confirmingRemove;
+  $('llama-confirm').classList.toggle('hidden', !confirmingRemove);
+  $('llama-confirm-text').textContent = confirmingRemove
+    ? tr('llama.removeConfirm', { model: l.model, computer: p.text('computer') })
+    : '';
   showProgress($('llama-progress'), running ? llamaProgress(l) : null);
 
   const text = $('llama-text');
@@ -532,6 +547,11 @@ function renderLlama(s, p) {
   detail.textContent = '';
   if (running) {
     text.textContent = st.detail;
+  } else if (llamaError) {
+    text.className = 'error';
+    text.textContent = llamaError;
+  } else if (installed && l.stopped) {
+    text.textContent = tr('llama.stopped', { model: l.model });
   } else if (failed) {
     text.className = 'error';
     text.textContent = tr('llama.failed');
@@ -831,11 +851,33 @@ function setExperimental(args) {
 $('llama-experimental').addEventListener('change', (e) => setExperimental({ allow: e.currentTarget.checked }));
 $('llama-experimental-model').addEventListener('change', (e) => setExperimental({ allow: true, model: e.currentTarget.value }));
 $('llama-cancel').addEventListener('click', () => invoke('cancel_llama').then(refresh).catch((e) => alert(e)));
+// What these three fail with is said on the page: the Mac's webview shows no alert().
+function llamaCommand(command, args) {
+  llamaError = '';
+  return invoke(command, args)
+    .catch((e) => { llamaError = String(e); })
+    .then(refresh);
+}
+$('llama-start').addEventListener('click', () => llamaCommand('set_llama_stopped', { stopped: false }));
+$('llama-stop').addEventListener('click', () => llamaCommand('set_llama_stopped', { stopped: true }));
+// "Remove" asks on the page and not with confirm(): the Mac's webview shows no such dialog and
+// answers it with "no", so the button did nothing there.
+function askRemove(asking) {
+  confirmingRemove = asking;
+  llamaError = '';
+  if (lastStatus) render(lastStatus);
+}
 $('llama-remove').addEventListener('click', () => {
-  const model = (lastStatus && lastStatus.llama.model) || '';
-  const computer = platform(lastStatus && lastStatus.platform).text('computer');
-  if (!confirm(tr('llama.removeConfirm', { model, computer }))) return;
-  invoke('remove_llama').then(refresh).catch((e) => alert(e));
+  askRemove(true);
+  $('llama-remove-no').focus();
+});
+$('llama-remove-no').addEventListener('click', () => {
+  askRemove(false);
+  $('llama-remove').focus();
+});
+$('llama-remove-yes').addEventListener('click', () => {
+  askRemove(false);
+  llamaCommand('remove_llama');
 });
 $('ts-install').addEventListener('click', () => invoke('install_tailscale').then(refresh).catch((e) => alert(e)));
 $('docker-finish').addEventListener('click', () => invoke('finish_docker_setup').catch((e) => alert(e)));

@@ -59,6 +59,9 @@ pub struct Config {
     pub llama: Option<Llama>,
     /// The port the app's llama-server listens on, on this computer only.
     pub llama_port: u16,
+    /// The setup page's "Stop": the model stays installed but is not loaded, so the GPU's memory
+    /// is free, until "Start". Kept across a restart of the app.
+    pub llama_stopped: bool,
     /// The setup page's "Allow experimental models": the model the app offers to run may be one
     /// of cedar-llama's experimental ones (see `cedar_llama::catalog::EXPERIMENTAL`).
     pub llama_experimental: bool,
@@ -136,6 +139,7 @@ impl Default for Config {
             model_source: String::new(),
             llama: None,
             llama_port: 18081,
+            llama_stopped: false,
             llama_experimental: false,
             llama_experimental_model: String::new(),
             cedar_env: BTreeMap::new(),

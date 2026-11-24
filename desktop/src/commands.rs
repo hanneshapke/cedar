@@ -170,6 +170,17 @@ pub async fn remove_llama(app: AppHandle) -> Result<(), String> {
     crate::llamasetup::remove(app).await.map_err(fail)
 }
 
+/// Stops the model the app runs with llama.cpp, which frees the GPU's memory, or starts it again.
+#[tauri::command]
+pub async fn set_llama_stopped(app: AppHandle, stopped: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    // Not under a download or an update of llama.cpp, which ends by starting it.
+    if state.llama_setup_running() {
+        return Err(t("cmd.llama_busy"));
+    }
+    app::set_llama_stopped(app.clone(), stopped).await.map_err(fail)
+}
+
 /// Turns the browser tool on or off; on pulls its image and restarts cedar with `BROWSER=on`.
 #[tauri::command]
 pub fn set_browser(app: AppHandle, enabled: bool) -> Result<(), String> {
