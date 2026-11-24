@@ -154,6 +154,13 @@ pub struct ServerModelsQuery {
     pub id: Option<String>,
 }
 
+fn is_loopback_host(url: &reqwest::Url) -> bool {
+    let host = url.host_str().unwrap_or_default();
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    host.eq_ignore_ascii_case("localhost")
+        || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
 /// Tells an explicit `null` (`Some(None)`) apart from an absent field (`None`, via `default`).
 pub(crate) fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
 where
@@ -694,7 +701,14 @@ impl Integrations {
         let account_url = match spec.account_url.as_deref().map(str::trim) {
             Some("") => None,
             Some(u) => match reqwest::Url::parse(u) {
-                Ok(parsed) if parsed.scheme() == "https" && u.len() <= 2048 => Some(u.to_string()),
+                // http only for a service on this machine (a local cedar-plg, while testing).
+                Ok(parsed)
+                    if u.len() <= 2048
+                        && (parsed.scheme() == "https"
+                            || (parsed.scheme() == "http" && is_loopback_host(&parsed))) =>
+                {
+                    Some(u.to_string())
+                }
                 _ => return Err(AppError::BadRequest("account_url must be an https URL".into())),
             },
             None => existing.as_ref().and_then(|e| e.account_url.clone()),

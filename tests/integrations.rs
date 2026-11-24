@@ -1620,6 +1620,21 @@ async fn an_admin_registers_a_model_with_its_server_and_key() {
     assert_eq!(body["service"], "cedar-private-inference");
     let (_, body) = put_model(&app, "gpu", json!({ "base_url": server_url, "model": "m-1" })).await;
     assert_eq!(body["account_url"], "https://cedar.example/account");
+    // Plain http only for a service on this machine.
+    let (code, body) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "account_url": "http://localhost:3000/account" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let (code, _) = put_model(
+        &app,
+        "gpu",
+        json!({ "base_url": server_url, "model": "m-1", "account_url": "https://cedar.example/account" }),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
     let public = &app.get("/v1/models", KEY_A).await.1["models"][0];
     assert_eq!(public["service"], "cedar-private-inference");
     assert_eq!(public["account_url"], "https://cedar.example/account");

@@ -501,6 +501,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cedar-private-inference"
+version = "0.12.1"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "rand 0.8.8",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "cexpr"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

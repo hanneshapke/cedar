@@ -50,7 +50,7 @@ tower = { version = "0.5", features = ["util"] }
 native-computer = ["dep:enigo", "dep:xcap"]
 
 [workspace]
-members = [".", "chat", "pairing", "llama", "contrib-schema", "contrib"]
+members = [".", "chat", "pairing", "llama", "contrib-schema", "contrib", "private-inference"]
 # The desktop app (a Tauri crate) is built on its own: it needs system libraries the servers don't.
 exclude = ["desktop"]
 
