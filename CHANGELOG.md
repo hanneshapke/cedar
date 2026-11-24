@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The desktop app can stop the model it runs, and *Remove* works on a Mac.** The setup page's *Run a model here with llama.cpp* has a *Stop* button, which ends `llama-server` and frees the memory the model took without deleting anything, and a *Start* button that loads it again. A model that was stopped stays stopped when the app starts. *Remove* did nothing on a Mac: it asked with a browser dialog that the Mac's webview never shows and answers with "no". It now asks on the page, and what goes wrong with any of the three is said there too.
 - **A tool is no longer left out of a run because of digits in an address.** Two failures in a row that look temporary take a tool out of a run, and an error counted as temporary when `429`, `502`, `503` or `504` appeared anywhere in it, a port or a path included: two missing pages at `http://host:45039/…` were enough. Addresses are now left out of that reading, and a status code counts only as a number of its own.
 
 ## 0.12.1

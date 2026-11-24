@@ -123,6 +123,8 @@ pub struct LlamaStatus {
     pub progress: Option<f64>,
     /// The model it runs, once installed; `None` while the model server is the user's own.
     pub model: Option<String>,
+    /// The user stopped it (`Config::llama_stopped`): installed, and not in the GPU's memory.
+    pub stopped: bool,
     pub server: ServiceState,
 }
 
@@ -364,6 +366,7 @@ impl AppState {
             setup,
             progress,
             model: installed,
+            stopped: cfg.llama.is_some() && cfg.llama_stopped,
             server: self.llama.state(),
         }
     }
@@ -526,7 +529,9 @@ impl AppState {
         let chosen = *self.chosen.lock().unwrap();
         let mut names = Vec::new();
         let mut result = Ok(());
-        let installed = cfg.llama.as_ref().and_then(|l| cedar_llama::catalog::by_id(&l.model));
+        // One the user stopped keeps the entry it has: cedar asks a model server for its models
+        // when it registers one, and this one does not answer.
+        let installed = cfg.llama.as_ref().filter(|_| !cfg.llama_stopped).and_then(|l| cedar_llama::catalog::by_id(&l.model));
         if let Some(model) = installed {
             // The catalog's reply limit is where the entry starts. Once cedar has the entry for
             // this model, the limit is the user's to change in the chat's Settings, and a launch
@@ -724,9 +729,14 @@ pub async fn bootstrap(app: AppHandle) {
 }
 
 /// Starts the app's llama-server when the app runs a model with llama.cpp (downloading a build
-/// first if an update of the app pinned a newer one), and stops it when it does not. `false` with
-/// the reason on the page when the model could not be loaded.
+/// first if an update of the app pinned a newer one), and stops it when it does not, or when the
+/// user stopped it on the setup page. `false` with the reason on the page when the model could
+/// not be loaded.
 async fn start_llama(state: &AppState) -> bool {
+    if state.config().llama_stopped {
+        state.llama.stop().await;
+        return true;
+    }
     let started = match llamasetup::ensure(state).await {
         Ok(None) => {
             state.llama.stop().await;
@@ -737,11 +747,40 @@ async fn start_llama(state: &AppState) -> bool {
     };
     match started {
         Ok(()) => true,
+        // Stopped by the user while it loaded: not a failure.
+        Err(_) if state.config().llama_stopped => true,
         Err(why) => {
             state.set_model(ModelStatus::Failed(why));
             false
         }
     }
+}
+
+/// The setup page's "Stop" and "Start" for the model the app runs with llama.cpp. Stopping ends
+/// llama-server, which frees the GPU's memory; the model stays on the disk and in cedar's
+/// registry, and a chat that uses it fails until it is started. Starting returns at once and
+/// loads the model in the background, with the progress on the page. Either is remembered, so
+/// one that was stopped is not loaded when the app starts.
+pub async fn set_llama_stopped(app: AppHandle, stopped: bool) -> Result<()> {
+    let state = app.state::<AppState>();
+    if state.config().llama.is_none() {
+        return Ok(());
+    }
+    state.update_config(|c| c.llama_stopped = stopped)?;
+    if stopped {
+        state.llama.stop().await;
+        return Ok(());
+    }
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        if state.supervisor.state() != ServiceState::Running {
+            bootstrap(app.clone()).await;
+        } else if start_llama(&state).await {
+            state.register_model().await;
+        }
+        window::push_llama(&app);
+    });
+    Ok(())
 }
 
 /// The question's "this computer": recorded, then the chat once the servers run and the model is
@@ -1082,6 +1121,29 @@ mod tests {
         assert!(app.register_model().await);
         let requests = puts(&seen);
         assert!(!requests[0].contains("is_default") && requests[1].contains(r#""is_default":true"#), "{requests:?}");
+    }
+
+    /// A model the user stopped is not loaded, so cedar is not told about it again: its entry
+    /// stays as it is, and the page learns that it is stopped.
+    #[tokio::test]
+    async fn a_stopped_llama_keeps_its_entry() {
+        let (port, seen) = cedar("https://api.groq.com/openai/v1").await;
+        let app = state(Config {
+            cedar_port: port,
+            llama: Some(Llama { build: "macos-arm64".into(), model: "gemma-4-12b".into() }),
+            llama_stopped: true,
+            ..Config::default()
+        });
+        assert!(app.status().llama.stopped);
+        assert!(app.register_model().await);
+        assert!(sent(&seen).iter().all(|r| !r.starts_with("PUT ") && !r.starts_with("DELETE ")));
+
+        app.update_config(|c| c.llama_stopped = false).ok();
+        assert!(!app.status().llama.stopped);
+        assert!(app.register_model().await);
+        assert!(puts(&seen)[0].starts_with("PUT /v1/admin/models/llama "));
+        // Nothing installed: nothing is stopped either.
+        assert!(!state(Config { llama_stopped: true, ..Config::default() }).status().llama.stopped);
     }
 
     /// llama.cpp removed: its entry leaves the registry and the model server stays. With nothing
