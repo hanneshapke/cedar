@@ -405,7 +405,7 @@ downloaded; *Start* loads the model again. While it is stopped, a chat that uses
 fails (one that uses a provider or server chosen beside it goes on), and the app does not load
 it when it starts: it stays stopped until *Start*.
 
-*Remove* asks first, then stops it, deletes llama.cpp and the model, and takes its entry out of
+*Remove* asks first (click it again to confirm), then stops it, deletes llama.cpp and the model, and takes its entry out of
 cedar's registry.
 A provider or server chosen beside it is not touched, and choosing one does not stop llama.cpp.
 The app runs one model with llama.cpp at a time; to run another, remove this one first. An

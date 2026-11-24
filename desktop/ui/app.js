@@ -530,12 +530,11 @@ function renderLlama(s, p) {
   // "Stop" frees the GPU's memory and keeps what was downloaded; "Start" loads the model again.
   $('llama-start').classList.toggle('hidden', !installed || running || !l.stopped);
   $('llama-stop').classList.toggle('hidden', !installed || running || l.stopped);
-  // "Remove" asks first, on the page: its question takes the buttons' place until answered.
+  // "Remove" asks first, on the page, and a second click on it is the answer.
   if (!installed || running) confirmingRemove = false;
   $('llama-remove').classList.toggle('hidden', !installed || running);
-  for (const id of ['llama-start', 'llama-stop', 'llama-remove']) $(id).disabled = confirmingRemove;
   $('llama-confirm').classList.toggle('hidden', !confirmingRemove);
-  $('llama-confirm-text').textContent = confirmingRemove
+  $('llama-confirm').textContent = confirmingRemove
     ? tr('llama.removeConfirm', { model: l.model, computer: p.text('computer') })
     : '';
   showProgress($('llama-progress'), running ? llamaProgress(l) : null);
@@ -861,23 +860,26 @@ function llamaCommand(command, args) {
 $('llama-start').addEventListener('click', () => llamaCommand('set_llama_stopped', { stopped: false }));
 $('llama-stop').addEventListener('click', () => llamaCommand('set_llama_stopped', { stopped: true }));
 // "Remove" asks on the page and not with confirm(): the Mac's webview shows no such dialog and
-// answers it with "no", so the button did nothing there.
+// answers it with "no", so the button did nothing there. The first click asks, a second one
+// removes, and a click anywhere else or Escape takes the question back.
 function askRemove(asking) {
+  if (confirmingRemove === asking) return;
   confirmingRemove = asking;
   llamaError = '';
   if (lastStatus) render(lastStatus);
 }
-$('llama-remove').addEventListener('click', () => {
-  askRemove(true);
-  $('llama-remove-no').focus();
-});
-$('llama-remove-no').addEventListener('click', () => {
-  askRemove(false);
-  $('llama-remove').focus();
-});
-$('llama-remove-yes').addEventListener('click', () => {
+$('llama-remove').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!confirmingRemove) {
+    askRemove(true);
+    return;
+  }
   askRemove(false);
   llamaCommand('remove_llama');
+});
+document.addEventListener('click', () => askRemove(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') askRemove(false);
 });
 $('ts-install').addEventListener('click', () => invoke('install_tailscale').then(refresh).catch((e) => alert(e)));
 $('docker-finish').addEventListener('click', () => invoke('finish_docker_setup').catch((e) => alert(e)));

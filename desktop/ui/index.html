@@ -331,22 +331,9 @@
         <button class="hidden" id="llama-stop" data-i18n="llama.stop">Stop</button>
         <button class="hidden" id="llama-remove" data-i18n="llama.remove">Remove</button>
       </div>
-      <!-- Asked on the page: the Mac's webview shows no confirm() and answers it with "no". -->
-      <div id="llama-confirm" class="hidden" role="group" aria-labelledby="llama-confirm-text">
-        <p id="llama-confirm-text"></p>
-        <div class="row">
-          <button id="llama-remove-yes" data-i18n="llama.remove">Remove</button>
-          <button id="llama-remove-no" data-i18n="llama.keep">Keep it</button>
-        </div>
-      </div>
-      <!-- Asked on the page: the Mac's webview shows no confirm() and answers it with "no". -->
-      <div id="llama-confirm" class="hidden" role="group" aria-labelledby="llama-confirm-text">
-        <p id="llama-confirm-text"></p>
-        <div class="row">
-          <button id="llama-remove-yes" data-i18n="llama.remove">Remove</button>
-          <button id="llama-remove-no" data-i18n="llama.keep">Keep it</button>
-        </div>
-      </div>
+      <!-- "Remove" asks here and a second click on it answers: the Mac's webview shows no
+           confirm() and answers it with "no". -->
+      <p id="llama-confirm" class="hidden" role="status"></p>
       <progress id="llama-progress" class="hidden" max="1"></progress>
       <p id="llama-text" class="muted"></p>
       <p class="detail" id="llama-detail"></p>
