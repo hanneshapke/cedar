@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **cedar no longer switches to OpenShell when its user has no gateway.** `openshell status` exits 0 and prints `{"status": "not_configured"}` when the CLI has no gateway registered, which is the case when the gateway was set up for another user (the installer's own user service, say). cedar took that for a working gateway, so *Run sandboxes with OpenShell* could be turned on and every run after it failed with "could not start the sandbox for this run" (`No active gateway` in the log). The check now requires the gateway to be connected, and the message says that the gateway must be registered for the user cedar runs as. DEPLOYMENT.md's troubleshooting table covers the case.
+
 ## 0.12.2
 
 - **The desktop app can stop the model it runs, and *Remove* works on a Mac.** The setup page's *Run a model here with llama.cpp* has a *Stop* button, which ends `llama-server` and frees the memory the model took without deleting anything, and a *Start* button that loads it again. A model that was stopped stays stopped when the app starts. *Remove* did nothing on a Mac: it asked with a browser dialog that the Mac's webview never shows and answers with "no". It now asks on the page, and what goes wrong with any of the three is said there too.
