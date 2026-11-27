@@ -63,7 +63,21 @@ iPhone  ──/api (Bearer CHAT_ACCESS_TOKEN)──▶  cedar-chat  ──/v1─
 - Search: the search field over the list finds chats and agents' runs by their title and by
   what was said in them, on the server (`GET /api/conversations/search`), and shows each with the
   passage that matched
-- Agents, as on the web: a **Chats | Starred | Agents** switch at the top of the sidebar, and
+- Today, as on the web's `/today/`: the first segment of the sidebar's switch shows one day as a
+  river. **Now** is what is still going or waits on you, counted on the switch: a risky call is
+  allowed or denied right there, what an agent held for your OK is approved or discarded, and a
+  plan or a question opens its conversation. **Earlier** is what Cedar did today, each with its
+  outcome in a line; **Ahead** is the agents due next and the ones that keep watch (tap one for
+  its detail). **Ask for Something** asks with a When: **Now** (a conversation, off the record
+  if you choose), **Later** (once, at a time), **Every…** (daily, on weekdays or weekly) or
+  **When something changes** (matching mail, before calendar events, or when your phone asks);
+  anything but Now becomes an agent
+- An ask's outcome (tap it under Earlier): what was asked, the gist as the headline, the answer,
+  and what it left behind: the files it wrote or changed, what it remembered (with **Forget**),
+  the record rows it saved, the follow-up it suggested and what it held for your OK, with its
+  steps and sources folded under **How Cedar got here**. **Keep going from here** opens the
+  conversation
+- Agents, as on the web: a **Today | Chats | Starred | Agents** switch at the top of the sidebar, and
   under Agents an **Agents | Activity** switch. Agents lists every agent under what starts it
   (on a schedule, when something changes, webhooks and devices, mail, calendar and files) with
   its trigger in a line, where it stands (next run, watching, waiting for calls, waiting for your
@@ -250,6 +264,10 @@ simulator, which the layout code's unit tests (`FoldLayoutTests`) cover for the 
 - Plans and approvals answer through `POST /api/turns/{id}/plan` and
   `POST /api/turns/{id}/approvals/{approval_id}`; a clarifying question is answered with an
   ordinary message in the same text form the web page sends.
+- Today is `GET /api/timeline` (with the device's time zone), read with every refresh of the
+  list and every 20 seconds while it shows; an outcome is `GET /api/turns/{id}/outcome`, read
+  again every 3 seconds while its response is still going; asking with a When is
+  `POST /api/asks`, which answers the new conversation or the agent it made.
 - Images are fetched from `GET /api/conversations/{id}/files/{path}` with the access token.
 - The device token goes to `POST /api/notifications/apns/devices`.
 - Agents are `GET /api/agents` (the list and the server's limits), `GET /api/agents/{id}` (one

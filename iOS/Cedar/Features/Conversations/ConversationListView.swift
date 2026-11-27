@@ -11,6 +11,9 @@ struct ConversationListView: View {
     /// The agent the form just made: its detail opens once the form is gone.
     @State private var createdAgent: AgentSelection?
     @State private var deletingAgent: Agent?
+    /// The ask whose outcome is up, and whether the sheet to ask with a When is.
+    @State private var showingOutcome: OutcomeSelection?
+    @State private var asking = false
 
     var body: some View {
         @Bindable var app = app
@@ -19,6 +22,11 @@ struct ConversationListView: View {
                 searchRows
             } else {
                 switch app.sidebarMode {
+                case .today:
+                    TodayRows(actionError: $actionError,
+                              showOutcome: { showingOutcome = OutcomeSelection(id: $0) },
+                              showAgent: { showingAgent = AgentSelection(id: $0.id, title: $0.title) },
+                              ask: { asking = true })
                 case .chats: chats
                 case .starred: starredRows
                 case .agents:
@@ -37,7 +45,7 @@ struct ConversationListView: View {
             // A search looks through all three lists, so the switch steps aside for it.
             if !app.isSearching {
                 VStack(spacing: 8) {
-                    SidebarSwitch(mode: $app.sidebarMode, agentsUnread: app.agentsUnread)
+                    SidebarSwitch(mode: $app.sidebarMode, needsYou: app.timeline?.needsYou ?? 0, agentsUnread: app.agentsUnread)
                     if app.sidebarMode == .agents {
                         Picker("Show", selection: $app.agentsTab) {
                             Text("Agents").tag(AgentsTab.agents)
@@ -65,6 +73,8 @@ struct ConversationListView: View {
         }
         .onChange(of: app.sidebarMode) { _, mode in
             switch mode {
+            // The periodic refresh reads the river (see `TodayPresentation`).
+            case .today: break
             case .chats: break
             // Stars set on the web or the desktop app since the last refresh.
             case .starred: Task { await app.refresh() }
@@ -87,6 +97,9 @@ struct ConversationListView: View {
                 }
             } else {
                 switch app.sidebarMode {
+                case .today:
+                    // The Today list says so itself, in a row, when it has nothing to show.
+                    EmptyView()
                 case .chats:
                     if app.conversations.isEmpty && !app.isRefreshing {
                         if let error = app.listError {
@@ -165,6 +178,7 @@ struct ConversationListView: View {
         .sheet(item: $showingAgent) { selection in
             AgentDetailView(agentId: selection.id, title: selection.title)
         }
+        .modifier(TodayPresentation(outcome: $showingOutcome, asking: $asking))
         .sheet(item: $agentForm, onDismiss: {
             // A new agent's detail follows its form, as does one that just got a webhook: the
             // secret is shown only there.
@@ -504,14 +518,30 @@ struct UnreadDot: View {
     }
 }
 
-/// The sidebar's Chats | Starred | Agents switch.
+/// The sidebar's Today | Chats | Starred | Agents switch.
 private struct SidebarSwitch: View {
     @Binding var mode: SidebarMode
+    /// How many things on Today need the person, once its river was read.
+    let needsYou: Int
     let agentsUnread: Int
     @Namespace private var selection
 
     var body: some View {
         HStack(spacing: 2) {
+            segment(.today) {
+                HStack(spacing: 5) {
+                    Text("Today")
+                    if needsYou > 0 {
+                        Text(verbatim: "\(needsYou)")
+                            .font(.caption2.weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 17, minHeight: 17)
+                            .background(Theme.clay, in: Capsule())
+                    }
+                }
+            }
             segment(.chats) { Text("Chats") }
             segment(.starred) { Text("Starred") }
             segment(.agents) {

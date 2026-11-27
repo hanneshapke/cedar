@@ -450,7 +450,8 @@ final class AppModel {
             listError = error.localizedDescription
         }
         if sidebarMode == .agents { await refreshAgentsList() }
-        if sidebarMode == .today { await refreshToday() }
+        // Whatever the list shows: the switch counts what needs the person on Today.
+        await refreshToday()
         if isSearching { await search() }
     }
 
