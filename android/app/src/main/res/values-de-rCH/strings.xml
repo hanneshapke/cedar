@@ -20,4 +20,6 @@
     <string name="weather_code_63">Mässiger Regen</string>
     <string name="weather_code_73">Mässiger Schneefall</string>
     <string name="weather_code_81">Mässige Regenschauer</string>
+    <string name="run_failed">Cedar konnte das nicht abschliessen.</string>
+    <string name="contribute_include_fetched">Seiten und Dateien einschliessen, die Cedar abgerufen hat</string>
 </resources>

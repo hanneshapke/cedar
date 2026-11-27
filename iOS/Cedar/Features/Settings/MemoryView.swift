@@ -30,7 +30,7 @@ struct MemoryView: View {
                 }
             } else if !app.memorySupported {
                 ContentUnavailableView("Memory", systemImage: "bookmark",
-                                       description: Text("This server doesn't remember anything between conversations yet. Update cedar to use memory."))
+                                       description: Text("This Cedar doesn't remember anything between conversations yet. Update Cedar on your computer to use memory."))
             } else {
                 profileSection
                 Section {

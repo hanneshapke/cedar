@@ -93,11 +93,11 @@ private struct StatusFooter: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         case .running:
-            Label { Text(turn.pendingApproval != nil ? "Waiting for your say-so" : turn.awaitingPlan != nil ? "Waiting for the plan" : "Working…") } icon: { ProgressView().controlSize(.small) }
+            Label { Text(turn.pendingApproval != nil ? "Needs your OK" : turn.awaitingPlan != nil ? "Waiting for the plan" : "Working…") } icon: { ProgressView().controlSize(.small) }
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         case .failed:
-            Label(turn.turn.error ?? L10n.string("The run failed."), systemImage: "exclamationmark.triangle.fill")
+            Label(turn.turn.error ?? L10n.string("Cedar couldn't finish this."), systemImage: "exclamationmark.triangle.fill")
                 .font(.footnote)
                 .foregroundStyle(.red)
                 .textSelection(.enabled)
@@ -119,9 +119,8 @@ private struct StatusFooter: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Copy answer")
-                if turn.usage != .zero {
-                    Text("\(turn.usage.inputTokens.formatted(.number.locale(L10n.locale))) in · \(turn.usage.outputTokens.formatted(.number.locale(L10n.locale))) out")
-                }
+                // What a reply cost is shown when cedar prices it. How many tokens it took is not:
+                // that number means nothing to the person reading the reply.
                 if let cost = turn.usage.costUSD {
                     Text(cost, format: .currency(code: "USD").precision(.fractionLength(cost < 0.01 ? 4 : 2)).locale(L10n.locale))
                 }
@@ -217,14 +216,14 @@ private struct ApprovalView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(approval.isPending ? "May the agent do this?" : "Asked: \(approval.reason)", systemImage: "hand.raised")
+            Label(approval.isPending ? "May Cedar do this?" : "Asked: \(approval.reason)", systemImage: "hand.raised")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(approval.isPending ? Theme.clay : Color.primary)
             if approval.isPending {
                 Text(approval.reason)
                     .font(.subheadline)
             }
-            CodeBox(label: approval.tool, text: summary)
+            CodeBox(label: stepLabel(approval.tool), text: summary)
             if approval.isPending {
                 if canDecide {
                     HStack(spacing: 8) {
@@ -373,7 +372,7 @@ struct ToolCallView: View {
                         .foregroundStyle(Theme.green)
                         .frame(width: 28, height: 28)
                         .background(Theme.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    Text(call.name)
+                    Text(label)
                         .font(.subheadline.weight(.medium))
                     Text(call.summary)
                         .font(call.isCard ? .caption : .caption.monospaced())
@@ -433,6 +432,8 @@ struct ToolCallView: View {
         }
         .surfaceCard()
     }
+
+    private var label: String { stepLabel(call.name) }
 
     private var icon: String {
         switch call.name {
@@ -544,5 +545,36 @@ struct CodeBox: View {
     private var displayText: String {
         guard text.count > Self.displayLimit else { return text }
         return String(text.prefix(Self.displayLimit)) + "\n… " + L10n.format("(%lld more characters)", text.count - Self.displayLimit)
+    }
+}
+
+/// What the step is called: "Web search" or "Chart", not the tool's function name
+/// (`web_search`, `generate_chart`). A tool the app has no word for (one of Google's, a personal
+/// or community tool) is shown by its own name with the underscores taken out: `gmail_search`
+/// reads "Gmail search".
+private func stepLabel(_ name: String) -> String {
+    switch name {
+    case "web_search": return L10n.string("Web search")
+    case "bash": return L10n.string("Command")
+    case "run_python": return L10n.string("Code")
+    case "read_file", "read_document": return L10n.string("Read a file")
+    case "write_file": return L10n.string("File")
+    case "generate_pdf": return "PDF"
+    case "fetch_url": return L10n.string("Web page")
+    case "download_file": return L10n.string("Download")
+    case "browser": return L10n.string("Browser")
+    case "generate_chart": return L10n.string("Chart")
+    case "weather_forecast": return L10n.string("Weather")
+    case "show_map": return L10n.string("Map")
+    case "show_recipe": return L10n.string("Recipe")
+    case "plan_trip": return L10n.string("Route")
+    case "compare_stocks": return L10n.string("Stocks")
+    case "search_products": return L10n.string("Products")
+    case "search_flights": return L10n.string("Flights")
+    case "ask_user": return L10n.string("Question")
+    case "remember", "forget", "recall": return L10n.string("Memory")
+    default:
+        let words = name.replacingOccurrences(of: "_", with: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
     }
 }

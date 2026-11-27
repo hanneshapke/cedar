@@ -30,7 +30,7 @@ struct HeldCallCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(L10n.string(item == nil || isOpen ? "Waiting for Your Approval" : "Outbox"), systemImage: "tray.and.arrow.up")
+            Label(L10n.string(item == nil || isOpen ? "Waiting for Your Approval" : "Approval"), systemImage: "tray.and.arrow.up")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(isOpen ? Color.orange : Theme.green)
             if !reason.isEmpty {
@@ -44,7 +44,7 @@ struct HeldCallCard: View {
             if let item {
                 details(item)
             } else if app.goneHeldCalls.contains(id) {
-                Text("This is no longer in the outbox.")
+                Text("This is no longer waiting for approval.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {

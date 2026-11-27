@@ -44,10 +44,10 @@ struct ContributeView: View {
                     }
                     Section {
                         Toggle("Include the model's reasoning", isOn: $reasoning)
-                        Toggle("Include the pages and files the agent fetched", isOn: $fetched)
+                        Toggle("Include the pages and files Cedar fetched", isOn: $fetched)
                     }
                     Section {
-                        Picker("Did the agent do what you asked?", selection: $outcome) {
+                        Picker("Did Cedar do what you asked?", selection: $outcome) {
                             Text("Not said").tag(String?.none)
                             Text("Yes").tag(String?.some("succeeded"))
                             Text("Partly").tag(String?.some("partly"))

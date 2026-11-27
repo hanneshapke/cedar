@@ -46,7 +46,7 @@ struct RootView: View {
                 VStack(spacing: 18) {
                     CedarBadge(size: 88)
                     CedarWordmark(size: 28)
-                    Text("Ask the agent to search, write and run code, and build things in its sandbox.")
+                    Text("Ask Cedar to look something up, work through your files, or write something for you.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

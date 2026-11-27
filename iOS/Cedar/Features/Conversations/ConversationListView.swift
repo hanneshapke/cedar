@@ -92,14 +92,14 @@ struct ConversationListView: View {
                         if let error = app.listError {
                             // Nothing to list and no server: say what went wrong and where to fix it.
                             ContentUnavailableView {
-                                Label("Can't Reach the Server", systemImage: "wifi.exclamationmark")
+                                Label("Can't Reach Your Cedar", systemImage: "wifi.exclamationmark")
                             } description: {
                                 Text(error)
                             } actions: {
                                 Button {
                                     app.showingSettings = true
                                 } label: {
-                                    Label("Server Settings", systemImage: "gearshape")
+                                    Label("Connection Settings", systemImage: "gearshape")
                                 }
                                 .buttonStyle(.borderedProminent)
                                 Button("Try Again") {
@@ -108,7 +108,7 @@ struct ConversationListView: View {
                             }
                         } else {
                             ContentUnavailableView("No Conversations", systemImage: "bubble.left.and.bubble.right",
-                                                   description: Text("Start a new chat to run the agent."))
+                                                   description: Text("Ask Cedar something to get started."))
                         }
                     }
                 case .starred:

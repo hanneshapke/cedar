@@ -102,7 +102,7 @@ final class ChatModel {
             sync(with: detail.turns)
             errorMessage = nil
         } catch let error as ChatError where error.status == 404 {
-            errorMessage = L10n.string("This conversation no longer exists on the server.")
+            errorMessage = L10n.string("This conversation no longer exists.")
         } catch is CancellationError {
         } catch let error as URLError where error.code == .cancelled {
             // URLSession's cancellation, not a failure: its description is just "cancelled".
@@ -176,7 +176,7 @@ final class ChatModel {
                 } catch let error as ChatError where error.status == 404 {
                     self.update(turnId) {
                         $0.turn.status = .failed
-                        $0.turn.error = L10n.string("This response no longer exists on the server.")
+                        $0.turn.error = L10n.string("This response no longer exists.")
                     }
                     break
                 } catch {

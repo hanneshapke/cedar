@@ -211,13 +211,13 @@ private struct ServerPicture: View {
                                 .background(Theme.green, in: Circle())
                                 .offset(x: 6, y: -6)
                         }
-                        Caption(text: "Your server")
+                        Caption(text: "Your computer")
                     }
                     .reveal(shown, 2)
                     Wire().padding(.horizontal, 6).padding(.bottom, 22).reveal(shown, 3)
                     VStack(spacing: 8) {
                         Tile(symbol: "terminal", tint: Theme.clay)
-                        Caption(text: "Sandbox")
+                        Caption(text: "Sealed box")
                     }
                     .reveal(shown, 4)
                 }
@@ -589,7 +589,7 @@ private struct ConnectPicture: View {
                 }
                 .reveal(shown, 0)
                 VStack(alignment: .leading, spacing: 10) {
-                    field("Server URL", value: "https://home.ts.net", 1)
+                    field("Address", value: "https://home.ts.net", 1)
                     field("Access Token", value: "••••••••••", 2)
                     HStack(spacing: 5) {
                         Image(systemName: "checkmark.circle.fill")

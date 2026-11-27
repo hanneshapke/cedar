@@ -10,13 +10,13 @@ enum ChatError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return L10n.string("Add your cedar-chat server in Settings.")
-        case .invalidURL: return L10n.string("The server URL is not valid.")
-        case .unreachable(let detail): return L10n.format("Could not reach cedar-chat: %@", detail)
-        case .unauthorized: return L10n.string("cedar-chat wants an access token, or rejected this one. Check Settings.")
+        case .notConfigured: return L10n.string("Connect this app to your Cedar in Settings.")
+        case .invalidURL: return L10n.string("That address doesn't look right.")
+        case .unreachable(let detail): return L10n.format("Couldn't reach your Cedar: %@", detail)
+        case .unauthorized: return L10n.string("Your Cedar needs its access token, or didn't accept this one. Scan the code again in Settings.")
         // The server's own messages are for developers and stay in English.
         case .api(_, _, let message): return message
-        case .badResponse(let detail): return L10n.format("Unexpected response from cedar-chat: %@", detail)
+        case .badResponse(let detail): return L10n.format("Your Cedar sent an answer the app didn't understand: %@", detail)
         }
     }
 
@@ -617,7 +617,7 @@ struct ChatClient: Sendable {
         }
         // The port goes in as text: a number would get the locale's grouping ("3,000").
         return .unreachable(L10n.format(
-            "%@ Port %@ may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port).",
+            "%@ Leave off the :%@ at the end and use the https:// address shown with the QR code.",
             error.localizedDescription, String(port)))
     }
 
@@ -633,6 +633,6 @@ struct ChatClient: Sendable {
         if let envelope = try? JSONDecoder().decode(Envelope.self, from: body) {
             return .api(status: status, code: envelope.error.code, message: envelope.error.message)
         }
-        return .api(status: status, code: "http_\(status)", message: L10n.format("cedar-chat returned HTTP %lld", status))
+        return .api(status: status, code: "http_\(status)", message: L10n.format("Your Cedar isn't answering properly (error %lld). Check that it is running.", status))
     }
 }

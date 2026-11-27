@@ -77,7 +77,7 @@ struct SettingsView: View {
                 Button("Discard Changes", role: .destructive) { dismiss() }
                 Button("Keep Editing", role: .cancel) {}
             } message: {
-                Text("Your changes to the server, AI model and plan approval are not saved yet.")
+                Text("Your changes to the connection, AI model and plan approval are not saved yet.")
             }
             .sheet(isPresented: $showingTour) {
                 OnboardingTourView { showingTour = false }
@@ -140,7 +140,7 @@ struct SettingsView: View {
     private var server: some View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Server URL")
+                Text("Address")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 TextField(ServerSettings.defaultServerURL, text: $draft.serverURL)
@@ -204,9 +204,9 @@ struct SettingsView: View {
                 tailscaleMissing
             }
         } header: {
-            Text("Server")
+            Text("Your Cedar")
         } footer: {
-            Text("The address where you open cedar-chat in a browser, and its access token if it has one. On a Mac, turn on iPhone & iPad sharing in the Cedar app and scan the code it shows. The token stays in this phone's Keychain.")
+            Text("Scan the QR code the Cedar app on your Mac shows (turn on iPhone & iPad sharing there), or the one under Settings → Phone in the chat on your computer. To enter it by hand: the address is where you open Cedar in a browser, and the access token is shown next to the code. The token stays in this phone's Keychain.")
         }
     }
 
@@ -216,7 +216,7 @@ struct SettingsView: View {
             Label("Tailscale isn't installed", systemImage: "exclamationmark.triangle.fill")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Theme.clay)
-            Text("Cedar usually reaches your server through Tailscale. Install the Tailscale app on this device and log in to the same tailnet as your server.")
+            Text("Cedar usually reaches your computer through Tailscale, a private connection between your devices. Install the Tailscale app on this device and sign in with the same account as on your computer.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Button {
@@ -274,7 +274,7 @@ struct SettingsView: View {
     private var modelPickers: some View {
         Section {
             Picker("AI Model", selection: $draft.model) {
-                Text("Server default").tag("")
+                Text("Cedar's default").tag("")
                 ForEach(models) { model in
                     Text(model.label).tag(model.id)
                 }
@@ -284,7 +284,7 @@ struct SettingsView: View {
                 }
             }
             if let levels = selectedModel?.reasoningLevels, !levels.isEmpty {
-                Picker("Reasoning Effort", selection: $draft.reasoning) {
+                Picker("How Hard It Thinks", selection: $draft.reasoning) {
                     Text("Default").tag("")
                     ForEach(levels, id: \.self) { level in
                         Text(level.capitalized).tag(level)
@@ -295,8 +295,8 @@ struct SettingsView: View {
             Text("AI Model")
         } footer: {
             Text(models.isEmpty
-                 ? "The AI models your server offers are listed once it is reachable."
-                 : "Which AI answers your messages, and how hard it thinks before answering. Tools, the turn limit and the system prompt follow the server's Settings.")
+                 ? "The AI models your Cedar can use are listed once the app is connected."
+                 : "Which AI answers your messages, and how hard it thinks before answering. The other options are in Settings in the chat on your computer.")
         }
     }
 
@@ -404,7 +404,7 @@ struct SettingsView: View {
         } footer: {
             Text(notifications == .denied
                  ? "Notifications are turned off for Cedar in the Settings app. Turn them on there to hear when a response is ready."
-                 : "The server sends a push when a response is ready or Cedar has a question. Set up iPhone push under Settings → Notifications in the web UI; this phone registers itself there.")
+                 : "Your Cedar sends a notification when a response is ready or Cedar has a question. Turn on iPhone push under Settings → Notifications in the chat on your computer; this phone signs itself up there.")
         }
     }
 

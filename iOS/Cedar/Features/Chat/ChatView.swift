@@ -272,10 +272,10 @@ private struct Greeting: View {
         VStack(spacing: 16) {
             CedarBadge()
                 .padding(.bottom, 4)
-            Text("What should the agent do?")
+            Text("What should Cedar take on?")
                 .font(.title2.weight(.semibold))
                 .multilineTextAlignment(.center)
-            Text("It can search the web, write files and run code in its own sandbox. Follow-ups keep its files.")
+            Text("It can search the web, work with your files and run the numbers, in a sealed space of its own. Follow-ups pick up where it left off.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -399,7 +399,7 @@ private struct Composer: View {
     private var row: some View {
         HStack(alignment: .bottom, spacing: 4) {
             attachMenu
-            TextField(chat.openQuestions == nil ? "Message cedar" : "Or answer in your own words", text: $chat.draft, axis: .vertical)
+            TextField(chat.openQuestions == nil ? "Message Cedar" : "Or answer in your own words", text: $chat.draft, axis: .vertical)
                 .lineLimit(FoldLayout.composerLineLimit(verticalSizeClass: verticalSizeClass))
                 .focused(focused)
                 .padding(.vertical, 9)

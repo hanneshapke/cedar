@@ -86,7 +86,7 @@ struct AgentRows: View {
             ContentUnavailableView {
                 Label("No Agents Yet", systemImage: "clock.arrow.circlepath")
             } description: {
-                Text("An agent is a prompt Cedar runs on its own: on a schedule, when something changes, when a webhook or your device calls it, or when mail, a calendar event or a new file comes up.")
+                Text("An agent is something Cedar does for you on its own: every morning, when a price drops, when mail arrives.")
             } actions: {
                 Button {
                     create()
@@ -256,7 +256,7 @@ struct AgentStatusLabel: View {
             Label("Done", systemImage: "checkmark.circle")
                 .labelStyle(.titleAndIcon)
         case .checkFailing:
-            Label("Check failing", systemImage: "exclamationmark.triangle")
+            Label("Couldn't check", systemImage: "exclamationmark.triangle")
                 .labelStyle(.titleAndIcon)
                 .foregroundStyle(.red)
         case .nextRun(let date):
@@ -268,7 +268,7 @@ struct AgentStatusLabel: View {
                 Text("Watching")
             }
         case .waitingForCalls:
-            Text("Waiting for calls")
+            Text("Ready")
         case .callWaiting:
             Text("A call is waiting")
         case .waitingForDevice:

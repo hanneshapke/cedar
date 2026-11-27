@@ -41,7 +41,7 @@ struct WorkspaceFilesView: View {
         if let listing {
             if listing.files.isEmpty {
                 ContentUnavailableView("No Files Yet", systemImage: "folder",
-                                       description: Text("Files the agent writes in this conversation appear here."))
+                                       description: Text("Files Cedar writes in this conversation appear here."))
             } else {
                 List {
                     Section {

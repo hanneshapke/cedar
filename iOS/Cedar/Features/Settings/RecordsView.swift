@@ -24,7 +24,7 @@ struct RecordsView: View {
                 }
             } else if !app.recordsSupported {
                 ContentUnavailableView("Records", systemImage: "tablecells",
-                                       description: Text("This server doesn't keep records between conversations yet. Update cedar to use records."))
+                                       description: Text("This Cedar doesn't keep records between conversations yet. Update Cedar on your computer to use records."))
             } else if app.recordSets.isEmpty {
                 ContentUnavailableView("No Records Yet", systemImage: "tablecells",
                                        description: Text("When you give Cedar data to come back to, like a weekly export or your measurements, it saves the rows here and can compare them week by week."))
