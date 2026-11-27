@@ -22,4 +22,5 @@
     <string name="weather_code_81">Mässige Regenschauer</string>
     <string name="run_failed">Cedar konnte das nicht abschliessen.</string>
     <string name="contribute_include_fetched">Seiten und Dateien einschliessen, die Cedar abgerufen hat</string>
+    <string name="today_hint_private">Vertraulich: Davon bleibt keine Spur, nichts wird gemerkt, und es ist weg, wenn du es schliesst.</string>
 </resources>
