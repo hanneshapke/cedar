@@ -5,6 +5,8 @@
 //! next under **ahead**, with the agents that keep watch under **watching**. What needs the person
 //! (a plan to agree to, a call to approve, a question to answer) is counted in `needs_you`; it
 //! stays under now whatever day it was asked, so it doesn't drop off the river at midnight.
+//! So does what an unattended run (an agent's) held for the person's OK in the outbox: listed
+//! under `outbox` with where it came from, and counted in `needs_you`.
 //!
 //! Nothing here is new data: it reads the turns, the waits `attention` keeps, and the agents.
 
@@ -21,6 +23,8 @@ const MAX_NOW_TURNS: u32 = 50;
 /// How many upcoming agent runs ahead lists, and how far ahead it looks from today.
 const MAX_AHEAD: usize = 20;
 const AHEAD_DAYS: i64 = 7;
+/// How many held calls the river lists under now.
+const MAX_OUTBOX: usize = 50;
 /// How long a turn's one-line outcome may be, in characters.
 const SUMMARY_CHARS: usize = 240;
 
@@ -51,7 +55,11 @@ pub(super) async fn timeline(Scoped(state): Scoped, ApiQuery(query): ApiQuery<Ti
     let now_turns = if is_today { state.store.timeline_now(MAX_NOW_TURNS).await? } else { Vec::new() };
     let in_now: HashSet<Uuid> = now_turns.iter().map(|t| t.turn_id).collect();
     let earlier: Vec<TimelineTurn> = state.store.timeline_between(start, end, MAX_DAY_TURNS).await?.into_iter().filter(|t| !in_now.contains(&t.turn_id)).collect();
-    let needs_you = now_turns.iter().filter(|t| !t.waits.is_empty() || t.needs_answer).count();
+    // The outbox waits on the person like a question does: today's, whenever it was held.
+    let mut outbox = if is_today { handover::held_with_origin(&state, Some("pending"), None).await } else { Vec::new() };
+    outbox.sort_by(|a, b| a["created_at"].as_str().cmp(&b["created_at"].as_str()));
+    outbox.truncate(MAX_OUTBOX);
+    let needs_you = now_turns.iter().filter(|t| !t.waits.is_empty() || t.needs_answer).count() + outbox.len();
 
     let schedules = state.store.list_schedules().await?;
     let mut ahead: Vec<&Schedule> = Vec::new();
@@ -81,6 +89,7 @@ pub(super) async fn timeline(Scoped(state): Scoped, ApiQuery(query): ApiQuery<Ti
         "needs_you": needs_you,
         "earlier": earlier.iter().map(turn_view).collect::<Vec<_>>(),
         "now": now_turns.iter().map(turn_view).collect::<Vec<_>>(),
+        "outbox": outbox,
         "ahead": ahead.iter().map(|s| agent_view(s, true)).collect::<Vec<_>>(),
         "watching": watching.iter().map(|s| agent_view(s, false)).collect::<Vec<_>>(),
         "standing": schedules.iter().map(|s| agent_view(s, s.enabled)).collect::<Vec<_>>(),

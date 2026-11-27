@@ -91,6 +91,8 @@ struct FakeCedar {
     /// `(id, body)`.
     held: Mutex<Vec<Value>>,
     held_decisions: Mutex<Vec<(String, Value)>>,
+    /// When set, `/v1/held` is unknown, as on a cedar from before the outbox.
+    no_outbox: Mutex<bool>,
 }
 
 fn user_of(headers: &HeaderMap) -> Option<String> {
@@ -364,7 +366,10 @@ async fn notifications(State(s): State<Shared>, headers: HeaderMap, axum::extrac
 
 /// The outbox as cedar serves it: a listing by status and run, one call, and a decision that
 /// "makes" an approved call (with the edited input, if one came) or discards it.
-async fn list_held(State(s): State<Shared>, axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>) -> Json<Value> {
+async fn list_held(State(s): State<Shared>, axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>) -> axum::response::Response {
+    if *s.no_outbox.lock().unwrap() {
+        return no_route();
+    }
     let held: Vec<Value> = s
         .held
         .lock()
@@ -374,7 +379,7 @@ async fn list_held(State(s): State<Shared>, axum::extract::Query(q): axum::extra
         .filter(|h| q.get("run_id").is_none_or(|r| h["run_id"] == r.as_str()))
         .cloned()
         .collect();
-    Json(json!({ "held": held }))
+    Json(json!({ "held": held })).into_response()
 }
 
 async fn get_held(State(s): State<Shared>, Path(id): Path<String>) -> axum::response::Response {
@@ -5478,4 +5483,58 @@ async fn an_outcome_is_the_answer_and_what_the_ask_left_behind() {
     let (status, out) = h.json(Method::GET, &uri, None).await;
     assert_eq!((status, out["files"].clone()), (StatusCode::OK, json!([])));
     assert_eq!(h.json(Method::GET, &format!("/api/turns/{}/outcome", Uuid::new_v4()), None).await.0, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn what_an_agent_holds_for_approval_needs_the_person_on_today() {
+    let h = Harness::new(&[]).await;
+    let (status, made) = h.json(Method::POST, "/api/agents", Some(agent_body(json!({ "kind": "interval", "every_minutes": 90 })))).await;
+    assert_eq!(status, StatusCode::CREATED, "{made}");
+    let id = made["id"].as_str().unwrap().to_string();
+    assert_eq!(h.json(Method::POST, &format!("/api/agents/{id}/run"), None).await.0, StatusCode::ACCEPTED);
+    let detail = h.agent(&id).await;
+    let turn = Uuid::parse_str(detail["runs"][0]["turn_id"].as_str().unwrap()).unwrap();
+    let run_id = h.state.store.get_turn(turn).await.unwrap().unwrap().run_id.to_string();
+    h.finish_with(&run_id, "completed", Some("The digest is ready to send."), Some("end_turn"));
+    h.sync().await;
+
+    // The run held a mail; another key's run held one too, and an old call was already sent.
+    let held_id = Uuid::new_v4().to_string();
+    h.cedar.held.lock().unwrap().push(held_call(&held_id, &run_id));
+    h.cedar.held.lock().unwrap().push(held_call(&Uuid::new_v4().to_string(), &Uuid::new_v4().to_string()));
+    let mut sent = held_call(&Uuid::new_v4().to_string(), &run_id);
+    sent["status"] = json!("sent");
+    h.cedar.held.lock().unwrap().push(sent);
+
+    let uri = "/api/timeline?timezone=UTC";
+    let (status, day) = h.json(Method::GET, uri, None).await;
+    assert_eq!(status, StatusCode::OK, "{day}");
+    assert_eq!(day["needs_you"], 2, "both pending calls need the person: {day}");
+    let outbox = day["outbox"].as_array().unwrap();
+    assert_eq!(outbox.len(), 2);
+    let ours = outbox.iter().find(|c| c["id"] == held_id.as_str()).expect("the agent's call is listed");
+    assert_eq!(ours["agent"]["title"], made["title"]);
+    assert_eq!(ours["turn_id"], turn.to_string().as_str());
+    assert_eq!(ours["reason"], "Send message in your Gmail to ana@example.com: \"Digest\".");
+    assert!(outbox.iter().any(|c| c.get("agent").is_none()), "a run this chat doesn't know is listed as it is");
+
+    // The run's outcome shows every call it held, whatever became of it.
+    let (_, out) = h.json(Method::GET, &format!("/api/turns/{turn}/outcome"), None).await;
+    let held: Vec<&str> = out["held"].as_array().unwrap().iter().map(|c| c["status"].as_str().unwrap()).collect();
+    assert_eq!(held, ["pending", "sent"], "{out}");
+
+    // Approved, it no longer needs anyone; on another day the outbox isn't the river's.
+    let (status, _) = h.json(Method::POST, &format!("/api/outbox/{held_id}"), Some(json!({ "decision": "approve" }))).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, day) = h.json(Method::GET, uri, None).await;
+    assert_eq!((day["needs_you"].clone(), day["outbox"].as_array().unwrap().len()), (json!(1), 1));
+    let (_, past) = h.json(Method::GET, "/api/timeline?day=2001-02-03&timezone=UTC", None).await;
+    assert_eq!(past["outbox"], json!([]));
+
+    // A cedar from before the outbox: the river and the outcome open all the same.
+    *h.cedar.no_outbox.lock().unwrap() = true;
+    let (status, day) = h.json(Method::GET, uri, None).await;
+    assert_eq!((status, day["outbox"].clone(), day["needs_you"].clone()), (StatusCode::OK, json!([]), json!(0)));
+    let (status, out) = h.json(Method::GET, &format!("/api/turns/{turn}/outcome"), None).await;
+    assert_eq!((status, out["held"].clone()), (StatusCode::OK, json!([])));
 }

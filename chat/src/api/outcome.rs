@@ -2,7 +2,8 @@
 //!
 //! An outcome is the answer, not the transcript: what was asked, the answer with its one-line
 //! summary, and what the turn left behind — the files it wrote or changed in the workspace, what
-//! it remembered, the record rows it saved, the follow-ups it suggested — with how it got there
+//! it remembered, the record rows it saved, the follow-ups it suggested, and what it held for the
+//! person's OK in the outbox (an unattended run's mail or changes) — with how it got there
 //! (its steps and the sources it read) folded behind that.
 //!
 //! Every part is read from what cedar already keeps for the run: its events (steps, sources,
@@ -55,6 +56,8 @@ pub(super) async fn outcome(Scoped(state): Scoped, Path(id): Path<String>) -> Re
     let memories = if conversation.private { Vec::new() } else { memories_of(&state, turn.run_id).await };
     let records = if conversation.private { Vec::new() } else { records_of(&state, &turn).await };
     let files = files_of(&state, &turn).await;
+    // Every call the run held, settled ones too: the outcome says what became of them.
+    let held = handover::held_with_origin(&state, None, Some(turn.run_id)).await;
     let decisions: Vec<_> = state.store.list_followups(conversation.id).await?.into_iter().filter(|f| f.turn_id == turn.id).collect();
 
     Ok(Json(json!({
@@ -71,6 +74,7 @@ pub(super) async fn outcome(Scoped(state): Scoped, Path(id): Path<String>) -> Re
         "memories": memories,
         "records": records,
         "files": files,
+        "held": held,
     })))
 }
 

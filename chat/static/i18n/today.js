@@ -115,6 +115,10 @@ cedarI18n.add({
     'today.outcome.bytes': "{size} bytes",
     'today.outcome.kb': "{size} KB",
     'today.outcome.mb': "{size} MB",
+    'today.pill.held': "Needs your OK",
+    'today.held.untitled': "Held for your OK",
+    'today.outcome.held': "Waiting for your OK",
+    'today.outcome.heldDone': "From the outbox",
     'today.requestFailed': "The request failed (error {status}).",
   },
   de: {
@@ -228,6 +232,10 @@ cedarI18n.add({
     'today.outcome.bytes': "{size} Byte",
     'today.outcome.kb': "{size} KB",
     'today.outcome.mb': "{size} MB",
+    'today.pill.held': "Braucht deine Freigabe",
+    'today.held.untitled': "Wartet auf deine Freigabe",
+    'today.outcome.held': "Wartet auf deine Freigabe",
+    'today.outcome.heldDone': "Aus dem Postausgang",
     'today.requestFailed': "Die Anfrage ist fehlgeschlagen (Fehler {status}).",
   },
   fr: {
@@ -341,6 +349,10 @@ cedarI18n.add({
     'today.outcome.bytes': "{size} octets",
     'today.outcome.kb': "{size} Ko",
     'today.outcome.mb': "{size} Mo",
+    'today.pill.held': "À approuver",
+    'today.held.untitled': "En attente de votre approbation",
+    'today.outcome.held': "En attente de votre approbation",
+    'today.outcome.heldDone': "Depuis la boîte d'envoi",
     'today.requestFailed': "La requête a échoué (erreur {status}).",
   },
   es: {
@@ -454,6 +466,10 @@ cedarI18n.add({
     'today.outcome.bytes': "{size} bytes",
     'today.outcome.kb': "{size} KB",
     'today.outcome.mb': "{size} MB",
+    'today.pill.held': "Necesita tu aprobación",
+    'today.held.untitled': "Retenido hasta tu aprobación",
+    'today.outcome.held': "Esperando tu aprobación",
+    'today.outcome.heldDone': "De la bandeja de salida",
     'today.requestFailed': "La solicitud falló (error {status}).",
   },
   'es-ES': {

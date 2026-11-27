@@ -226,6 +226,25 @@ function nowCard(t) {
   return card;
 }
 
+/** A call an unattended run held for the person's OK (the outbox), under now: where it came from,
+ *  and the shared card that sends, edits or discards it. */
+function heldCard(item) {
+  const card = el('li', 'card waiting held');
+  card.append(el('div', 'time', fmtTime(item.created_at)));
+  const body = el('div', 'card-body');
+  const head = el('div', 'card-head');
+  const name = item.agent?.title || item.title || tr('today.held.untitled');
+  head.append(item.turn_id ? link(outcomeHref(item.turn_id), 'card-title', name) : el('span', 'card-title', name));
+  head.append(el('span', 'pill', tr('today.pill.held')));
+  body.append(head, heldElement(item, () => load()));
+  card.append(body);
+  return card;
+}
+
+/** The shared outbox card for a held call (handover-view.js); `onChange` after a decision. */
+const heldElement = (item, onChange) =>
+  cedarHandover.held.element({ id: item.id, tool: item.tool, reason: item.reason, why: item.why }, { item, onChange });
+
 /** An agent under ahead: when it runs next (or "any time" for one that watches), and what. */
 function aheadRow(a) {
   const row = el('li', 'row');
@@ -268,7 +287,12 @@ function render() {
   // Now and the box to ask are today's.
   $('now').hidden = !d.today;
   $('now-time').textContent = fmtTime(new Date().toISOString());
-  $('now-list').replaceChildren(...d.now.map(nowCard));
+  // What waits on the person, turns and held calls alike, in the order it came.
+  const now = [
+    ...d.now.map((t) => ({ at: t.created_at, node: nowCard(t) })),
+    ...(d.outbox || []).map((item) => ({ at: item.created_at, node: heldCard(item) })),
+  ].sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  $('now-list').replaceChildren(...now.map((n) => n.node));
 
   const ahead = [...d.ahead, ...d.watching];
   $('ahead').replaceChildren(...ahead.map(aheadRow));
@@ -645,7 +669,12 @@ function renderOutcome(o) {
     return spec && cedarFollowUp.element(spec, { turnId: t.id, callId: f.call_id });
   }).filter(Boolean);
 
+  // What still waits for an OK comes first, and heads the part; settled calls say what became of them.
+  const heldItems = [...(o.held || [])].sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1));
+  const held = heldItems.map((item) => heldElement(item, () => showOutcome(t.id)));
+  const waiting = heldItems.some((item) => item.status === 'pending');
   const parts = [
+    part(tr(waiting ? 'today.outcome.held' : 'today.outcome.heldDone'), held),
     part(tr('today.outcome.files'), files),
     part(tr('today.outcome.remembered'), memories),
     part(tr('today.outcome.records'), records),

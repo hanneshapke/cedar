@@ -166,7 +166,12 @@ dialog input { height: 44px; padding: 0 12px; border-radius: 10px; border: 1px s
 
 /* -- one ask's outcome -------------------------------------------------------------------- */
 /* The follow-up card (followup-view.css) draws with these. */
-:root { --sheet: var(--surface); --ink: var(--text); --ink-2: var(--text-2); --accent: var(--now); }
+:root { --sheet: var(--surface); --ink: var(--text); --ink-2: var(--text-2); --accent: var(--now); --warn: var(--need); --warn-line: var(--need); --warn-wash: var(--surface); }
+/* The outbox card (handover-view.css) inside a card of the river, or a part of an outcome. */
+.card-body .cedar-handover, .part .cedar-handover { margin: 0; max-width: none; }
+.card-body .cedar-handover { border: 0; padding: 0; background: none; }
+.cedar-handover button, .cedar-handover .copy-btn, .cedar-handover .primary { min-height: 44px; padding: 0 16px; border-radius: 22px; }
+.cedar-handover input, .cedar-handover textarea { min-height: 44px; }
 
 .outcome { max-width: 720px; margin: 0 auto; padding-top: 20px; display: flex; flex-direction: column; gap: 28px; }
 .outcome-head { display: flex; flex-direction: column; gap: 8px; }
