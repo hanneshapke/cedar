@@ -29,13 +29,16 @@
 .settings-nav-item[aria-current="page"] { background: var(--line-soft); color: var(--ink); }
 .settings-nav-item[aria-current="page"] .settings-nav-name { font-weight: 500; }
 .settings-nav-name { font-size: 13.5px; }
+.settings-nav-value:empty { display: none; }
 .settings-nav-value { font-size: 12px; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .settings-nav-value.error { color: var(--error, #a3352b); }
-.settings-nav-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
-.settings-nav-foot .settings-nav-item { flex-direction: row; align-items: center; gap: 8px; font-size: 13.5px; }
-.settings-nav-foot .settings-nav-item svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; color: var(--muted); }
-.settings-nav-foot .settings-nav-name { flex: 1; }
-.settings-nav-tag { font: 11px var(--mono); color: var(--muted); letter-spacing: .02em; }
+/* Three places to look, and a fourth for whoever runs the server. */
+.settings-nav-group { display: flex; flex-direction: column; gap: 2px; }
+.settings-nav-group + .settings-nav-group { margin-top: 14px; }
+.settings-nav-heading { padding: 0 10px 4px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--muted); }
+.settings-nav-group:last-child { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
+.settings-nav-name { display: flex; align-items: baseline; gap: 8px; }
+.settings-nav-tag { font: 10.5px var(--mono); color: var(--muted); letter-spacing: .02em; } .settings-nav-tag:empty { display: none; }
 .settings-nav-tag.on { color: var(--accent); }
 .settings-nav-note { margin: 6px 0 0; padding: 0 10px; font-size: 12px; line-height: 1.45; color: var(--muted); }
 
@@ -128,7 +131,14 @@
 .cedar-set-tools { display: flex; flex-direction: column; }
 .cedar-set-always { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; color: var(--muted); }
 .cedar-set-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
-.cedar-set-row.unavailable { opacity: .6; }
+/* What isn't set up yet: the switch is dimmed, the name and the way to connect it are not. */
+.cedar-set-row.unavailable .cedar-set-switch { opacity: .45; }
+.cedar-set-row.unavailable .cedar-set-row-name { color: var(--muted); }
+.cedar-set-row-side { display: flex; align-items: center; gap: 10px; }
+.cedar-set-connect-btn { padding: 3px 10px; font-size: 12.5px; }
+.cedar-set-connect { margin: 0 0 4px 44px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper, transparent); }
+.cedar-set-connect > .cedar-set-note { margin-top: 0; }
+.cedar-set-connect .cedar-set-integration { border: 0; padding: 0; }
 .cedar-set-row-main { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .cedar-set-row-name { font-weight: 500; font-size: 13.5px; white-space: nowrap; }
 .cedar-set-row-sub { font: 12px var(--mono); color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -286,8 +296,10 @@
   .settings-nav-list { flex-direction: row; overflow: visible; }
   .settings-nav-item { width: auto; white-space: nowrap; }
   .settings-nav-value { display: none; }
-  .settings-nav-foot { margin: 0; padding: 0; border: 0; }
-  .settings-nav-note { display: none; }
+  .settings-nav-group { flex-direction: row; align-items: center; }
+  .settings-nav-group + .settings-nav-group, .settings-nav-group:last-child { margin: 0 0 0 6px; padding: 0 0 0 8px; border-top: 0; border-left: 1px solid var(--line); }
+  .settings-nav-heading { padding: 0 4px 0 0; white-space: nowrap; }
+  .settings-nav-tag { display: none; }
   .settings-page-head { padding: 16px 16px 12px; }
   .settings-page-body { padding: 16px; }
   .settings-foot { padding: 10px 16px; }

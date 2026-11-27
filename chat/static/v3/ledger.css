@@ -1,5 +1,5 @@
-/* The "Ledger" layout of cedar-chat's main page (/v3/), on top of style.css: talk on the left,
-   results on the right, built around what makes a run trustworthy to someone who did not write
+/* The layout of cedar-chat's page (/v3/), on top of style.css: talk on the left, results on the
+   right (on a phone the results are the page, and the conversation a sheet under them), built around what makes a run trustworthy to someone who did not write
    the prompt. The plan Cedar commits to sits above the thread as a checklist (editable until the
    run starts); tool calls are folded into one "Worked through N steps" line that opens to the
    rows; a risky call waits on an approval card; reasoning is a folded disclosure; Cedar's prose
@@ -74,7 +74,7 @@
   grid-template-areas: "top top top" "talk split stage";
   height: 100vh; height: 100dvh;
 }
-.tabs { display: none; }
+.sheet-handle { display: none; }
 /* A new chat: no results yet, so the conversation column takes the whole width and the composer
    sits in the middle with a short welcome above it. */
 .app.empty { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "talk"; }
@@ -90,6 +90,7 @@
 .title { min-width: 0; padding: 4px 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font-weight: 600; font-size: 15px; letter-spacing: -.01em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .title-input { flex: 1; max-width: 520px; padding: 4px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--sheet); font-weight: 600; font-size: 15px; outline: none; }
 .status { flex-shrink: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.status.idle { display: none; }
 .pill { font-size: 12px; }
 .cost { color: var(--muted); white-space: nowrap; } .cost:empty { display: none; }
 .cost::before { content: "·"; margin-right: 6px; }
@@ -116,6 +117,21 @@
 .app.empty .slip { grid-area: slip; flex-direction: column; border: 0; padding: 0; }
 .app.empty .composer { border-color: var(--line); box-shadow: 0 1px 2px rgba(40, 30, 10, .05), 0 8px 24px rgba(40, 30, 10, .07); padding: 14px 14px 10px 16px; }
 .app.empty .composer textarea { min-height: 48px; font-size: 16px; }
+.private-offer { display: none; }
+.app.empty .private-offer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; margin-top: 10px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: none; text-align: left; color: var(--ink-2); }
+.private-offer:hover { background: var(--wash); }
+.private-offer svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.private-offer-text { display: flex; flex-direction: column; gap: 1px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.private-offer-text strong { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+.private-offer-switch { position: relative; width: 34px; height: 20px; border-radius: 10px; background: var(--line); transition: background .15s; }
+.private-offer-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--sheet); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: left .15s; }
+.private-offer[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); }
+.private-offer[aria-pressed="true"] svg { color: var(--accent); }
+.private-offer[aria-pressed="true"] .private-offer-switch { background: var(--accent); }
+.private-offer[aria-pressed="true"] .private-offer-switch::after { left: 16px; }
+/* The card says what private means; the note above the message box repeats it once the chat is open. */
+.app.empty .cedar-private-note { display: none; }
+button.drawer-new { width: 100%; border: 0; background: none; font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
 .app.empty .examples { grid-area: examples; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 28px; }
 .example { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); text-align: left; font-size: 13.5px; line-height: 1.4; color: var(--ink); }
 .example:hover { border-color: var(--accent); }
@@ -128,6 +144,13 @@
 .home-conv:hover { background: var(--wash); }
 .home-conv .name { font-weight: 500; font-size: 13.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .home-conv .sub { font-size: 12px; color: var(--muted); }
+/* No conversations yet: no rail. Its links sit in a row under the examples. */
+.app.empty.no-recents .talk { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto auto auto auto 1fr; grid-template-areas: "a" "hero" "slip" "examples" "recents" "z"; }
+.app.empty.no-recents .home-recents { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px; width: min(720px, 100% - 80px); justify-self: center; margin-top: 20px; padding: 0; border: 0; overflow: visible; }
+.app.empty.no-recents .home-recents-head, .app.empty.no-recents #home-recents { display: none; }
+.app.empty.no-recents .home-recents .cedar-ag-nav { width: auto; }
+button.cedar-ag-nav { border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+.setup-resume { align-self: flex-start; margin-top: 10px; font-size: 14px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 
 .notes { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; padding: 20px 20px 16px 24px; font-size: 13.5px; line-height: 1.55; scroll-behavior: smooth; }
 .notes > * { flex: none; }
@@ -225,22 +248,29 @@
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; transition: none !important; } html, .notes, .stage { scroll-behavior: auto; } }
 
-/* -- narrow: the panes become tabs ---------------------------------------------------------- */
+/* -- narrow: the results are the page, the conversation a sheet under them ------------------ */
 
 @media (max-width: 1000px) { .cost { display: none; } }
 @media (max-width: 800px) {
-  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 52px 40px minmax(0, 1fr); grid-template-areas: "top" "tabs" "pane"; }
+  /* Closed (data-pane="stage"): the stage fills the screen and the sheet is its handle and the
+     message box. Open (data-pane="talk"): the sheet takes the screen. Before a conversation has
+     results there is nothing to put first, and it is the conversation alone. */
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 52px minmax(0, 1fr) auto; grid-template-areas: "top" "stage" "talk"; }
+  .app[data-pane="talk"] { grid-template-rows: 52px minmax(0, 1fr); grid-template-areas: "top" "talk"; }
   .app.empty { grid-template-rows: 52px minmax(0, 1fr); grid-template-areas: "top" "talk"; }
-  .app.empty .tabs { display: none; }
-  .tabs { grid-area: tabs; display: flex; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--paper); }
-  .tab { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 0; background: none; color: var(--muted); font-weight: 500; font-size: 13px; }
-  .tab[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
-  .tab .badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; }
-  .talk, .stage { grid-area: pane; }
-  .app.empty .talk { grid-area: talk; }
   .splitter { display: none; }
   .app[data-pane="talk"] .stage { display: none; }
-  .app[data-pane="stage"] .talk { display: none; }
+  .app[data-pane="stage"] .notes { display: none; }
+  .app[data-pane="stage"] .talk { border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; box-shadow: 0 -6px 24px rgba(40, 30, 10, .10); }
+  .app[data-pane="stage"] .slip { border-top: 0; padding-top: 2px; }
+  .sheet-handle { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 14px 16px 6px; border: 0; background: none; text-align: left; font-size: 13px; color: var(--muted); }
+  .sheet-grip { position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--line); }
+  .sheet-line { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink-2); }
+  .sheet-toggle { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--accent); white-space: nowrap; }
+  .app[data-pane="talk"] .sheet-handle { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+  .app[data-pane="talk"] .sheet-grip { display: none; }
+  .sheet-toggle .badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; }
+  .app.empty .sheet-handle { display: none; }
   .top { gap: 8px; padding: 0 12px; }
   .top .lbl, .brand-name { display: none; }
   .divider { margin: 0 4px; }
@@ -258,6 +288,8 @@
   .app.empty .hero, .app.empty .slip, .app.empty .examples { width: min(720px, 100% - 32px); }
   .app.empty .examples { grid-template-columns: 1fr; }
   .app.empty .home-recents { border-left: 0; border-top: 1px solid var(--line); margin-top: 24px; padding: 20px 16px; }
+  .app.empty.no-recents .talk { grid-template-rows: auto auto auto auto; grid-template-areas: "hero" "slip" "examples" "recents"; }
+  .app.empty.no-recents .home-recents { width: min(720px, 100% - 32px); justify-content: flex-start; border-top: 0; }
   .turn-grid { grid-template-columns: minmax(0, 1fr); }
   .turn-sources { position: static; }
   .cost { display: none; }

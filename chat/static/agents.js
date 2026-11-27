@@ -36,6 +36,8 @@ const cedarAgents = (() => {
   const GROUPS = { schedule: ['time', 'once', 'interval', 'monthly'], condition: ['condition', 'records'], webhook: ['webhook', 'device'], mail: ['email', 'calendar', 'drive'] };
   /** What the form's picker offers: one choice for the clock, and one for each other kind. */
   const PICKS = ['schedule', 'condition', 'records', 'webhook', 'device', 'email', 'calendar', 'drive'];
+  /** The two most agents start with; the form shows the others under "More ways to start it". */
+  const LEAD_PICKS = ['schedule', 'condition'];
   /** The kinds that check something between runs, which can be tried out before saving. */
   const WATCHING = ['condition', 'records', 'email', 'calendar', 'drive'];
   const FREQUENCIES = ['daily', 'weekdays', 'weekly', 'monthly', 'interval', 'once'];
@@ -739,18 +741,27 @@ const cedarAgents = (() => {
     review.append(el('span', 'spinner'), reviewText, retry, skip);
     review.hidden = true;
 
-    // What starts it: one choice of five, each with its own fields below.
-    const picks = el('div', 'cedar-ag-picks');
+    // What starts it: one choice, each with its own fields below. A time and a change come
+    // first; the rest (records, a webhook, the phone, mail, the calendar, a folder) are folded
+    // under "More ways to start it", which is open when the agent starts one of those ways.
+    const picks = el('div', 'cedar-ag-picks-all');
     picks.setAttribute('role', 'radiogroup');
+    picks.setAttribute('aria-label', tr('agents.form.trigger'));
+    const lead = el('div', 'cedar-ag-picks');
+    const more = el('details', 'cedar-ag-more');
+    const moreGrid = el('div', 'cedar-ag-picks');
+    more.append(el('summary', '', tr('agents.form.moreTriggers')), moreGrid);
+    picks.append(lead, more);
     const radios = {};
     for (const pick of PICKS) {
       const label = el('label', 'cedar-ag-pick');
       const radio = input('radio', { name: 'cedar-ag-pick', value: pick });
       radios[pick] = radio;
       label.append(radio, icon(pick), el('b', '', tr(`agents.pick.${pick}`)), el('small', '', tr(`agents.pickHelp.${pick}`)));
-      picks.append(label);
+      (LEAD_PICKS.includes(pick) ? lead : moreGrid).append(label);
     }
     radios[pickOf(t.kind)].checked = true;
+    more.open = !LEAD_PICKS.includes(pickOf(t.kind));
     const picked = () => PICKS.find((p) => radios[p].checked);
 
     // -- on a schedule

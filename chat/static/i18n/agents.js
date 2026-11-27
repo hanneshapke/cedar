@@ -6,6 +6,7 @@
 
 cedarI18n.add({
   en: {
+    'agents.form.moreTriggers': "More ways to start it",
     'agents.title': "Agents",
     'agents.tab.agents': "Agents",
     'agents.tab.activity': "Activity",
@@ -261,6 +262,7 @@ cedarI18n.add({
     'agents.actsAtOnce': "Sends and changes things without asking",
   },
   de: {
+    'agents.form.moreTriggers': "Weitere Auslöser",
     'agents.title': "Agenten",
     'agents.tab.agents': "Agenten",
     'agents.tab.activity': "Aktivität",
@@ -516,6 +518,7 @@ cedarI18n.add({
     'agents.actsAtOnce': "Sendet und ändert, ohne zu fragen",
   },
   fr: {
+    'agents.form.moreTriggers': "Autres déclencheurs",
     'agents.title': "Agents",
     'agents.tab.agents': "Agents",
     'agents.tab.activity': "Activité",
@@ -771,6 +774,7 @@ cedarI18n.add({
     'agents.actsAtOnce': "Envoie et modifie sans demander",
   },
   es: {
+    'agents.form.moreTriggers': "Más formas de iniciarlo",
     'agents.title': "Agentes",
     'agents.tab.agents': "Agentes",
     'agents.tab.activity': "Actividad",

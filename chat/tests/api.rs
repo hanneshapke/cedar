@@ -1440,9 +1440,10 @@ async fn access_token_guards_the_api_but_not_the_page() {
     let (status, cfg) = h.call(Method::GET, "/api/config", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(cfg.contains("\"auth_required\":true"));
-    let (status, page) = h.call(Method::GET, "/", None, None).await;
+    // The page itself is public: it is what asks for the token.
+    let (status, page) = h.call(Method::GET, "/v3/", None, None).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(page.contains("<script src=\"/ui-pref.js\">"));
+    assert!(page.contains("id=\"token-dialog\""));
 }
 
 #[tokio::test]
@@ -1534,12 +1535,11 @@ async fn fetch(h: &Harness, uri: &str) -> (StatusCode, HeaderMap, String) {
 }
 
 #[tokio::test]
-async fn both_uis_are_served() {
+async fn the_ui_is_served() {
     let h = Harness::new(&[]).await;
 
-    // Ledger (/v3/) and Dossier (/v4/) are one page in two layouts: it is served at both
-    // addresses, with its files under /v3/.
-    for (ui, files) in [("v1", "v1"), ("v3", "v3"), ("v4", "v3")] {
+    // There is one interface, at /v3/ (the address the phone apps and bookmarks know).
+    for (ui, files) in [("v3", "v3")] {
         // The page is reachable with and without the trailing slash and loads its own assets.
         for uri in [format!("/{ui}"), format!("/{ui}/")] {
             let (status, headers, page) = fetch(&h, &uri).await;
@@ -1548,16 +1548,16 @@ async fn both_uis_are_served() {
             assert!(page.contains(&format!("data-ui=\"{files}\"")), "{uri} names itself");
             assert!(page.contains(&format!("<script src=\"/{files}/app.js\">")));
             assert!(page.contains(&format!("href=\"/{files}/style.css\"")));
-            if files == "v3" {
-                // The page takes its layout from the address, and has both to choose from.
-                assert!(page.contains("location.pathname.startsWith('/v4') ? 'v4' : 'v3'"), "{uri} picks its layout");
-                for layout in ["ledger", "dossier"] {
-                    assert!(page.contains(&format!("href=\"/v3/{layout}.css\"")), "{uri} has the {layout} styles");
-                    assert!(page.find(&format!("src=\"/v3/{layout}.js\"")) < page.find("src=\"/v3/app.js\""), "{uri} loads {layout} before the script that uses it");
-                }
-                assert!(page.contains("<template data-layout=\"v3\">") && page.contains("<template data-layout=\"v4\">"), "{uri} has a shell for each layout");
-            }
-            assert!(page.contains("<script src=\"/ui-pref.js\">"));
+            assert!(page.contains("href=\"/v3/ledger.css\""), "{uri} has the layout's styles");
+            assert!(page.find("src=\"/v3/ledger.js\"") < page.find("src=\"/v3/app.js\""), "{uri} loads the layout before the script that uses it");
+            assert!(!page.contains("<template data-layout") && !page.contains("dossier"), "{uri} has one layout");
+            assert!(!page.contains("ui-pref.js") && !page.contains("data-page=\"interface\""), "{uri} offers no choice of interface");
+            // On a phone the results are the page and the conversation a sheet: no tabs.
+            assert!(page.contains("id=\"sheet-handle\"") && !page.contains("role=\"tablist\""), "{uri} has the sheet's handle");
+            // Setting up comes before the chat when there is no model yet.
+            assert!(page.contains("href=\"/setup.css\"") && page.find("src=\"/settings.js\"") < page.find("src=\"/setup.js\""), "{uri} loads the setup after the settings it works through");
+            assert!(page.find("src=\"/setup.js\"") < page.find("src=\"/v3/app.js\""), "{uri} loads the setup before the script that opens it");
+            assert!(page.contains("data-settings-page=\"memory\""), "{uri} links to what Cedar knows");
             assert!(page.contains("<script src=\"/file-viewer.js\">"), "{uri} loads the file viewer");
             assert!(page.contains("<script src=\"/image-view.js\">"), "{uri} loads the image view");
             assert!(page.contains("href=\"/image-view.css\""), "{uri} loads the image styles");
@@ -1591,7 +1591,7 @@ async fn both_uis_are_served() {
             );
             assert!(
                 page.find("src=\"/i18n.js\"") < page.find("src=\"/i18n/common.js\"")
-                    && page.find("src=\"/i18n/common.js\"") < page.find("src=\"/ui-pref.js\""),
+                    && page.find("src=\"/i18n/common.js\"") < page.find("src=\"/confirm.js\""),
                 "{uri} loads the translations before every script that shows text"
             );
             assert!(
@@ -1629,8 +1629,8 @@ async fn both_uis_are_served() {
             assert!(page.contains("id=\"settings-dialog\""), "{uri} has the Settings menu");
             assert!(page.contains("<script src=\"/settings-shell.js\">"), "{uri} loads the Settings dialog's frame");
             assert!(
-                page.find("/ui-pref.js") < page.find("/settings-shell.js") && page.find("/settings-shell.js") < page.find("src=\"/settings.js\""),
-                "{uri} loads the Settings frame after the UI choice and before the pages that register with it"
+                page.find("/settings-shell.js") < page.find("src=\"/settings.js\""),
+                "{uri} loads the Settings frame before the pages that register with it"
             );
             assert!(page.contains("id=\"agents-nav\" href=\"#/agents\""), "{uri} links to the Agents page from the sidebar");
             assert!(page.contains("id=\"agent-badge\""), "{uri} links a run's conversation to its agent");
@@ -1643,44 +1643,28 @@ async fn both_uis_are_served() {
     }
     for (uri, content_type, marker) in [
         ("/v3/ledger.js", "text/javascript; charset=utf-8", "cedarLayouts ||= {}).ledger"),
-        ("/v3/dossier.js", "text/javascript; charset=utf-8", "cedarLayouts ||= {}).dossier"),
         ("/v3/ledger.css", "text/css; charset=utf-8", ".stage"),
-        ("/v3/dossier.css", "text/css; charset=utf-8", ".brief"),
+        ("/setup.js", "text/javascript; charset=utf-8", "cedarSetup"),
+        ("/setup.css", "text/css; charset=utf-8", ".cedar-setup"),
     ] {
         let (status, headers, body) = fetch(&h, uri).await;
         assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, content_type), "{uri}");
         assert!(body.contains(marker), "{uri} is the expected file");
     }
-    // Dossier has no files of its own, and "Cedar style" (/v2/) is retired: its address opens Ledger.
-    assert_eq!(fetch(&h, "/v4/app.js").await.0, StatusCode::NOT_FOUND);
-    for uri in ["/v2", "/v2/"] {
+    // `/` and the addresses of the retired interfaces ("Claude style" at /v1/, "Cedar style" at
+    // /v2/, "Dossier" at /v4/) open the page; their own files are gone.
+    for uri in ["/", "/v1", "/v1/", "/v2", "/v2/", "/v4", "/v4/"] {
         let (status, headers, _) = fetch(&h, uri).await;
         assert_eq!((status, headers["location"].to_str().unwrap()), (StatusCode::TEMPORARY_REDIRECT, "/v3/"), "{uri}");
     }
-    assert_eq!(fetch(&h, "/v2/app.js").await.0, StatusCode::NOT_FOUND);
-    // The Interface page shows a small screenshot of each design, light and dark.
-    for ui in ["v1", "v3", "v4"] {
-        let (_, _, page) = fetch(&h, &format!("/{ui}/")).await;
-        for choice in ["v1", "v3", "v4"] {
-            for theme in ["light", "dark"] {
-                let uri = format!("/ui-previews/{choice}-{theme}.webp");
-                assert!(page.contains(&uri), "{ui} shows {uri}");
-                let resp = h.app.clone().oneshot(Request::builder().uri(&uri).body(Body::empty()).unwrap()).await.unwrap();
-                assert_eq!((resp.status(), resp.headers()["content-type"].to_str().unwrap()), (StatusCode::OK, "image/webp"), "{uri}");
-                let bytes = resp.into_body().collect().await.unwrap().to_bytes();
-                assert!(bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP", "{uri} is a WebP");
-            }
-        }
+    // The outcome of "Connect Google" comes back in the query, which the redirect keeps.
+    let (status, headers, _) = fetch(&h, "/?integrations=connected").await;
+    assert_eq!((status, headers["location"].to_str().unwrap()), (StatusCode::TEMPORARY_REDIRECT, "/v3/?integrations=connected"));
+    for gone in ["/v1/app.js", "/v2/app.js", "/v4/app.js", "/v3/dossier.js", "/v3/dossier.css", "/ui-pref.js", "/ui-previews/v3-light.webp", "/i18n/v1.js", "/i18n/v2.js", "/i18n/v4.js"] {
+        assert_eq!(fetch(&h, gone).await.0, StatusCode::NOT_FOUND, "{gone}");
     }
-    assert_eq!(fetch(&h, "/i18n/v2.js").await.0, StatusCode::NOT_FOUND);
-    assert_eq!(fetch(&h, "/i18n/v4.js").await.0, StatusCode::NOT_FOUND);
 
-    // The shared script holds the saved choice; `/` only sends the browser to the UI it names.
-    let (status, headers, script) = fetch(&h, "/ui-pref.js").await;
-    assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
-    assert!(script.contains("cedar-chat-ui"));
-
-    // So does the file viewer, which both pages load before their own script.
+    // The file viewer, which the page loads before its own script.
     let (status, headers, script) = fetch(&h, "/file-viewer.js").await;
     assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
     assert!(script.contains("cedarViewer"));
@@ -1761,7 +1745,7 @@ async fn the_logo_and_icons_are_served_and_linked() {
         assert!(bytes.starts_with(magic), "{uri} is the expected file");
     }
 
-    for ui in ["v1", "v3"] {
+    for ui in ["v3"] {
         let (_, _, page) = fetch(&h, &format!("/{ui}/")).await;
         assert!(page.contains("rel=\"icon\" href=\"/assets/favicon.svg\""), "{ui} has an icon");
         assert!(page.contains("rel=\"apple-touch-icon\" href=\"/assets/apple-touch-icon.png\""), "{ui} has a touch icon");

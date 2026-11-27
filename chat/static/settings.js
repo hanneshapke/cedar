@@ -374,9 +374,26 @@ const cedarSettings = (() => {
       onChange();
     });
     main.append(el('span', 'cedar-set-row-name', g.label));
+    let panel = null;
     if (!g.available) {
-      sub.textContent = '';
-      side.textContent = g.reason || tr('settings.tools.notOffered');
+      // Said plainly, with a way to set it up where there is one; the server's own wording
+      // (which key, which flag) is for expert mode and the tooltip.
+      const why = missing(g);
+      sub.textContent = g.reason || '';
+      sub.classList.add('dbg');
+      side.textContent = why.text;
+      side.title = g.reason || '';
+      if (why.connect) {
+        panel = el('div', 'cedar-set-connect');
+        panel.hidden = true;
+        const connect = button(tr('settings.tools.connect'), () => {
+          panel.hidden = !panel.hidden;
+          connect.setAttribute('aria-expanded', String(!panel.hidden));
+          if (!panel.hidden) connectPanel(why.connect, panel);
+        }, 'settings-ghost cedar-set-connect-btn');
+        connect.setAttribute('aria-expanded', 'false');
+        side.append(connect);
+      }
     } else if (single) {
       sub.append(`${tr('settings.tools.count', { count: g.tools.length })} · `);
       const choose = el('button', 'settings-link', tr('settings.tools.chooseSingleLower'));
@@ -405,8 +422,12 @@ const cedarSettings = (() => {
         });
         singles.append(l);
       }
+    } else if (g.tools?.length) {
+      // The tools' own names mean something to whoever reads traces, and to nobody else.
+      sub.textContent = g.tools.map((t) => t.name).join(', ');
+      sub.classList.add('dbg');
     } else {
-      sub.textContent = g.tools?.length ? g.tools.map((t) => t.name).join(', ') : tr('settings.tools.pending');
+      sub.textContent = tr('settings.tools.pending');
     }
     if (g.available && g.tools?.some((t) => t.writes)) {
       side.textContent = tr('settings.tools.canWrite');
@@ -415,10 +436,81 @@ const cedarSettings = (() => {
     main.append(sub);
     row.append(sw, main, side);
     syncSwitch();
-    if (!singles) return row;
+    const under = singles || panel;
+    if (!under) return row;
     const wrap = el('div');
-    wrap.append(row, singles);
+    wrap.append(row, under);
     return wrap;
+  }
+
+  /** Why an ability isn't there, in plain words, and what "Connect" would set up ('' when only
+   *  whoever runs this Cedar can turn it on). */
+  function missing(g) {
+    const reason = g.reason || '';
+    if (/Google/.test(reason)) return { text: tr('settings.tools.needsGoogle'), connect: 'google' };
+    if (/^Needs /.test(reason)) {
+      return { text: tr('settings.tools.needsKey'), connect: { web_search: 'brave', flights: 'serpapi', products: 'brave', slack: 'slack' }[g.id] || '' };
+    }
+    return { text: tr('settings.tools.turnedOff'), connect: '' };
+  }
+
+  /**
+   * What "Connect" opens under an ability: the key's own form, right there. Keys are the
+   * server's, so a browser that may not save them yet is asked for the admin password first,
+   * and a Cedar that takes no keys from the page says where they go instead.
+   */
+  async function connectPanel(kind, panel, error) {
+    const cfg = deps.config();
+    if (!cfg.admin_enabled) {
+      panel.replaceChildren(note(tr('settings.tools.connectElsewhere')), button(tr('settings.tools.connectHow'), () => shell()?.go('server'), 'settings-ghost'));
+      return;
+    }
+    if (!unlocked()) {
+      const form = el('form', 'cedar-set-unlock');
+      const input = el('input');
+      input.type = 'password';
+      input.autocomplete = 'off';
+      input.placeholder = tr('settings.tools.connectPassword');
+      input.setAttribute('aria-label', tr('settings.tools.connectPassword'));
+      form.append(input, button(tr('settings.tools.connectContinue'), () => form.requestSubmit(), 'primary'));
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (!input.value.trim()) return;
+        setAdminToken(input.value.trim());
+        shell()?.refresh('server');
+        connectPanel(kind, panel);
+      });
+      panel.replaceChildren(note(tr('settings.tools.connectLocked')), ...(error ? [note(error, 'cedar-set-error')] : []), form);
+      input.focus();
+      return;
+    }
+    panel.replaceChildren(note(tr('settings.loading')));
+    let status;
+    try {
+      status = await adminApi('GET', '/integrations');
+    } catch (e) {
+      if (e.status === 403) {
+        setAdminToken('');
+        shell()?.refresh('server');
+        await connectPanel(kind, panel, e.message);
+      } else {
+        panel.replaceChildren(note(e.message, 'cedar-set-error'));
+      }
+      return;
+    }
+    if (kind === 'google') {
+      panel.replaceChildren(note(tr('settings.tools.connectGoogle')), button(tr('settings.tools.connectGoogleOpen'), () => shell()?.go('server'), 'settings-ghost'));
+      return;
+    }
+    if (!status.storage) {
+      panel.replaceChildren(note(tr('settings.tools.connectElsewhere')), button(tr('settings.tools.connectHow'), () => shell()?.go('server'), 'settings-ghost'));
+      return;
+    }
+    const row = { brave: braveRow, serpapi: serpapiRow, slack: slackRow }[kind](status);
+    panel.replaceChildren(row);
+    // Straight to the field: the row's last button is "Add key".
+    const buttons = row.querySelectorAll('.cedar-set-integration-side button');
+    buttons[buttons.length - 1]?.click();
   }
 
   async function renderModel(section) {
@@ -461,7 +553,9 @@ const cedarSettings = (() => {
     turns.placeholder = defaults ? tr('settings.model.serverLimitIs', { limit: String(defaults.max_turns_cap) }) : tr('settings.model.serverLimit');
     turns.value = draft.max_turns ?? '';
     turns.addEventListener('input', () => { draft.max_turns = turns.value ? Number(turns.value) : null; dirty(); });
-    fields.append(field(tr('settings.model.maxTurns'), turns));
+    const turnsField = field(tr('settings.model.maxTurns'), turns);
+    turnsField.classList.add('dbg');
+    fields.append(turnsField);
     const plan = el('select');
     for (const value of ['auto', 'tool', 'on', 'off']) plan.append(new Option(tr(`settings.plan.${value}`), value));
     plan.value = draft.plan || 'auto';
@@ -473,7 +567,7 @@ const cedarSettings = (() => {
 
     // The system prompt: read as a document, edited as one. Without a saved prompt it shows
     // cedar's default text, which is saved as "unset" so it keeps following cedar's SYSTEM_PROMPT.
-    const promptBlock = el('div', 'cedar-set-prompt-block');
+    const promptBlock = el('div', 'cedar-set-prompt-block dbg');
     const head = el('div', 'cedar-set-prompt-head');
     const headLeft = el('span');
     const tag = el('span', 'cedar-set-badge', tr('settings.model.cedarDefault'));
@@ -1327,7 +1421,9 @@ const cedarSettings = (() => {
   function modelRow(entry, status) {
     const levels = entry.reasoning_levels || [];
     const { row, main, side } = integrationRow(entry.label || entry.id, tr('settings.models.at', { model: entry.model, url: entry.base_url }));
-    main.append(el('small', '', tr('settings.models.id', { id: entry.id })));
+    // Where it runs and what it is called there: for expert mode. Everyone else reads its name.
+    main.querySelector('small').classList.add('dbg');
+    main.append(el('small', 'dbg', tr('settings.models.id', { id: entry.id })));
     // The model the desktop app runs with llama.cpp is the app's to change and remove: taken out
     // of the registry alone, its server would keep running and the entry come back.
     const runByApp = entry.id === LLAMA_ID && inDesktopApp();
@@ -1340,8 +1436,8 @@ const cedarSettings = (() => {
       ? (entry.default_reasoning
         ? tr('settings.models.levelsDefault', { levels: levels.join(', '), level: entry.default_reasoning })
         : tr('settings.models.levels', { levels: levels.join(', ') }))
-      : tr('settings.models.noLevels')));
-    if (entry.max_tokens) side.append(badge(tr('settings.models.maxTokensBadge', { count: entry.max_tokens })));
+      : tr('settings.models.noLevels'), 'dbg'));
+    if (entry.max_tokens) side.append(badge(tr('settings.models.maxTokensBadge', { count: entry.max_tokens }), 'dbg'));
     // What the server listed when the entry was checked is offered in the edit form; the row only
     // says when the model name is not one of them.
     if (Array.isArray(entry.listed_models) && !entry.listed_models.includes(entry.model)) {
@@ -2463,5 +2559,64 @@ const cedarSettings = (() => {
     reportRedirect();
   }
 
-  return { init, start, beforeSend, conversationChanged };
+  // -- setting Cedar up the first time (setup.js) -------------------------------------------------
+
+  const plainName = (name) => String(name).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  /** Whether this browser may add a model: everyone may by default (CHAT_MODELS_ACCESS=users),
+   *  else whoever has the admin password in. */
+  const canAddModels = () => modelsOpen() || Boolean(deps.config().admin_enabled && unlocked());
+
+  /** The names a model server lists, asked by cedar (it is cedar that will call the model). */
+  async function modelsAt(baseUrl, apiKey) {
+    const body = { base_url: baseUrl };
+    if (apiKey) body.api_key = apiKey;
+    return (await adminApi('POST', '/integrations/server-models', body)).models || [];
+  }
+
+  /** The listed model to start on: the first of the names known to work well, else the first. */
+  function suggestedAmong(names, wanted) {
+    for (const name of wanted || []) {
+      const hits = names.filter((m) => plainName(m).includes(plainName(name)));
+      if (hits.length) return hits.sort((a, b) => a.length - b.length)[0];
+    }
+    return names[0] || '';
+  }
+
+  /** Register `model` at `baseUrl` as the default, with everything the form would ask worked
+   *  out: its reasoning levels and whether it reads images come from the list of known models
+   *  (cedar tries one the list doesn't name with a small image). cedar checks the server first. */
+  async function addFirstModel({ baseUrl, apiKey, model }) {
+    const servers = await modelServers();
+    const levels = (servers.reasoning?.models || []).find((m) => plainName(model).includes(plainName(m.match)))?.levels || [];
+    const images = (servers.images || []).find((m) => plainName(model).includes(plainName(m.match)))?.images;
+    const name = model.split('/').pop();
+    const id = name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+|-+$/g, '').slice(0, 64) || 'model';
+    const body = {
+      base_url: baseUrl,
+      model,
+      label: name,
+      reasoning_levels: levels,
+      default_reasoning: '',
+      detect_images: true,
+      ...(images === undefined ? {} : { images_hint: images }),
+      video: false,
+      max_tokens: DEFAULT_MAX_TOKENS,
+      is_default: true,
+    };
+    if (apiKey) body.api_key = apiKey;
+    const saved = await adminApi('PUT', `/integrations/models/${encodeURIComponent(id)}`, body);
+    await modelsChanged();
+    return saved;
+  }
+
+  /** What the desktop app can do about a model: download and run one itself, or nothing. */
+  const appModel = () => {
+    const option = llamaOption([]);
+    return { available: Boolean(option.available), text: option.text, open: () => { window.location.href = SETUP_MODEL_PATH; } };
+  };
+
+  const setup = { canAddModels, servers: modelServers, modelsAt, suggestedAmong, addFirstModel, appModel };
+
+  return { init, start, beforeSend, conversationChanged, setup };
 })();
