@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **The phone apps speak plainly.** The iPhone and Android apps no longer say "cedar-chat server", "Server URL" or "sandbox", and call the assistant Cedar throughout instead of "the agent": connection errors say what to check ("Your Cedar isn't answering properly") and point to the QR code, the home screen asks "What should Cedar take on?", and an approval asks "May Cedar do this?". A step is headed by what it is ("Web search", "Chart", "Web page") instead of the tool's function name, on approval cards too, and the token count under each reply is gone (the price, where there is one, stays). Android's notification settings no longer talk about FCM, UnifiedPush distributors or registration. An agent is described by what it does for you, and its "Prompt" is "What it should do". In English, German, French and Spanish.
 - **cedar no longer switches to OpenShell when its user has no gateway.** `openshell status` exits 0 and prints `{"status": "not_configured"}` when the CLI has no gateway registered, which is the case when the gateway was set up for another user (the installer's own user service, say). cedar took that for a working gateway, so *Run sandboxes with OpenShell* could be turned on and every run after it failed with "could not start the sandbox for this run" (`No active gateway` in the log). The check now requires the gateway to be connected, and the message says that the gateway must be registered for the user cedar runs as. DEPLOYMENT.md's troubleshooting table covers the case.
 
 ## 0.12.2

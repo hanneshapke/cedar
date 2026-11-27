@@ -108,7 +108,6 @@ import dev.cedar.core.pretty
 import dev.cedar.core.price
 import dev.cedar.core.str
 import kotlinx.coroutines.delay
-import java.text.NumberFormat
 import java.time.Instant
 
 /** A message and everything the agent did to answer it (iOS/Cedar/Features/Chat/TurnView.swift). */
@@ -224,15 +223,9 @@ private fun StatusFooter(turn: TurnTranscript) {
                     },
                     tint = secondary,
                 )
-                val usage = turn.usage
-                if (usage.inputTokens != 0 || usage.outputTokens != 0 || usage.costUSD != null) {
-                    val n = NumberFormat.getIntegerInstance()
-                    Text(
-                        stringResource(R.string.tokens_in_out, n.format(usage.inputTokens), n.format(usage.outputTokens)),
-                        style = MaterialTheme.typography.labelSmall, color = secondary,
-                    )
-                }
-                usage.costUSD?.let { cost ->
+                // What a reply cost is shown when cedar prices it. How many tokens it took is not:
+                // that number means nothing to the person reading the reply.
+                turn.usage.costUSD?.let { cost ->
                     // In US dollars, as cedar counts it, written as the user's locale writes prices.
                     val digits = if (cost < 0.01) 4 else 2
                     Text(price(cost, "USD", digits, digits), style = MaterialTheme.typography.labelSmall, color = secondary)
@@ -357,7 +350,7 @@ private fun ApprovalView(approval: Approval, canDecide: Boolean, decide: (String
             "download_file" -> approval.input["url"].str
             else -> null
         } ?: approval.input.pretty()
-        CodeBox(approval.tool, summary)
+        CodeBox(toolLabel(approval.tool), summary)
         if (approval.isPending) {
             if (canDecide) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -698,7 +691,7 @@ fun ToolCallView(call: ToolCall, webURL: String?) {
                 contentAlignment = Alignment.Center,
             ) { Icon(toolIcon(call.name), null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
             Spacer(Modifier.width(10.dp))
-            Text(call.name, style = MaterialTheme.typography.titleSmall)
+            Text(toolLabel(call.name), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.width(8.dp))
             Text(
                 call.summary,
@@ -780,6 +773,35 @@ private fun openCardOnWeb(name: String): Int = when (name) {
     "weather_forecast" -> R.string.open_weather_on_web
     "generate_chart" -> R.string.open_chart_on_web
     else -> R.string.open_result_on_web
+}
+
+/**
+ * What a step is called: "Web search" or "Chart", not the tool's function name (`web_search`,
+ * `generate_chart`). A tool this app has no word for (one of Google's, a personal or community
+ * tool) is shown by its own name with the underscores taken out: `gmail_search` reads "Gmail search".
+ */
+@Composable
+private fun toolLabel(name: String): String = when (name) {
+    "web_search" -> stringResource(R.string.tool_web_search)
+    "bash" -> stringResource(R.string.tool_command)
+    "run_python" -> stringResource(R.string.tool_code)
+    "read_file", "read_document" -> stringResource(R.string.tool_read)
+    "write_file" -> stringResource(R.string.tool_write)
+    "generate_pdf" -> "PDF"
+    "fetch_url" -> stringResource(R.string.tool_page)
+    "download_file" -> stringResource(R.string.tool_download)
+    "browser" -> stringResource(R.string.tool_browser)
+    "generate_chart" -> stringResource(R.string.tool_chart)
+    "weather_forecast" -> stringResource(R.string.tool_weather)
+    "show_map" -> stringResource(R.string.map)
+    "show_recipe" -> stringResource(R.string.tool_recipe)
+    "plan_trip" -> stringResource(R.string.tool_route)
+    "compare_stocks" -> stringResource(R.string.tool_stocks)
+    "search_products" -> stringResource(R.string.products)
+    "search_flights" -> stringResource(R.string.tool_flights)
+    "ask_user" -> stringResource(R.string.tool_question)
+    "remember", "forget", "recall" -> stringResource(R.string.memory)
+    else -> name.replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
 
 private fun toolIcon(name: String): ImageVector = when (name) {

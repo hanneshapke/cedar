@@ -46,25 +46,25 @@
         }
       }
     },
-    "%@ Port %@ may serve plain HTTP. Use the HTTPS address from tailscale serve, e.g. https://<machine>.<tailnet>.ts.net (no port)." : {
+    "%@ Leave off the :%@ at the end and use the https:// address shown with the QR code." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ Port %@ liefert vermutlich unverschlüsseltes HTTP. Verwende die HTTPS-Adresse von tailscale serve, z. B. https://<machine>.<tailnet>.ts.net (ohne Port)."
+            "value" : "%@ Lass das :%@ am Ende weg und nimm die https://-Adresse, die beim QR-Code steht."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ El puerto %@ puede servir HTTP sin cifrar. Usa la dirección HTTPS de tailscale serve, p. ej., https://<machine>.<tailnet>.ts.net (sin puerto)."
+            "value" : "%@ Quita el :%@ del final y usa la dirección https:// que aparece con el código QR."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ Le port %@ sert peut-être du HTTP non chiffré. Utilisez l'adresse HTTPS de tailscale serve, par ex. https://<machine>.<tailnet>.ts.net (sans port)."
+            "value" : "%@ Retirez le :%@ à la fin et utilisez l'adresse https:// affichée avec le code QR."
           }
         }
       }
@@ -180,28 +180,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ a épuisé ses exécutions pour aujourd’hui."
-          }
-        }
-      }
-    },
-    "%@ in · %@ out" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ rein · %@ raus"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ de entrada · %@ de salida"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ en entrée · %@ en sortie"
           }
         }
       }
@@ -2661,29 +2639,6 @@
         }
       }
     },
-    "Add your cedar-chat server in Settings." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Füge deinen cedar-chat-Server in den Einstellungen hinzu."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Agrega tu servidor cedar-chat en Configuración."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajoutez votre serveur cedar-chat dans les Réglages."
-          }
-        }
-      }
-    },
     "Address" : {
       "localizations" : {
         "de" : {
@@ -3076,24 +3031,24 @@
         }
       }
     },
-    "An agent is a prompt Cedar runs on its own: on a schedule, when something changes, when a webhook or your device calls it, or when mail, a calendar event or a new file comes up." : {
+    "An agent is something Cedar does for you on its own: every morning, when a price drops, when mail arrives." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein Agent ist ein Prompt, den Cedar von selbst ausführt: nach Zeitplan, wenn sich etwas ändert, wenn ein Webhook oder dein Gerät ihn aufruft oder wenn eine E-Mail, ein Kalendertermin oder eine neue Datei ansteht."
+            "value" : "Ein Agent ist etwas, das Cedar von sich aus für dich erledigt: jeden Morgen, wenn ein Preis fällt, wenn Post eintrifft."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un agente es un prompt que Cedar ejecuta por sí solo: según un horario, cuando algo cambia, cuando lo llama un webhook o tu dispositivo, o cuando llega un correo, se acerca un evento del calendario o aparece un archivo nuevo."
+            "value" : "Un agente es algo que Cedar hace por ti por su cuenta: cada mañana, cuando baja un precio, cuando llega un correo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un agent est un prompt que Cedar exécute tout seul : à heure fixe, quand quelque chose change, quand un webhook ou votre appareil l’appelle, ou quand un e-mail arrive, qu’un événement du calendrier approche ou qu’un nouveau fichier apparaît."
+            "value" : "Un agent est une tâche que Cedar accomplit pour vous de lui-même : chaque matin, quand un prix baisse, quand un e-mail arrive."
           }
         }
       }
@@ -3369,6 +3324,29 @@
         }
       }
     },
+    "Approval" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freigabe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aprobación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approbation"
+          }
+        }
+      }
+    },
     "Approve" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3552,24 +3530,46 @@
         }
       }
     },
-    "Ask the agent to search, write and run code, and build things in its sandbox." : {
+    "Ask Cedar something to get started." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bitte den Agenten, zu recherchieren, Code zu schreiben und auszuführen und in seiner Sandbox Dinge zu bauen."
+            "value" : "Frag Cedar etwas, um loszulegen."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pídele al agente que busque, escriba y ejecute código, y construya cosas en su sandbox."
+            "value" : "Pregúntale algo a Cedar para empezar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Demandez à l'agent de faire des recherches, d'écrire et d'exécuter du code, et de construire des choses dans son bac à sable."
+            "value" : "Demandez quelque chose à Cedar pour commencer."
+          }
+        }
+      }
+    },
+    "Ask Cedar to look something up, work through your files, or write something for you." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bitte Cedar, etwas nachzuschlagen, deine Dateien durchzugehen oder etwas für dich zu schreiben."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pídele a Cedar que busque algo, revise tus archivos o escriba algo por ti."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demandez à Cedar de chercher quelque chose, de parcourir vos fichiers ou d'écrire pour vous."
           }
         }
       }
@@ -4023,6 +4023,29 @@
         }
       }
     },
+    "Browser" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browser"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Navegador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Navigateur"
+          }
+        }
+      }
+    },
     "Browser push" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4225,24 +4248,24 @@
         }
       }
     },
-    "Can't Reach the Server" : {
+    "Can't Reach Your Cedar" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Server nicht erreichbar"
+            "value" : "Dein Cedar ist nicht erreichbar"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se puede conectar con el servidor"
+            "value" : "No se puede conectar con tu Cedar"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Serveur injoignable"
+            "value" : "Impossible de joindre votre Cedar"
           }
         }
       }
@@ -4358,6 +4381,35 @@
         }
       }
     },
+    "Cedar couldn't finish this." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar konnte das nicht abschließen."
+          }
+        },
+        "de-CH" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar konnte das nicht abschliessen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar no pudo terminar esto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar n'a pas pu terminer."
+          }
+        }
+      }
+    },
     "Cedar is busy right now, so %@ was not started. Try again in a moment." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4399,6 +4451,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cedar connaît le nom, la taille et les colonnes de chaque jeu, jamais les lignes, tant qu'il ne les consulte pas. Les données restent sur votre propre serveur et ne sont jamais partagées avec des tiers. Réglages → Outils dans l'interface web permet de les désactiver."
+          }
+        }
+      }
+    },
+    "Cedar is writing up what this conversation asked for…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar schreibt auf, worum es in dieser Unterhaltung ging…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar está redactando lo que pedía esta conversación…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar rédige ce que cette conversation demandait…"
           }
         }
       }
@@ -4495,46 +4569,80 @@
         }
       }
     },
-    "Cedar runs where you put it. This app talks to it; your keys, files and conversations never leave your server." : {
+    "Cedar runs on a computer you choose. This app talks to it; your keys, files and conversations never leave that computer." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cedar läuft dort, wo du es installierst. Diese App spricht mit ihm; deine Schlüssel, Dateien und Unterhaltungen verlassen deinen Server nie."
+            "value" : "Cedar läuft auf einem Computer deiner Wahl. Diese App spricht mit ihm; deine Schlüssel, Dateien und Unterhaltungen verlassen diesen Computer nie."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cedar se ejecuta donde tú lo instales. Esta app habla con él; tus claves, archivos y conversaciones nunca salen de tu servidor."
+            "value" : "Cedar funciona en la computadora que tú elijas. Esta app habla con él; tus claves, archivos y conversaciones nunca salen de esa computadora."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar funciona en el ordenador que tú elijas. Esta app habla con él; tus claves, archivos y conversaciones nunca salen de ese ordenador."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cedar tourne là où vous l’installez. Cette app lui parle ; vos clés, vos fichiers et vos conversations ne quittent jamais votre serveur."
+            "value" : "Cedar tourne sur l'ordinateur de votre choix. Cette app communique avec lui ; vos clés, fichiers et conversations ne quittent jamais cet ordinateur."
           }
         }
       }
     },
-    "Cedar usually reaches your server through Tailscale. Install the Tailscale app on this device and log in to the same tailnet as your server." : {
+    "Cedar starts fresh with this each time, in a conversation of its own, so say everything it needs." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cedar erreicht deinen Server meist über Tailscale. Installiere die Tailscale-App auf diesem Gerät und melde dich im selben Tailnet an wie dein Server."
+            "value" : "Cedar fängt damit jedes Mal neu an, in einer eigenen Unterhaltung; sag also alles, was es braucht."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cedar suele llegar a tu servidor a través de Tailscale. Instala la app de Tailscale en este dispositivo e inicia sesión en la misma tailnet que tu servidor."
+            "value" : "Cedar empieza de cero con esto cada vez, en una conversación propia, así que di todo lo que necesita."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cedar joint généralement votre serveur via Tailscale. Installez l'application Tailscale sur cet appareil et connectez-vous au même tailnet que votre serveur."
+            "value" : "Cedar repart de zéro avec ce texte à chaque fois, dans une conversation à part : dites tout ce dont il a besoin."
+          }
+        }
+      }
+    },
+    "Cedar usually reaches your computer through Tailscale, a private connection between your devices. Install the Tailscale app on this device and sign in with the same account as on your computer." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar erreicht deinen Computer normalerweise über Tailscale, eine private Verbindung zwischen deinen Geräten. Installiere die Tailscale-App auf diesem Gerät und melde dich mit demselben Konto an wie auf deinem Computer."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar suele llegar a tu computadora a través de Tailscale, una conexión privada entre tus dispositivos. Instala la app de Tailscale en este dispositivo e inicia sesión con la misma cuenta que en tu computadora."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar suele llegar a tu ordenador a través de Tailscale, una conexión privada entre tus dispositivos. Instala la app de Tailscale en este dispositivo e inicia sesión con la misma cuenta que en tu ordenador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar joint généralement votre ordinateur via Tailscale, une connexion privée entre vos appareils. Installez l'app Tailscale sur cet appareil et connectez-vous avec le même compte que sur votre ordinateur."
           }
         }
       }
@@ -4654,24 +4762,46 @@
         }
       }
     },
-    "Cedar wrote this prompt from the conversation. Read it and change what you like: every run starts fresh with it, in a conversation of its own." : {
+    "Cedar wrote this from the conversation. Check that it says what should happen each time." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cedar hat diesen Prompt aus der Unterhaltung geschrieben. Lies ihn und ändere, was du möchtest: Jeder Lauf beginnt neu damit, in einer eigenen Unterhaltung."
+            "value" : "Cedar hat das aus der Unterhaltung geschrieben. Prüfe, ob es sagt, was jedes Mal geschehen soll."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cedar escribió este prompt a partir de la conversación. Léelo y cambia lo que quieras: cada ejecución empieza de cero con él, en una conversación propia."
+            "value" : "Cedar escribió esto a partir de la conversación. Comprueba que diga lo que debe ocurrir cada vez."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cedar a rédigé ce prompt à partir de la conversation. Relisez-le et modifiez ce que vous voulez : chaque exécution repart de zéro avec lui, dans une conversation à part."
+            "value" : "Cedar a rédigé ce texte à partir de la conversation. Vérifiez qu'il dit bien ce qui doit se passer à chaque fois."
+          }
+        }
+      }
+    },
+    "Cedar's default" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedars Standard"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Predeterminado de Cedar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valeur par défaut de Cedar"
           }
         }
       }
@@ -4699,6 +4829,29 @@
         }
       }
     },
+    "Cedar's setting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedars Einstellung"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajuste de Cedar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réglage de Cedar"
+          }
+        }
+      }
+    },
     "Change" : {
       "localizations" : {
         "de" : {
@@ -4717,6 +4870,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Variation"
+          }
+        }
+      }
+    },
+    "Chart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagramm"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gráfico"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graphique"
           }
         }
       }
@@ -4761,28 +4937,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Intervalle de vérification"
-          }
-        }
-      }
-    },
-    "Check failing" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prüfung schlägt fehl"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La comprobación falla"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La vérification échoue"
           }
         }
       }
@@ -5056,6 +5210,52 @@
         }
       }
     },
+    "Code" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code"
+          }
+        }
+      }
+    },
+    "Command" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Befehl"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commande"
+          }
+        }
+      }
+    },
     "Comparable options" : {
       "localizations" : {
         "de" : {
@@ -5145,24 +5345,47 @@
         }
       }
     },
-    "Connect your server" : {
+    "Connect this app to your Cedar in Settings." : {
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verbinde deinen Server"
+            "value" : "Verbinde diese App in den Einstellungen mit deinem Cedar."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecta tu servidor"
+            "value" : "Conecta esta app con tu Cedar en Configuración."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connectez votre serveur"
+            "value" : "Connectez cette app à votre Cedar dans les Réglages."
+          }
+        }
+      }
+    },
+    "Connect to your Cedar" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde dich mit deinem Cedar"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conéctate a tu Cedar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez-vous à votre Cedar"
           }
         }
       }
@@ -5232,6 +5455,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Connecté. %lld modèles disponibles."
+          }
+        }
+      }
+    },
+    "Connection Settings" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbindungseinstellungen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes de conexión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réglages de connexion"
           }
         }
       }
@@ -5635,25 +5880,47 @@
         }
       }
     },
-    "Could not reach cedar-chat: %@" : {
-      "extractionState" : "manual",
+    "Couldn't check" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "cedar-chat ist nicht erreichbar: %@"
+            "value" : "Prüfung nicht möglich"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudo conectar con cedar-chat: %@"
+            "value" : "No se pudo comprobar"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Impossible de joindre cedar-chat : %@"
+            "value" : "Vérification impossible"
+          }
+        }
+      }
+    },
+    "Couldn't reach your Cedar: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Cedar ist nicht erreichbar: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo conectar con tu Cedar: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de joindre votre Cedar : %@"
           }
         }
       }
@@ -6218,24 +6485,24 @@
         }
       }
     },
-    "Did the agent do what you asked?" : {
+    "Did Cedar do what you asked?" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hat der Agent getan, worum du gebeten hast?"
+            "value" : "Hat Cedar getan, worum du gebeten hast?"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Hizo el agente lo que pediste?"
+            "value" : "¿Hizo Cedar lo que pediste?"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "L'agent a-t-il fait ce que vous avez demandé ?"
+            "value" : "Cedar a-t-il fait ce que vous demandiez ?"
           }
         }
       }
@@ -6486,6 +6753,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Étape %lld terminée"
+          }
+        }
+      }
+    },
+    "Download" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descarga"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléchargement"
           }
         }
       }
@@ -7025,28 +7315,6 @@
         }
       }
     },
-    "Every run starts fresh with this prompt, in a conversation of its own." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jeder Lauf beginnt neu mit diesem Prompt, in einer eigenen Unterhaltung."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cada ejecución empieza de cero con este prompt, en una conversación propia."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chaque exécution repart de zéro avec ce prompt, dans une conversation à part."
-          }
-        }
-      }
-    },
     "Every run your agents start shows up here, with what started it." : {
       "localizations" : {
         "de" : {
@@ -7322,6 +7590,29 @@
         }
       }
     },
+    "File" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datei"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fichier"
+          }
+        }
+      }
+    },
     "Files" : {
       "localizations" : {
         "de" : {
@@ -7344,24 +7635,24 @@
         }
       }
     },
-    "Files the agent writes in this conversation appear here." : {
+    "Files Cedar writes in this conversation appear here." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dateien, die der Agent in dieser Unterhaltung schreibt, erscheinen hier."
+            "value" : "Dateien, die Cedar in dieser Unterhaltung schreibt, erscheinen hier."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los archivos que el agente escriba en esta conversación aparecen aquí."
+            "value" : "Los archivos que Cedar escribe en esta conversación aparecen aquí."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les fichiers que l'agent écrit dans cette conversation apparaissent ici."
+            "value" : "Les fichiers que Cedar écrit dans cette conversation apparaissent ici."
           }
         }
       }
@@ -8381,24 +8672,24 @@
         }
       }
     },
-    "How Cedar tells you that a run has something for you. The methods are set up under Settings → Notifications in the web UI." : {
+    "How Hard It Thinks" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wie Cedar dir sagt, dass ein Lauf etwas für dich hat. Die Methoden richtest du in der Web-Oberfläche unter Einstellungen → Benachrichtigungen ein."
+            "value" : "Wie gründlich es nachdenkt"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cómo te avisa Cedar de que una ejecución tiene algo para ti. Los métodos se configuran en Configuración → Notificaciones en la interfaz web."
+            "value" : "Cuánto piensa"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Comment Cedar vous prévient qu’une exécution a quelque chose pour vous. Les méthodes se configurent sous Réglages → Notifications dans l’interface web."
+            "value" : "Profondeur de réflexion"
           }
         }
       }
@@ -8444,6 +8735,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "À quelle fréquence des événements peuvent lancer une exécution, pour qu’une source très active n’en lance pas une après l’autre. Sans limites propres : au moins %1$@ entre deux exécutions, et %2$lld exécutions en 24 heures."
+          }
+        }
+      }
+    },
+    "How you hear that an agent has something for you. The methods are set up under Settings → Notifications in the chat on your computer." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wie du erfährst, dass ein Agent etwas für dich hat. Die Wege werden unter Einstellungen → Benachrichtigungen im Chat auf deinem Computer eingerichtet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo te enteras de que un agente tiene algo para ti. Los métodos se configuran en Configuración → Notificaciones en el chat de tu computadora."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo te enteras de que un agente tiene algo para ti. Los métodos se configuran en Configuración → Notificaciones en el chat de tu ordenador."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comment vous apprenez qu'un agent a quelque chose pour vous. Les méthodes se configurent sous Réglages → Notifications dans le chat sur votre ordinateur."
           }
         }
       }
@@ -8606,24 +8925,30 @@
         }
       }
     },
-    "Include the pages and files the agent fetched" : {
+    "Include the pages and files Cedar fetched" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vom Agenten geladene Seiten und Dateien mitschicken"
+            "value" : "Seiten und Dateien einschließen, die Cedar abgerufen hat"
+          }
+        },
+        "de-CH" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seiten und Dateien einschliessen, die Cedar abgerufen hat"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Incluir las páginas y archivos que el agente descargó"
+            "value" : "Incluir las páginas y archivos que Cedar obtuvo"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inclure les pages et fichiers que l'agent a récupérés"
+            "value" : "Inclure les pages et fichiers que Cedar a récupérés"
           }
         }
       }
@@ -8695,24 +9020,24 @@
         }
       }
     },
-    "It can search the web, write files and run code in its own sandbox. Follow-ups keep its files." : {
+    "It can search the web, work with your files and run the numbers, in a sealed space of its own. Follow-ups pick up where it left off." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Er kann im Web recherchieren, Dateien schreiben und Code in seiner eigenen Sandbox ausführen. Bei Folgenachrichten bleiben seine Dateien erhalten."
+            "value" : "Es kann im Web suchen, mit deinen Dateien arbeiten und rechnen, in einem eigenen abgeschotteten Bereich. Folgefragen machen dort weiter, wo es aufgehört hat."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Puede buscar en la web, escribir archivos y ejecutar código en su propio sandbox. Los mensajes siguientes conservan sus archivos."
+            "value" : "Puede buscar en la web, trabajar con tus archivos y hacer los cálculos, en un espacio aislado propio. Las preguntas siguientes continúan donde lo dejó."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Il peut faire des recherches sur le web, écrire des fichiers et exécuter du code dans son propre bac à sable. Les messages suivants conservent ses fichiers."
+            "value" : "Il peut chercher sur le web, travailler sur vos fichiers et faire les calculs, dans un espace isolé qui lui est propre. Les questions suivantes reprennent là où il s'est arrêté."
           }
         }
       }
@@ -9574,24 +9899,24 @@
         }
       }
     },
-    "May the agent do this?" : {
+    "May Cedar do this?" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Darf der Agent das tun?"
+            "value" : "Darf Cedar das tun?"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Puede el agente hacer esto?"
+            "value" : "¿Puede Cedar hacer esto?"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "L'agent peut-il faire ceci ?"
+            "value" : "Cedar peut-il faire cela ?"
           }
         }
       }
@@ -9640,24 +9965,24 @@
         }
       }
     },
-    "Message cedar" : {
+    "Message Cedar" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nachricht an cedar"
+            "value" : "Nachricht an Cedar"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mensaje para cedar"
+            "value" : "Mensaje para Cedar"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Message à cedar"
+            "value" : "Message à Cedar"
           }
         }
       }
@@ -9975,6 +10300,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Réponse requise"
+          }
+        }
+      }
+    },
+    "Needs your OK" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Braucht dein OK"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Necesita tu visto bueno"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attend votre accord"
           }
         }
       }
@@ -12187,29 +12534,6 @@
         }
       }
     },
-    "Outbox" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Postausgang"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bandeja de salida"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Boîte d’envoi"
-          }
-        }
-      }
-    },
     "Outcome" : {
       "localizations" : {
         "de" : {
@@ -13314,28 +13638,6 @@
         }
       }
     },
-    "Prompt" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prompt"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prompt"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prompt"
-          }
-        }
-      }
-    },
     "Pros" : {
       "localizations" : {
         "de" : {
@@ -13376,6 +13678,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pseudonyme"
+          }
+        }
+      }
+    },
+    "Question" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frage"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pregunta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Question"
           }
         }
       }
@@ -13447,6 +13772,29 @@
         }
       }
     },
+    "Read a file" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datei gelesen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lectura de archivo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture d'un fichier"
+          }
+        }
+      }
+    },
     "Read the three reports" : {
       "localizations" : {
         "de" : {
@@ -13469,24 +13817,24 @@
         }
       }
     },
-    "Reading the conversation to write the prompt…" : {
+    "Ready" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die Unterhaltung wird gelesen, um den Prompt zu schreiben …"
+            "value" : "Bereit"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Leyendo la conversación para escribir el prompt…"
+            "value" : "Listo"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lecture de la conversation pour rédiger le prompt…"
+            "value" : "Prêt"
           }
         }
       }
@@ -13509,28 +13857,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Niveau de raisonnement"
-          }
-        }
-      }
-    },
-    "Reasoning Effort" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Denkaufwand"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esfuerzo de razonamiento"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Effort de raisonnement"
           }
         }
       }
@@ -13823,24 +14149,24 @@
         }
       }
     },
-    "Replies stream in as Cedar reasons, searches the web, runs code in its sandbox and reads your mail and files. Every step is there to open." : {
+    "Replies stream in as Cedar thinks, searches the web, works with your files and reads your mail. Every step is there to open." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Antworten treffen laufend ein, während Cedar nachdenkt, im Web sucht, Code in seiner Sandbox ausführt und deine Mails und Dateien liest. Jeder Schritt lässt sich aufklappen."
+            "value" : "Antworten erscheinen, während Cedar nachdenkt, im Web sucht, mit deinen Dateien arbeitet und deine Mails liest. Jeder Schritt lässt sich öffnen."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las respuestas llegan en directo mientras Cedar razona, busca en la web, ejecuta código en su sandbox y lee tu correo y tus archivos. Cada paso se puede abrir."
+            "value" : "Las respuestas van llegando mientras Cedar piensa, busca en la web, trabaja con tus archivos y lee tu correo. Cada paso se puede abrir."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les réponses arrivent au fil de l’eau pendant que Cedar réfléchit, cherche sur le web, exécute du code dans son bac à sable et lit vos courriels et vos fichiers. Chaque étape peut être ouverte."
+            "value" : "Les réponses arrivent au fur et à mesure que Cedar réfléchit, cherche sur le web, travaille sur vos fichiers et lit vos e-mails. Chaque étape peut être ouverte."
           }
         }
       }
@@ -14094,6 +14420,29 @@
         }
       }
     },
+    "Route" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Route"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ruta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Itinéraire"
+          }
+        }
+      }
+    },
     "Run ${agent}" : {
       "localizations" : {
         "de" : {
@@ -14338,28 +14687,6 @@
         }
       }
     },
-    "Sandbox" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sandbox"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sandbox"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bac à sable"
-          }
-        }
-      }
-    },
     "Saturdays" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14518,24 +14845,58 @@
         }
       }
     },
-    "Scan the QR code from the Cedar Mac app or the stack script, or type the address and token. That is the whole setup." : {
+    "Scan the QR code the Cedar app on your Mac shows (turn on iPhone & iPad sharing there), or the one under Settings → Phone in the chat on your computer. To enter it by hand: the address is where you open Cedar in a browser, and the access token is shown next to the code. The token stays in this phone's Keychain." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scanne den QR-Code aus der Cedar-Mac-App oder dem Stack-Skript, oder tippe Adresse und Token ein. Mehr Einrichtung braucht es nicht."
+            "value" : "Scanne den QR-Code, den die Cedar-App auf deinem Mac anzeigt (schalte dort die Freigabe für iPhone & iPad ein), oder den unter Einstellungen → Handy im Chat auf deinem Computer. Für die Eingabe von Hand: Die Adresse ist die, unter der du Cedar im Browser öffnest; das Zugriffstoken steht neben dem Code. Das Token bleibt im Schlüsselbund dieses Telefons."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Escanea el código QR de la app Cedar para Mac o del script de la pila, o escribe la dirección y el token. Esa es toda la configuración."
+            "value" : "Escanea el código QR que muestra la app de Cedar en tu Mac (activa allí el uso compartido con iPhone y iPad), o el de Configuración → Celular en el chat de tu computadora. Para escribirlo a mano: la dirección es la que usas para abrir Cedar en un navegador, y el token de acceso aparece junto al código. El token se queda en el llavero de este teléfono."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanea el código QR que muestra la app de Cedar en tu Mac (activa allí el uso compartido con iPhone y iPad), o el de Configuración → Móvil en el chat de tu ordenador. Para escribirlo a mano: la dirección es la que usas para abrir Cedar en un navegador, y el token de acceso aparece junto al código. El token se queda en el llavero de este teléfono."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scannez le code QR de l’app Cedar pour Mac ou du script de la pile, ou saisissez l’adresse et le jeton. C’est toute la configuration."
+            "value" : "Scannez le code QR qu'affiche l'app Cedar sur votre Mac (activez-y le partage iPhone et iPad), ou celui sous Réglages → Téléphone dans le chat sur votre ordinateur. Pour le saisir à la main : l'adresse est celle où vous ouvrez Cedar dans un navigateur, et le jeton d'accès est affiché à côté du code. Le jeton reste dans le trousseau de ce téléphone."
+          }
+        }
+      }
+    },
+    "Scan the QR code under Settings → Phone in the chat on your computer, or the one the Cedar desktop app shows. That is the whole setup." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanne den QR-Code unter Einstellungen → Handy im Chat auf deinem Computer oder den, den die Cedar-Desktop-App anzeigt. Mehr ist nicht einzurichten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanea el código QR en Configuración → Celular en el chat de tu computadora, o el que muestra la app de escritorio de Cedar. Esa es toda la configuración."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escanea el código QR en Configuración → Móvil en el chat de tu ordenador, o el que muestra la app de escritorio de Cedar. Esa es toda la configuración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scannez le code QR sous Réglages → Téléphone dans le chat sur votre ordinateur, ou celui qu'affiche l'app Cedar pour ordinateur. C'est toute la configuration."
           }
         }
       }
@@ -14603,6 +14964,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Score %lld sur une échelle de −%lld, vendre, à +%lld, acheter"
+          }
+        }
+      }
+    },
+    "Sealed box" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abgeschotteter Bereich"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espacio aislado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espace isolé"
           }
         }
       }
@@ -14953,94 +15336,6 @@
         }
       }
     },
-    "Server" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Servidor"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Serveur"
-          }
-        }
-      }
-    },
-    "Server Settings" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server-Einstellungen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configuración del servidor"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réglages du serveur"
-          }
-        }
-      }
-    },
-    "Server URL" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server-URL"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL del servidor"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "URL du serveur"
-          }
-        }
-      }
-    },
-    "Server default" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server-Standard"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Predeterminado del servidor"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Par défaut du serveur"
-          }
-        }
-      }
-    },
     "Server defaults" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15060,29 +15355,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Par défaut du serveur"
-          }
-        }
-      }
-    },
-    "Server setting" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Server-Einstellung"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configuración del servidor"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réglage du serveur"
           }
         }
       }
@@ -15691,28 +15963,6 @@
         }
       }
     },
-    "Start a new chat to run the agent." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starte einen neuen Chat, um den Agenten arbeiten zu lassen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inicia una nueva conversación para poner a trabajar al agente."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Commencez une nouvelle conversation pour lancer l'agent."
-          }
-        }
-      }
-    },
     "Start it from the Shortcuts app with the Run Cedar Agent action, by hand or from an automation." : {
       "localizations" : {
         "de" : {
@@ -15864,6 +16114,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Étapes"
+          }
+        }
+      }
+    },
+    "Stocks" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktien"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actions"
           }
         }
       }
@@ -16285,6 +16558,29 @@
         }
       }
     },
+    "That address doesn't look right." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Adresse sieht nicht richtig aus."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esa dirección no parece correcta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette adresse ne semble pas correcte."
+          }
+        }
+      }
+    },
     "That is longer than a week." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16330,24 +16626,24 @@
         }
       }
     },
-    "The AI models your server offers are listed once it is reachable." : {
+    "The AI models your Cedar can use are listed once the app is connected." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die KI-Modelle, die dein Server anbietet, erscheinen, sobald er erreichbar ist."
+            "value" : "Die KI-Modelle, die dein Cedar nutzen kann, werden angezeigt, sobald die App verbunden ist."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los modelos de IA que ofrece tu servidor aparecen en cuanto está disponible."
+            "value" : "Los modelos de IA que puede usar tu Cedar aparecen cuando la app está conectada."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les modèles d’IA que propose votre serveur s’affichent dès qu’il est joignable."
+            "value" : "Les modèles d'IA que votre Cedar peut utiliser s'affichent une fois l'app connectée."
           }
         }
       }
@@ -16371,28 +16667,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "L’adresse doit commencer par https:// ou http://."
-          }
-        }
-      }
-    },
-    "The address where you open cedar-chat in a browser, and its access token if it has one. On a Mac, turn on iPhone & iPad sharing in the Cedar app and scan the code it shows. The token stays in this phone's Keychain." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Adresse, unter der du cedar-chat im Browser öffnest, und sein Zugriffstoken, falls es eines gibt. Auf einem Mac: In der Cedar-App „iPhone & iPad“ einschalten und den angezeigten Code scannen. Das Token bleibt im Schlüsselbund dieses iPhones."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La dirección en la que abres cedar-chat en un navegador y su token de acceso, si tiene uno. En un Mac, activa el uso compartido con iPhone y iPad en la app Cedar y escanea el código que muestra. El token se queda en el llavero de este teléfono."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L’adresse à laquelle vous ouvrez cedar-chat dans un navigateur, et son jeton d’accès s’il en a un. Sur un Mac, activez le partage iPhone et iPad dans l’app Cedar et scannez le code affiché. Le jeton reste dans le trousseau de ce téléphone."
           }
         }
       }
@@ -16652,52 +16926,6 @@
         }
       }
     },
-    "The run failed." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Lauf ist fehlgeschlagen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La ejecución falló."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L'exécution a échoué."
-          }
-        }
-      }
-    },
-    "The server URL is not valid." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Server-URL ist ungültig."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La URL del servidor no es válida."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "L'URL du serveur n'est pas valide."
-          }
-        }
-      }
-    },
     "The server answered %lld." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16717,28 +16945,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le serveur a répondu %lld."
-          }
-        }
-      }
-    },
-    "The server sends a push when a response is ready or Cedar has a question. Set up iPhone push under Settings → Notifications in the web UI; this phone registers itself there." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Server schickt eine Push-Benachrichtigung, wenn eine Antwort fertig ist oder Cedar eine Frage hat. Richte iPhone-Push in der Web-Oberfläche unter Einstellungen → Benachrichtigungen ein; dieses iPhone meldet sich dort selbst an."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El servidor envía una notificación push cuando hay una respuesta lista o Cedar tiene una pregunta. Configura el push de iPhone en Configuración → Notificaciones en la interfaz web; este teléfono se registra ahí por sí solo."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le serveur envoie une notification push quand une réponse est prête ou que Cedar a une question. Configurez le push iPhone sous Réglages → Notifications dans l’interface web ; ce téléphone s’y enregistre lui-même."
           }
         }
       }
@@ -16879,6 +17085,91 @@
         }
       }
     },
+    "This Cedar doesn't keep records between conversations yet. Update Cedar on your computer to use records." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Cedar bewahrt noch keine Datensätze zwischen Unterhaltungen auf. Aktualisiere Cedar auf deinem Computer, um Datensätze zu nutzen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Cedar todavía no guarda datos entre conversaciones. Actualiza Cedar en tu computadora para usarlos."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Cedar todavía no guarda datos entre conversaciones. Actualiza Cedar en tu ordenador para usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce Cedar ne conserve pas encore de données d'une conversation à l'autre. Mettez Cedar à jour sur votre ordinateur pour les utiliser."
+          }
+        }
+      }
+    },
+    "This Cedar doesn't remember anything between conversations yet. Update Cedar on your computer to use memory." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Cedar merkt sich noch nichts zwischen Unterhaltungen. Aktualisiere Cedar auf deinem Computer, um das Gedächtnis zu nutzen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Cedar todavía no recuerda nada entre conversaciones. Actualiza Cedar en tu computadora para usar la memoria."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Cedar todavía no recuerda nada entre conversaciones. Actualiza Cedar en tu ordenador para usar la memoria."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce Cedar ne retient encore rien d'une conversation à l'autre. Mettez Cedar à jour sur votre ordinateur pour utiliser la mémoire."
+          }
+        }
+      }
+    },
+    "This Cedar is from before agents. Update Cedar on your computer to use them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Cedar stammt aus der Zeit vor den Agenten. Aktualisiere Cedar auf deinem Computer, um sie zu nutzen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Cedar es anterior a los agentes. Actualiza Cedar en tu computadora para usarlos."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Cedar es anterior a los agentes. Actualiza Cedar en tu ordenador para usarlos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce Cedar date d'avant les agents. Mettez Cedar à jour sur votre ordinateur pour les utiliser."
+          }
+        }
+      }
+    },
     "This agent keeps the tools it has now. Choose the careful selection unless you are sure about them." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16924,25 +17215,25 @@
         }
       }
     },
-    "This conversation no longer exists on the server." : {
+    "This conversation no longer exists." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Diese Unterhaltung gibt es auf dem Server nicht mehr."
+            "value" : "Diese Unterhaltung gibt es nicht mehr."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta conversación ya no existe en el servidor."
+            "value" : "Esta conversación ya no existe."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette conversation n'existe plus sur le serveur."
+            "value" : "Cette conversation n'existe plus."
           }
         }
       }
@@ -17082,91 +17373,47 @@
         }
       }
     },
-    "This is no longer in the outbox." : {
+    "This is no longer waiting for approval." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das liegt nicht mehr im Postausgang."
+            "value" : "Das wartet nicht mehr auf Freigabe."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esto ya no está en la bandeja de salida."
+            "value" : "Esto ya no espera aprobación."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ceci n’est plus dans la boîte d’envoi."
+            "value" : "Ceci n'attend plus d'approbation."
           }
         }
       }
     },
-    "This response no longer exists on the server." : {
+    "This response no longer exists." : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Diese Antwort gibt es auf dem Server nicht mehr."
+            "value" : "Diese Antwort gibt es nicht mehr."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esta respuesta ya no existe en el servidor."
+            "value" : "Esta respuesta ya no existe."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cette réponse n'existe plus sur le serveur."
-          }
-        }
-      }
-    },
-    "This server doesn't keep records between conversations yet. Update cedar to use records." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dieser Server bewahrt noch keine Daten zwischen Unterhaltungen auf. Aktualisiere cedar, um Datensätze zu nutzen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este servidor todavía no guarda datos entre conversaciones. Actualiza cedar para usar los conjuntos de datos."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ce serveur ne conserve encore aucune donnée d'une conversation à l'autre. Mettez cedar à jour pour utiliser les jeux de données."
-          }
-        }
-      }
-    },
-    "This server doesn't remember anything between conversations yet. Update cedar to use memory." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dieser Server merkt sich noch nichts zwischen Unterhaltungen. Aktualisiere cedar, um das Gedächtnis zu nutzen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este servidor todavía no recuerda nada entre conversaciones. Actualiza cedar para usar la memoria."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ce serveur ne retient encore rien d'une conversation à l'autre. Mettez cedar à jour pour utiliser la mémoire."
+            "value" : "Cette réponse n'existe plus."
           }
         }
       }
@@ -17189,29 +17436,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ce serveur n'a pas de corpus où envoyer."
-          }
-        }
-      }
-    },
-    "This server is from before agents. Update cedar-chat to use them." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dieser Server stammt aus der Zeit vor den Agenten. Aktualisiere cedar-chat, um sie zu nutzen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este servidor es anterior a los agentes. Actualiza cedar-chat para usarlos."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ce serveur date d’avant les agents. Mettez cedar-chat à jour pour les utiliser."
           }
         }
       }
@@ -18012,29 +18236,6 @@
         }
       }
     },
-    "Unexpected response from cedar-chat: %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unerwartete Antwort von cedar-chat: %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Respuesta inesperada de cedar-chat: %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réponse inattendue de cedar-chat : %@"
-          }
-        }
-      }
-    },
     "Unit" : {
       "localizations" : {
         "de" : {
@@ -18372,28 +18573,6 @@
         }
       }
     },
-    "Waiting for calls" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wartet auf Aufrufe"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esperando llamadas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En attente d’appels"
-          }
-        }
-      }
-    },
     "Waiting for the plan" : {
       "localizations" : {
         "de" : {
@@ -18456,28 +18635,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "En attente de votre appareil"
-          }
-        }
-      }
-    },
-    "Waiting for your say-so" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wartet auf dein OK"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esperando tu aprobación"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En attente de votre accord"
           }
         }
       }
@@ -18673,6 +18830,29 @@
         }
       }
     },
+    "Weather" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wetter"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clima"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Météo"
+          }
+        }
+      }
+    },
     "Weather code %lld" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18782,6 +18962,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Adresse web"
+          }
+        }
+      }
+    },
+    "Web page" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Webseite"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Página web"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page web"
+          }
+        }
+      }
+    },
+    "Web search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Websuche"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Búsqueda web"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recherche web"
           }
         }
       }
@@ -18966,6 +19192,28 @@
         }
       }
     },
+    "What It Should Do" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was er tun soll"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qué debe hacer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce qu'il doit faire"
+          }
+        }
+      }
+    },
     "What a contribution contains" : {
       "localizations" : {
         "de" : {
@@ -19011,6 +19259,28 @@
         }
       }
     },
+    "What should Cedar take on?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was soll Cedar übernehmen?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Qué le encargas a Cedar?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De quoi Cedar doit-il se charger ?"
+          }
+        }
+      }
+    },
     "What should the agent do each time it runs?" : {
       "localizations" : {
         "de" : {
@@ -19029,28 +19299,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Que doit faire l’agent à chaque exécution ?"
-          }
-        }
-      }
-    },
-    "What should the agent do?" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Was soll der Agent tun?"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¿Qué debe hacer el agente?"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Que doit faire l'agent ?"
           }
         }
       }
@@ -19528,24 +19776,30 @@
         }
       }
     },
-    "Which AI answers your messages, and how hard it thinks before answering. Tools, the turn limit and the system prompt follow the server's Settings." : {
+    "Which AI answers your messages, and how hard it thinks before answering. The other options are in Settings in the chat on your computer." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Welche KI deine Nachrichten beantwortet und wie gründlich sie vorher nachdenkt. Werkzeuge, das Rundenlimit und der System-Prompt folgen den Einstellungen des Servers."
+            "value" : "Welche KI deine Nachrichten beantwortet und wie gründlich sie vorher nachdenkt. Die übrigen Optionen stehen in den Einstellungen im Chat auf deinem Computer."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Qué IA responde a tus mensajes y cuánto piensa antes de responder. Las herramientas, el límite de turnos y el prompt del sistema siguen la configuración del servidor."
+            "value" : "Qué IA responde a tus mensajes y cuánto piensa antes de responder. Las demás opciones están en Configuración en el chat de tu computadora."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qué IA responde a tus mensajes y cuánto piensa antes de responder. Las demás opciones están en Configuración en el chat de tu ordenador."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quelle IA répond à vos messages, et combien elle réfléchit avant de répondre. Les outils, la limite de tours et le prompt système suivent les Réglages du serveur."
+            "value" : "Quelle IA répond à vos messages, et avec quelle profondeur elle réfléchit avant de répondre. Les autres options se trouvent dans les Réglages du chat sur votre ordinateur."
           }
         }
       }
@@ -20087,24 +20341,121 @@
         }
       }
     },
-    "Your agent, on your own server" : {
+    "Your Cedar" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dein Agent, auf deinem eigenen Server"
+            "value" : "Dein Cedar"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tu agente, en tu propio servidor"
+            "value" : "Tu Cedar"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Votre agent, sur votre propre serveur"
+            "value" : "Votre Cedar"
+          }
+        }
+      }
+    },
+    "Your Cedar isn't answering properly (error %lld). Check that it is running." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Cedar antwortet nicht richtig (Fehler %lld). Prüfe, ob es läuft."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Cedar no responde bien (error %lld). Comprueba que esté en marcha."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre Cedar ne répond pas correctement (erreur %lld). Vérifiez qu'il est en marche."
+          }
+        }
+      }
+    },
+    "Your Cedar needs its access token, or didn't accept this one. Scan the code again in Settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Cedar braucht sein Zugriffstoken oder hat dieses nicht akzeptiert. Scanne den Code in den Einstellungen noch einmal."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Cedar necesita su token de acceso, o no aceptó este. Vuelve a escanear el código en Configuración."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre Cedar demande son jeton d'accès, ou n'a pas accepté celui-ci. Scannez à nouveau le code dans les Réglages."
+          }
+        }
+      }
+    },
+    "Your Cedar sends a notification when a response is ready or Cedar has a question. Turn on iPhone push under Settings → Notifications in the chat on your computer; this phone signs itself up there." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Cedar schickt eine Benachrichtigung, wenn eine Antwort fertig ist oder Cedar eine Frage hat. Schalte iPhone-Push unter Einstellungen → Benachrichtigungen im Chat auf deinem Computer ein; dieses Telefon meldet sich dort selbst an."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Cedar envía una notificación cuando una respuesta está lista o Cedar tiene una pregunta. Activa Push de iPhone en Configuración → Notificaciones en el chat de tu computadora; este teléfono se registra allí por sí solo."
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Cedar envía una notificación cuando una respuesta está lista o Cedar tiene una pregunta. Activa Push de iPhone en Configuración → Notificaciones en el chat de tu ordenador; este teléfono se registra allí por sí solo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre Cedar envoie une notification quand une réponse est prête ou que Cedar a une question. Activez Push iPhone sous Réglages → Notifications dans le chat sur votre ordinateur ; ce téléphone s'y inscrit lui-même."
+          }
+        }
+      }
+    },
+    "Your Cedar sent an answer the app didn't understand: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Cedar hat etwas geantwortet, das die App nicht versteht: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu Cedar envió una respuesta que la app no entendió: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre Cedar a envoyé une réponse que l'app n'a pas comprise : %@"
           }
         }
       }
@@ -20131,6 +20482,34 @@
         }
       }
     },
+    "Your assistant, on your own computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Assistent, auf deinem eigenen Computer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu asistente, en tu propia computadora"
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu asistente, en tu propio ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre assistant, sur votre propre ordinateur"
+          }
+        }
+      }
+    },
     "Your changes to the agent are not saved yet." : {
       "localizations" : {
         "de" : {
@@ -20153,24 +20532,52 @@
         }
       }
     },
-    "Your changes to the server, AI model and plan approval are not saved yet." : {
+    "Your changes to the connection, AI model and plan approval are not saved yet." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deine Änderungen an Server, KI-Modell und Plan-Freigabe sind noch nicht gespeichert."
+            "value" : "Deine Änderungen an Verbindung, KI-Modell und Plan-Freigabe sind noch nicht gespeichert."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tus cambios de servidor, modelo de IA y aprobación del plan aún no están guardados."
+            "value" : "Tus cambios en la conexión, el modelo de IA y la aprobación del plan aún no se han guardado."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vos modifications du serveur, du modèle d’IA et de la validation du plan ne sont pas encore enregistrées."
+            "value" : "Vos modifications de la connexion, du modèle d'IA et de l'approbation du plan ne sont pas encore enregistrées."
+          }
+        }
+      }
+    },
+    "Your computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Computer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu computadora"
+          }
+        },
+        "es-ES" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu ordenador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre ordinateur"
           }
         }
       }
@@ -20283,28 +20690,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vos demandes, les réponses et appels d'outils de l'agent, l'invite système et les définitions d'outils avec lesquelles il a tourné, la fin de l'exécution, et le résultat que vous indiquez."
-          }
-        }
-      }
-    },
-    "Your server" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dein Server"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tu servidor"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Votre serveur"
           }
         }
       }
@@ -20442,52 +20827,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ne peut pas être envoyée"
-          }
-        }
-      }
-    },
-    "cedar-chat returned HTTP %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat hat HTTP %lld zurückgegeben"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat devolvió HTTP %lld"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat a renvoyé HTTP %lld"
-          }
-        }
-      }
-    },
-    "cedar-chat wants an access token, or rejected this one. Check Settings." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat verlangt ein Zugriffstoken oder hat dieses abgelehnt. Prüfe die Einstellungen."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat pide un token de acceso o rechazó este. Revisa la configuración."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "cedar-chat demande un jeton d'accès, ou a refusé celui-ci. Vérifiez les Réglages."
           }
         }
       }

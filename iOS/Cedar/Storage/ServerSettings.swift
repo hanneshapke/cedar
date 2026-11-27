@@ -20,7 +20,7 @@ struct ServerSettings: Equatable, Sendable {
     /// a plan with `propose_plan` when a request needs one), for longer requests, always, or never.
     /// The empty mode leaves it to the server's Settings.
     static let planModes: [PlanMode] = [
-        PlanMode(id: "", label: "Server setting"),
+        PlanMode(id: "", label: "Cedar's setting"),
         PlanMode(id: "tool", label: "When Cedar thinks it helps"),
         PlanMode(id: "auto", label: "For longer requests"),
         PlanMode(id: "on", label: "Always"),

@@ -628,7 +628,7 @@ final class AppModel {
         } catch let error as URLError where error.code == .cancelled {
             return
         } catch let error as ChatError where error.status == 404 {
-            agentError = L10n.string("This server is from before agents. Update cedar-chat to use them.")
+            agentError = L10n.string("This Cedar is from before agents. Update Cedar on your computer to use them.")
             return
         } catch {
             agentError = error.localizedDescription
@@ -801,7 +801,7 @@ final class AppModel {
         } catch is CancellationError {
         } catch let error as URLError where error.code == .cancelled {
         } catch let error as ChatError where error.status == 404 {
-            activityError = L10n.string("This server is from before agents. Update cedar-chat to use them.")
+            activityError = L10n.string("This Cedar is from before agents. Update Cedar on your computer to use them.")
         } catch {
             activityError = error.localizedDescription
         }

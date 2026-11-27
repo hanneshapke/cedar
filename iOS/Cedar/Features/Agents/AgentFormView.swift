@@ -137,7 +137,7 @@ struct AgentFormView: View {
             if compacting {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text("Reading the conversation to write the prompt…")
+                    Text("Cedar is writing up what this conversation asked for…")
                         .foregroundStyle(.secondary)
                 }
             } else {
@@ -156,8 +156,8 @@ struct AgentFormView: View {
             Text("Agent")
         } footer: {
             Text(context.conversationId != nil && isNew
-                 ? "Cedar wrote this prompt from the conversation. Read it and change what you like: every run starts fresh with it, in a conversation of its own."
-                 : "Every run starts fresh with this prompt, in a conversation of its own.")
+                 ? "Cedar wrote this from the conversation. Check that it says what should happen each time."
+                 : "Cedar starts fresh with this each time, in a conversation of its own, so say everything it needs.")
         }
     }
 
@@ -563,7 +563,7 @@ struct AgentFormView: View {
     private var model: some View {
         Section {
             Picker("AI Model", selection: $draft.model) {
-                Text("Server default").tag("")
+                Text("Cedar's default").tag("")
                 ForEach(app.models) { model in
                     Text(model.label).tag(model.id)
                 }
@@ -573,7 +573,7 @@ struct AgentFormView: View {
                 }
             }
             if let levels = selectedModel?.reasoningLevels, !levels.isEmpty {
-                Picker("Reasoning Effort", selection: $draft.reasoning) {
+                Picker("How Hard It Thinks", selection: $draft.reasoning) {
                     Text("Default").tag("")
                     ForEach(levels, id: \.self) { level in
                         Text(level.capitalized).tag(level)
@@ -616,7 +616,7 @@ struct AgentFormView: View {
         } header: {
             Text("Notifications")
         } footer: {
-            Text("How Cedar tells you that a run has something for you. The methods are set up under Settings → Notifications in the web UI.")
+            Text("How you hear that an agent has something for you. The methods are set up under Settings → Notifications in the chat on your computer.")
         }
     }
 

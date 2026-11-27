@@ -149,7 +149,7 @@ struct AgentDetailView: View {
             Text(agent.prompt)
                 .textSelection(.enabled)
         } header: {
-            Text("Prompt")
+            Text("What It Should Do")
         }
 
         Section {
@@ -244,7 +244,7 @@ struct AgentDetailView: View {
     // MARK: Words
 
     private func modelText(_ agent: Agent) -> String {
-        guard let id = agent.model, !id.isEmpty else { return L10n.string("Server default") }
+        guard let id = agent.model, !id.isEmpty else { return L10n.string("Cedar's default") }
         let label = app.models.first { $0.id == id }?.label ?? id
         guard let reasoning = agent.reasoning, !reasoning.isEmpty else { return label }
         return "\(label) · \(reasoning.capitalized)"

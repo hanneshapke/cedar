@@ -44,7 +44,7 @@ struct FollowUpCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 4)
             } label: {
-                Text("Prompt")
+                Text("What It Should Do")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

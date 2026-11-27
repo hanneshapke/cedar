@@ -116,11 +116,11 @@ struct TourPage {
     let illustration: TourIllustration
 
     static let all: [TourPage] = [
-        TourPage(title: "Your agent, on your own server",
-                 text: "Cedar runs where you put it. This app talks to it; your keys, files and conversations never leave your server.",
+        TourPage(title: "Your assistant, on your own computer",
+                 text: "Cedar runs on a computer you choose. This app talks to it; your keys, files and conversations never leave that computer.",
                  illustration: .server),
         TourPage(title: "Watch it work",
-                 text: "Replies stream in as Cedar reasons, searches the web, runs code in its sandbox and reads your mail and files. Every step is there to open.",
+                 text: "Replies stream in as Cedar thinks, searches the web, works with your files and reads your mail. Every step is there to open.",
                  illustration: .work),
         TourPage(title: "Answers as cards",
                  text: "Weather, charts, recipes, routes, flights, stocks and products come as native cards you can tap, not walls of text.",
@@ -134,8 +134,8 @@ struct TourPage {
         TourPage(title: "It remembers, privately",
                  text: "Your name, preferences and projects carry across conversations. See everything Cedar remembers and delete any of it.",
                  illustration: .memory),
-        TourPage(title: "Connect your server",
-                 text: "Scan the QR code from the Cedar Mac app or the stack script, or type the address and token. That is the whole setup.",
+        TourPage(title: "Connect to your Cedar",
+                 text: "Scan the QR code under Settings → Phone in the chat on your computer, or the one the Cedar desktop app shows. That is the whole setup.",
                  illustration: .connect),
     ]
 }
