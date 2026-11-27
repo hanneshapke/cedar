@@ -470,6 +470,18 @@ struct ChatClient: Sendable {
         try await decode(makeRequest("api/asks", method: "POST", json: body))
     }
 
+    /// What When a sentence asks for, read by the model. Nothing is made of it: the answer
+    /// fills the ask's sheet, and the person sends it or changes it. It can take a while.
+    func readAsk(content: String, timezone: String = TimeZone.current.identifier) async throws -> AskReading {
+        try await decode(makeRequest("api/asks/draft", method: "POST", json: AskReadingBody(content: content, timezone: timezone)))
+    }
+
+    /// What else has every word of `query`, beside the conversations `search(query:)` finds:
+    /// agents, memories and record sets. 404 on a server from before it.
+    func searchExtras(query: String) async throws -> SearchExtras {
+        try await decode(makeRequest("api/search", query: [URLQueryItem(name: "q", value: query)]))
+    }
+
     // MARK: Inbox and notices
 
     func inbox() async throws -> Inbox {

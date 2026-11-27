@@ -14,6 +14,8 @@ struct TimelineWait: Decodable, Identifiable, Hashable, Sendable {
     let key: String
     /// An approval's reason, as cedar gave it.
     let reason: String?
+    /// A plan's steps, as cedar proposed them; empty for an approval, or on an older server.
+    let steps: [PlanStep]
 
     var id: String { key }
     var isPlan: Bool { kind == "plan" }
@@ -27,13 +29,20 @@ struct TimelineWait: Decodable, Identifiable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case kind, key, reason
+        case kind, key, reason, steps
     }
 
-    init(kind: String, key: String, reason: String? = nil) {
+    /// A step as the server writes it: `{id, title}`.
+    private struct Step: Decodable {
+        let id: String
+        let title: String
+    }
+
+    init(kind: String, key: String, reason: String? = nil, steps: [PlanStep] = []) {
         self.kind = kind
         self.key = key
         self.reason = reason
+        self.steps = steps
     }
 
     init(from decoder: Decoder) throws {
@@ -41,7 +50,38 @@ struct TimelineWait: Decodable, Identifiable, Hashable, Sendable {
         kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? ""
         key = try c.decodeIfPresent(String.self, forKey: .key) ?? kind
         reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        // Steps of another shape (a newer server's) read as none: the plan then opens its chat.
+        let read = try? c.decodeIfPresent([Step].self, forKey: .steps)
+        steps = (read ?? []).map { PlanStep(id: $0.id, title: $0.title) }
     }
+}
+
+/// Where a response still going is: how many tool calls its run has started, and the latest
+/// one's name (the tool's function name, `web_search`).
+struct TimelineProgress: Decodable, Hashable, Sendable {
+    let steps: Int
+    let doing: String?
+
+    enum CodingKeys: String, CodingKey {
+        case steps, doing
+    }
+
+    init(steps: Int, doing: String?) {
+        self.steps = steps
+        self.doing = doing
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        steps = try c.decodeIfPresent(Int.self, forKey: .steps) ?? 0
+        doing = try c.decodeIfPresent(String.self, forKey: .doing)
+    }
+}
+
+/// What went wrong with something done from Today, in the server's or the chat's own words.
+struct TodayError: LocalizedError, Hashable, Sendable {
+    let message: String
+    var errorDescription: String? { message }
 }
 
 /// Where a turn stands, in the river's words. A state from a newer server reads as `done`.
@@ -77,6 +117,8 @@ struct TimelineTurn: Decodable, Identifiable, Hashable, Sendable {
     let agent: AgentRef?
     /// Open waits; only a turn still going has any.
     let waits: [TimelineWait]
+    /// Where it is, once its run has started a tool call; `nil` before that, and when it is over.
+    let progress: TimelineProgress?
 
     var id: String { turnId }
 
@@ -95,7 +137,7 @@ struct TimelineTurn: Decodable, Identifiable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case title, prompt, state, summary, error, agent, waits
+        case title, prompt, state, summary, error, agent, waits, progress
         case turnId = "turn_id"
         case conversationId = "conversation_id"
         case createdAt = "created_at"
@@ -117,6 +159,7 @@ struct TimelineTurn: Decodable, Identifiable, Hashable, Sendable {
         needsAnswer = try c.decodeIfPresent(Bool.self, forKey: .needsAnswer) ?? false
         agent = try c.decodeIfPresent(AgentRef.self, forKey: .agent)
         waits = try c.decodeIfPresent([TimelineWait].self, forKey: .waits) ?? []
+        progress = try c.decodeIfPresent(TimelineProgress.self, forKey: .progress)
     }
 }
 
@@ -190,6 +233,31 @@ struct Timeline: Decodable, Sendable {
 
     /// Nothing to show at all.
     var isEmpty: Bool { earlier.isEmpty && now.isEmpty && outbox.isEmpty && ahead.isEmpty && watching.isEmpty }
+
+    /// `YYYY-MM-DD` read and written as a calendar date, whatever the device's zone.
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    /// The day `offset` days from `day` (`YYYY-MM-DD`); `nil` when `day` isn't a date.
+    static func day(_ day: String, offsetBy offset: Int) -> String? {
+        guard let date = dayFormatter.date(from: day) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        guard let moved = calendar.date(byAdding: .day, value: offset, to: date) else { return nil }
+        return dayFormatter.string(from: moved)
+    }
+
+    /// `day` as an instant at noon UTC, which is that calendar day when shown in UTC; `nil`
+    /// when it isn't a date.
+    static func noon(of day: String) -> Date? {
+        dayFormatter.date(from: day)?.addingTimeInterval(12 * 3600)
+    }
 
     enum CodingKeys: String, CodingKey {
         case day, timezone, today, earlier, now, outbox, ahead, watching, standing
@@ -302,22 +370,61 @@ struct AskOutcome: Decodable, Sendable {
         let text: String
     }
 
-    /// A record row the run saved: the set's name and the row's key.
+    /// A record row the run saved: the set's name, the row's key and its values.
     struct Record: Decodable, Hashable, Sendable {
         let set: String
         let key: String
+        /// The row itself: an object of its fields.
+        let data: JSONValue?
 
         /// "trips: lisbon", or the set alone for a row without a key.
         var label: String { key.isEmpty ? set : L10n.labeled(set, key) }
 
+        /// The row's plain values as "field: value", by field name; lists, objects and empty
+        /// values are left out, and at most `limit` are given.
+        func values(limit: Int = 8) -> [String] {
+            guard case .object(let fields)? = data else { return [] }
+            var lines: [String] = []
+            for name in fields.keys.sorted() {
+                guard let value = fields[name], let text = Self.text(value) else { continue }
+                lines.append(L10n.labeled(name, text))
+                if lines.count == limit { break }
+            }
+            return lines
+        }
+
+        /// A plain value as text: a whole number without its ".0"; `nil` for what isn't plain.
+        private static func text(_ value: JSONValue) -> String? {
+            switch value {
+            case .string(let s):
+                let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            case .number(let n):
+                if n == n.rounded(), abs(n) < 1e15 { return String(Int(n)) }
+                return String(n)
+            case .bool(let b):
+                return b ? L10n.string("Yes") : L10n.string("No")
+            case .null, .array, .object:
+                return nil
+            }
+        }
+
         enum CodingKeys: String, CodingKey {
-            case set, key
+            case set, key, data
         }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             set = try c.decodeIfPresent(String.self, forKey: .set) ?? ""
-            key = try c.decodeIfPresent(String.self, forKey: .key) ?? ""
+            // A key is text, but a set keyed by a number says it as one.
+            if let text = try? c.decodeIfPresent(String.self, forKey: .key) {
+                key = text
+            } else if let number = try? c.decodeIfPresent(Double.self, forKey: .key) {
+                key = number == number.rounded() ? String(Int(number)) : String(number)
+            } else {
+                key = ""
+            }
+            data = try c.decodeIfPresent(JSONValue.self, forKey: .data)
         }
     }
 
@@ -349,6 +456,120 @@ struct AskOutcome: Decodable, Sendable {
         if !summary.isEmpty { return summary }
         let title = (conversation.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? turn.prompt : title
+    }
+
+    /// The answer as the page shows it under the headline: without its first paragraph when
+    /// that is the gist the headline already says. `nil` when nothing is left to show.
+    var answer: String? {
+        guard let text = turn.finalText else { return nil }
+        let rest = state == .failed ? text : Self.withoutHeadline(text, summary: summary)
+        return rest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : rest
+    }
+
+    /// `answer` without its first paragraph of prose when that reads the same as `summary`
+    /// (the server takes the summary from it), and without a heading left with nothing under it.
+    /// Anything else, a summary that was cut short included, leaves the answer as it is.
+    static func withoutHeadline(_ answer: String, summary: String?) -> String {
+        let gist = words(summary ?? "")
+        guard !gist.isEmpty else { return answer }
+        var blocks = Self.blocks(answer)
+        guard let first = blocks.firstIndex(where: { isProse($0) }) else { return answer }
+        // The summary is the first prose: a list, a table or code before it is not skipped over.
+        guard blocks[..<first].allSatisfy({ isHeading($0) }) else { return answer }
+        guard words(plain(blocks[first].joined(separator: " "))) == gist else { return answer }
+        blocks.remove(at: first)
+        let after = first < blocks.count ? blocks[first] : nil
+        if first > 0, isHeading(blocks[first - 1]), after == nil || isHeading(after ?? []) {
+            blocks.remove(at: first - 1)
+        }
+        return blocks.map { $0.joined(separator: "\n") }.joined(separator: "\n\n")
+    }
+
+    /// The answer's blocks, each its lines: split at blank lines, a heading on its own, and a
+    /// fenced code block kept whole.
+    private static func blocks(_ text: String) -> [[String]] {
+        var blocks: [[String]] = []
+        var current: [String] = []
+        var inFence = false
+        func flush() {
+            if !current.isEmpty { blocks.append(current) }
+            current = []
+        }
+        for line in text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") {
+                if !inFence { flush() }
+                current.append(line)
+                inFence.toggle()
+                if !inFence { flush() }
+            } else if inFence {
+                current.append(line)
+            } else if trimmed.isEmpty {
+                flush()
+            } else if trimmed.hasPrefix("#") {
+                flush()
+                blocks.append([line])
+            } else {
+                current.append(line)
+            }
+        }
+        flush()
+        return blocks
+    }
+
+    private static func isHeading(_ block: [String]) -> Bool {
+        block.count == 1 && block[0].trimmingCharacters(in: .whitespaces).hasPrefix("#")
+    }
+
+    /// A paragraph: not a heading, a list, a quote, a table, a rule or code.
+    private static func isProse(_ block: [String]) -> Bool {
+        guard let first = block.first?.trimmingCharacters(in: .whitespaces), !first.isEmpty else { return false }
+        if first.hasPrefix("#") || first.hasPrefix("```") || first.hasPrefix(">") || first.hasPrefix("|") || first.hasPrefix("---") {
+            return false
+        }
+        if first.hasPrefix("- ") || first.hasPrefix("* ") || first.hasPrefix("+ ") { return false }
+        // "1. " or "2) ": an ordered list.
+        let digits = first.prefix { $0.isNumber }
+        if !digits.isEmpty {
+            let rest = first.dropFirst(digits.count)
+            if rest.hasPrefix(". ") || rest.hasPrefix(") ") { return false }
+        }
+        return true
+    }
+
+    /// Markdown's inline marks taken out, as the server does for the summary: emphasis and code
+    /// marks go, a link is its text, and a `[n]` citation goes with the space before it.
+    private static func plain(_ text: String) -> String {
+        let chars = Array(text)
+        var out = ""
+        var i = 0
+        while i < chars.count {
+            let c = chars[i]
+            if c == "*" || c == "_" || c == "`" {
+                i += 1
+            } else if c == "[", let close = chars[i...].firstIndex(of: "]") {
+                let inner = chars[(i + 1)..<close]
+                if close + 1 < chars.count, chars[close + 1] == "(" {
+                    out.append(contentsOf: inner)
+                    if let end = chars[close...].firstIndex(of: ")") { i = end + 1 } else { i = close + 1 }
+                } else if !inner.isEmpty, inner.allSatisfy({ $0.isASCII && $0.isNumber }) {
+                    while out.hasSuffix(" ") { out.removeLast() }
+                    i = close + 1
+                } else {
+                    out.append(c)
+                    i += 1
+                }
+            } else {
+                out.append(c)
+                i += 1
+            }
+        }
+        return out
+    }
+
+    /// Text with its runs of whitespace as single spaces, for comparing.
+    private static func words(_ text: String) -> String {
+        text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
     /// What was decided about a suggestion; `nil` while it is open.
@@ -474,6 +695,10 @@ struct AskDraft: Hashable, Sendable {
     var minutesBefore = 30
     /// This device's IANA zone, which the times are in.
     var timezone = TimeZone.current.identifier
+    /// A trigger Cedar read out of the sentence that the fields above can't show (monthly, every
+    /// so many minutes): sent as it is while the When stays `keptWhen`.
+    var kept: Trigger?
+    var keptWhen: AskWhen?
 
     init(now: Date = Date(), timezone: String = TimeZone.current.identifier) {
         self.timezone = timezone
@@ -481,11 +706,58 @@ struct AskDraft: Hashable, Sendable {
         time = AgentClock.date(time: "07:00", timezone: timezone, on: now) ?? now
     }
 
-    /// Two hours from `now`, on the hour.
-    static func defaultLater(now: Date) -> Date {
+    /// Two hours from `now`, on the hour as this device's clock shows it (which is not a round
+    /// UTC hour in a zone half an hour off).
+    static func defaultLater(now: Date, calendar: Calendar = .current) -> Date {
         let later = now.addingTimeInterval(2 * 3600)
-        let seconds = later.timeIntervalSinceReferenceDate
-        return Date(timeIntervalSinceReferenceDate: seconds - seconds.truncatingRemainder(dividingBy: 3600))
+        return calendar.dateInterval(of: .hour, for: later)?.start ?? later
+    }
+
+    /// The trigger kept from a reading, while the When is still the one it was read for.
+    var keptTrigger: Trigger? {
+        guard let kept, keptWhen == when else { return nil }
+        return kept
+    }
+
+    /// Takes what Cedar read out of the sentence (`POST /api/asks/draft`): the When, the
+    /// sentence without its timing, and the trigger. A trigger the fields can show fills them
+    /// in; another is kept as it was read. `now` is for the day a time of day is put on.
+    mutating func apply(_ reading: AskReading, now: Date = Date()) {
+        let content = reading.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !content.isEmpty { text = content }
+        kept = nil
+        keptWhen = nil
+        guard let read = AskWhen(rawValue: reading.when), read != .now, let trigger = reading.trigger else {
+            when = .now
+            return
+        }
+        when = read
+        offTheRecord = false
+        switch trigger {
+        case .once(let at, let zone):
+            if let date = AgentClock.date(at: at, timezone: zone) { laterAt = date } else { keep(trigger) }
+        case .time(let frequency, let weekday, let time, let zone):
+            if let known = AskFrequency(rawValue: frequency), let date = AgentClock.date(time: time, timezone: zone, on: now) {
+                self.frequency = known
+                self.weekday = min(max(weekday ?? 0, 0), 6)
+                self.time = date
+            } else {
+                keep(trigger)
+            }
+        case .email(let query, _):
+            watch = .email
+            self.query = query
+        case .calendar(let calendarId, let filter, let minutes?, let newEvents, _) where calendarId == nil && filter == nil && !newEvents:
+            watch = .calendar
+            minutesBefore = max(1, minutes)
+        default:
+            keep(trigger)
+        }
+    }
+
+    private mutating func keep(_ trigger: Trigger) {
+        kept = trigger
+        keptWhen = when
     }
 
     var content: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -493,6 +765,7 @@ struct AskDraft: Hashable, Sendable {
     /// What starts the agent's runs, for every When but `now`. `checkMinutes` is how often a
     /// watching trigger checks (the server's default).
     func trigger(checkMinutes: Int = 5) -> Trigger? {
+        if let keptTrigger { return keptTrigger }
         switch when {
         case .now:
             return nil
@@ -517,6 +790,8 @@ struct AskDraft: Hashable, Sendable {
     /// Why it can't be sent yet, for the sheet to say; `nil` when it can.
     func problem(now: Date = Date()) -> String? {
         if content.isEmpty { return L10n.string("Say what Cedar should do.") }
+        // A trigger kept as it was read was checked by the server.
+        if keptTrigger != nil { return nil }
         switch when {
         case .later where laterAt <= now:
             return L10n.string("Pick a time that is still ahead.")
@@ -556,6 +831,70 @@ struct AskBody: Encodable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case content, when, trigger, model, reasoning, plan, locale, timezone
         case isPrivate = "private"
+    }
+}
+
+/// The body of `POST /api/asks/draft`: the sentence, and the zone its times are in.
+struct AskReadingBody: Encodable, Hashable, Sendable {
+    var content: String
+    var timezone: String
+}
+
+/// The answer to `POST /api/asks/draft`: the When Cedar read out of a sentence, the trigger
+/// for it (`nil` for now) and the sentence without its timing. Nothing was made of it.
+struct AskReading: Decodable, Hashable, Sendable {
+    let when: String
+    let trigger: Trigger?
+    let content: String
+
+    enum CodingKeys: String, CodingKey {
+        case when, trigger, content
+    }
+
+    init(when: String, trigger: Trigger?, content: String) {
+        self.when = when
+        self.trigger = trigger
+        self.content = content
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        when = try c.decodeIfPresent(String.self, forKey: .when) ?? "now"
+        // A trigger this app can't read is no reading: the person picks the When.
+        trigger = try? c.decodeIfPresent(Trigger.self, forKey: .trigger)
+        content = try c.decodeIfPresent(String.self, forKey: .content) ?? ""
+    }
+}
+
+/// `GET /api/search`: what else has the words, beside the conversations: agents, what Cedar
+/// remembers, and record sets. A part the server can't give is empty.
+struct SearchExtras: Decodable, Hashable, Sendable {
+    struct Memory: Decodable, Identifiable, Hashable, Sendable {
+        let id: String
+        let text: String
+    }
+
+    struct RecordSet: Decodable, Identifiable, Hashable, Sendable {
+        let name: String
+        let description: String?
+        var id: String { name }
+    }
+
+    let agents: [TimelineAgent]
+    let memories: [Memory]
+    let records: [RecordSet]
+
+    var isEmpty: Bool { agents.isEmpty && memories.isEmpty && records.isEmpty }
+
+    enum CodingKeys: String, CodingKey {
+        case agents, memories, records
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        agents = try c.decodeIfPresent([TimelineAgent].self, forKey: .agents) ?? []
+        memories = try c.decodeIfPresent([Memory].self, forKey: .memories) ?? []
+        records = try c.decodeIfPresent([RecordSet].self, forKey: .records) ?? []
     }
 }
 

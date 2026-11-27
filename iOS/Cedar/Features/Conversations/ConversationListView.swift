@@ -86,7 +86,7 @@ struct ConversationListView: View {
         }
         .overlay {
             if app.isSearching {
-                if app.searchResults?.isEmpty == true && app.searchError == nil {
+                if app.searchResults?.isEmpty == true && app.searchExtras?.isEmpty != false && app.searchError == nil {
                     ContentUnavailableView {
                         Label("No Results", systemImage: "magnifyingglass")
                     } description: {
@@ -340,6 +340,9 @@ struct ConversationListView: View {
                         }
                     }
                 }
+        }
+        if let extras = app.searchExtras, !extras.isEmpty {
+            SearchExtrasRows(extras: extras, showAgent: { showingAgent = AgentSelection(id: $0.id, title: $0.title) })
         }
     }
 

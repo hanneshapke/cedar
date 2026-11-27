@@ -6,7 +6,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.DayOfWeek
@@ -28,8 +30,13 @@ data class TurnWait(
     val key: String = "",
     /** An approval's reason, as cedar gave it. */
     val reason: String? = null,
+    /** A plan's steps, as cedar proposed them; `null` from a server that doesn't send them. */
+    val steps: List<WaitStep>? = null,
     val since: Instant? = null,
 ) {
+    /** The plan as the chat's go-ahead takes it; empty when the steps aren't known here. */
+    val planSteps: List<PlanStep> get() = steps.orEmpty().filter { it.id.isNotEmpty() && it.title.isNotBlank() }.map { PlanStep(it.id, it.title) }
+
     val isPlan: Boolean get() = kind == PLAN
     val isApproval: Boolean get() = kind == APPROVAL
 
@@ -42,6 +49,14 @@ data class TurnWait(
         const val APPROVAL = "approval"
     }
 }
+
+/** One step of a plan that waits for its go-ahead. */
+@Serializable
+data class WaitStep(val id: String = "", val title: String = "")
+
+/** Where a response still going is: how many tool calls its run has started, and the latest one's name. */
+@Serializable
+data class TurnProgress(val steps: Int = 0, val doing: String? = null)
 
 /** Where a turn stands, in the river's words. A state from a newer server is [OTHER]. */
 enum class TurnState(val id: String) {
@@ -83,6 +98,8 @@ data class TimelineTurn(
     /** The agent whose run this is. */
     val agent: AgentRef? = null,
     val waits: List<TurnWait> = emptyList(),
+    /** Only while it is going, and once its run has called a tool. */
+    val progress: TurnProgress? = null,
 ) {
     val state: TurnState get() = TurnState.of(stateId)
 
@@ -151,6 +168,22 @@ data class OutcomeMemory(val id: String, val text: String = "", val kind: String
 @Serializable
 data class OutcomeRecord(val set: String = "", val key: String? = null, val data: JsonElement? = null) {
     val label: String get() = key?.takeIf { it.isNotEmpty() }?.let { "$set: $it" } ?: set
+
+    /** The row's fields as `name` and value, the first [MAX_FIELDS] that have one. */
+    val fields: List<Pair<String, String>>
+        get() = (data as? JsonObject).orEmpty().mapNotNull { (name, value) ->
+            val text = when (value) {
+                is JsonNull -> ""
+                is JsonPrimitive -> value.content
+                else -> value.toString()
+            }.trim()
+            if (text.isEmpty()) null else name to (if (text.length > MAX_VALUE) text.take(MAX_VALUE - 1) + "…" else text)
+        }.take(MAX_FIELDS)
+
+    companion object {
+        const val MAX_FIELDS = 8
+        const val MAX_VALUE = 120
+    }
 }
 
 /** The conversation an outcome's turn is in. */
@@ -192,11 +225,96 @@ data class Outcome(
 
     val failedSteps: Int get() = steps.count { it.isError }
 
+    /** The answer without the paragraph the headline already says (see [answerBelowHeadline]). */
+    val answer: String? get() = turn.finalText?.let { answerBelowHeadline(it, if (state == TurnState.FAILED) null else summary) }?.takeIf { it.isNotBlank() }
+
     /** What was decided about a suggested follow-up; `null` while it is open. */
     fun decision(callId: String): Followup? = followupDecisions.firstOrNull { it.callId == callId }
 
     /** The held calls, the ones still to decide first. */
     val heldOpenFirst: List<OutboxItem> get() = held.sortedBy { if (it.isOpen) 0 else 1 }
+}
+
+/**
+ * `text` (markdown) without its first paragraph of prose when that paragraph is what `summary`
+ * says, so an outcome doesn't say its headline twice; a heading left with nothing under it goes
+ * too. The paragraph is read the way the server makes the summary (chat/src/api/timeline.rs):
+ * markdown marks and `[n]` citations out, whitespace collapsed. Anything else is `text` as it was.
+ */
+fun answerBelowHeadline(text: String, summary: String?): String {
+    val wanted = summary?.trim().orEmpty()
+    if (wanted.isEmpty()) return text
+    val lines = text.replace("\r", "").split("\n")
+    var inCode = false
+    var start = -1
+    var end = -1
+    for ((i, raw) in lines.withIndex()) {
+        val line = raw.trim()
+        if (line.startsWith("```")) {
+            if (start >= 0) break
+            inCode = !inCode
+            continue
+        }
+        if (inCode || line.startsWith("|") || line.startsWith("---")) {
+            if (start >= 0) break
+            continue
+        }
+        if (line.isEmpty() || line.startsWith("#")) {
+            if (start >= 0) break
+            continue
+        }
+        if (start < 0) start = i
+        end = i
+    }
+    if (start < 0) return text
+    val paragraph = lines.subList(start, end + 1).joinToString(" ") { it.trim().trimStart('-', '*', '>', ' ').trim() }
+    if (plainProse(paragraph) != plainProse(wanted)) return text
+    val kept = lines.toMutableList()
+    for (i in end downTo start) kept.removeAt(i)
+    // The blank line that followed it would double the one before it.
+    while (start < kept.size && kept[start].isBlank() && (start == 0 || kept[start - 1].isBlank())) kept.removeAt(start)
+    // The heading the paragraph stood under, when nothing but another heading (or the end) follows.
+    val before = (start - 1 downTo 0).firstOrNull { kept[it].isNotBlank() }
+    val after = (start until kept.size).firstOrNull { kept[it].isNotBlank() }
+    if (before != null && kept[before].trim().startsWith("#") && (after == null || kept[after].trim().startsWith("#"))) {
+        kept.removeAt(before)
+    }
+    return kept.joinToString("\n").trim('\n')
+}
+
+/** Prose with markdown's inline marks, links and `[n]` citations taken out, on one line. */
+private fun plainProse(text: String): String {
+    val out = StringBuilder()
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        when {
+            c == '*' || c == '_' || c == '`' -> i++
+            c == '[' -> {
+                val close = text.indexOf(']', i)
+                when {
+                    close > i && text.getOrNull(close + 1) == '(' -> {
+                        out.append(text, i + 1, close)
+                        val paren = text.indexOf(')', close)
+                        i = if (paren >= 0) paren + 1 else close + 1
+                    }
+                    close > i + 1 && text.substring(i + 1, close).all { it.isDigit() } -> {
+                        while (out.isNotEmpty() && out.last() == ' ') out.deleteCharAt(out.length - 1)
+                        i = close + 1
+                    }
+                    else -> {
+                        out.append(c)
+                        i++
+                    }
+                }
+            }
+            else -> {
+                out.append(c)
+                i++
+            }
+        }
+    }
+    return out.toString().split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
 }
 
 // -- asking, with a When -------------------------------------------------------------------------
@@ -282,7 +400,16 @@ data class AskDraft(
     val minutesBefore: Int = 30,
     /** Off the record; only an ask that runs now can be. */
     val private: Boolean = false,
+    /**
+     * [AskWhen.EVERY]: a trigger the server read out of the sentence that the form has no fields
+     * for (monthly, every so many minutes). It is sent as it is while Every stays picked; changing
+     * how often clears it (see [edited]).
+     */
+    val kept: Trigger? = null,
 ) {
+    /** The draft after the person changed Every's own fields: what was read no longer stands. */
+    fun edited(): AskDraft = copy(kept = null)
+
     /** Off the record only counts with now: nothing of such an ask is kept for later. */
     val isPrivate: Boolean get() = private && whenKind == AskWhen.NOW
 
@@ -290,7 +417,7 @@ data class AskDraft(
     fun trigger(timezone: String): Trigger? = when (whenKind) {
         AskWhen.NOW -> null
         AskWhen.LATER -> laterAt?.let { Trigger.Once(it.withSecond(0).withNano(0).format(AT), timezone) }
-        AskWhen.EVERY -> Trigger.Time(frequency.id, weekday.takeIf { frequency == AskFrequency.WEEKLY }, time, timezone)
+        AskWhen.EVERY -> kept ?: Trigger.Time(frequency.id, weekday.takeIf { frequency == AskFrequency.WEEKLY }, time, timezone)
         AskWhen.WATCH -> when (watch) {
             AskWatch.EMAIL -> query.trim().takeIf { it.isNotEmpty() }?.let { Trigger.Email(it) }
             AskWatch.CALENDAR -> minutesBefore.takeIf { it in MINUTES }?.let { Trigger.Calendar(minutesBefore = it) }
@@ -326,4 +453,66 @@ data class AskDraft(
         /** The server's weekday (0 is Monday) for a day of the week. */
         fun weekday(day: DayOfWeek): Int = day.value - 1
     }
+
+    /**
+     * This draft with the When the server read out of the sentence ([AskReading]) picked and its
+     * fields filled in. A trigger the form can't show is [kept]; a reading that isn't one of the
+     * Whens, or whose trigger doesn't belong to its When, leaves the draft as it is.
+     */
+    fun reading(read: AskReading): AskDraft {
+        val trigger = read.trigger
+        return when (read.whenId) {
+            AskWhen.NOW.id -> copy(whenKind = AskWhen.NOW, kept = null)
+            AskWhen.LATER.id -> (trigger as? Trigger.Once)?.let { once ->
+                runCatching { LocalDateTime.parse(once.at) }.getOrNull()?.let { copy(whenKind = AskWhen.LATER, laterAt = it, kept = null) }
+            } ?: this
+            AskWhen.EVERY.id -> when (trigger) {
+                is Trigger.Time -> {
+                    val frequency = AskFrequency.entries.firstOrNull { it.id == trigger.frequency }
+                    if (frequency == null) copy(whenKind = AskWhen.EVERY, kept = trigger)
+                    else copy(whenKind = AskWhen.EVERY, frequency = frequency, weekday = trigger.weekday?.takeIf { it in 0..6 } ?: weekday, time = trigger.time, kept = null)
+                }
+                is Trigger.Monthly, is Trigger.Interval -> copy(whenKind = AskWhen.EVERY, kept = trigger)
+                else -> this
+            }
+            AskWhen.WATCH.id -> when (trigger) {
+                is Trigger.Email -> copy(whenKind = AskWhen.WATCH, watch = AskWatch.EMAIL, query = trigger.query, kept = null)
+                is Trigger.Calendar -> copy(whenKind = AskWhen.WATCH, watch = AskWatch.CALENDAR, minutesBefore = trigger.minutesBefore ?: minutesBefore, kept = null)
+                Trigger.Device -> copy(whenKind = AskWhen.WATCH, watch = AskWatch.DEVICE, kept = null)
+                else -> this
+            }
+            else -> this
+        }
+    }
+}
+
+/**
+ * `POST /api/asks/draft`: the When the server's model read out of a sentence, and the sentence
+ * without its timing. Nothing was made: the person sends it, or changes it first.
+ */
+@Serializable
+data class AskReading(
+    @SerialName("when") val whenId: String = "now",
+    val trigger: Trigger? = null,
+    val content: String = "",
+)
+
+// -- searching everything ------------------------------------------------------------------------
+
+/** A record set a search found, by its name or description. */
+@Serializable
+data class FoundRecordSet(val name: String = "", val description: String = "", val count: Int = 0)
+
+/**
+ * `GET /api/search`: everything of the person's that has every word: conversations (as the
+ * conversations' own search finds them), agents, what Cedar remembers, and record sets.
+ */
+@Serializable
+data class Found(
+    val conversations: List<Conversation> = emptyList(),
+    val agents: List<Agent> = emptyList(),
+    val memories: List<OutcomeMemory> = emptyList(),
+    val records: List<FoundRecordSet> = emptyList(),
+) {
+    val isEmpty: Boolean get() = conversations.isEmpty() && agents.isEmpty() && memories.isEmpty() && records.isEmpty()
 }

@@ -408,6 +408,21 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     suspend fun ask(body: AskBody): AskResult = decode(request("api/asks", "POST", body.toJson()), AskResult.serializer())
 
     /**
+     * Has the server read the When out of a sentence (`POST /api/asks/draft`): one model call that
+     * makes nothing. A sentence it can't place comes back as now.
+     */
+    suspend fun readWhen(content: String, timezone: String? = null): AskReading {
+        val body = buildJsonObject {
+            put("content", content)
+            timezone?.let { put("timezone", it) }
+        }
+        return decode(request("api/asks/draft", "POST", body), AskReading.serializer())
+    }
+
+    /** Everything that has every word of `query` (`GET /api/search`): conversations, agents, memories, record sets. */
+    suspend fun searchEverything(query: String): Found = decode(request("api/search", query = mapOf("q" to query)), Found.serializer())
+
+    /**
      * Streams a turn's events after `after`: a replay of the stored log, then live events. The flow
      * completes after the terminal event, or when the server closes the connection.
      */

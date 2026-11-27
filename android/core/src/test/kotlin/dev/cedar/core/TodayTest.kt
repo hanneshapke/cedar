@@ -293,4 +293,100 @@ class TodayTest {
         assertNull(TurnWait(kind = "approval", key = "a1").approvalId, "a key that isn't an approval's names none")
         assertEquals("a1", TurnWait(kind = "approval", key = "approval:a1").approvalId)
     }
+
+    @Test
+    fun aPlanComesWithItsStepsAndAWorkingTurnWithWhereItIs() = runBlocking {
+        server.enqueue(json("""{"day":"2026-11-27","timezone":"UTC","today":true,"needs_you":1,"earlier":[],
+          "now":[
+            {"turn_id":"t1","conversation_id":"c1","title":"Lisbon","prompt":"Plan Lisbon","state":"waiting","created_at":"2026-11-27T09:00:00Z",
+             "waits":[{"kind":"plan","key":"plan","reason":null,"steps":[{"id":"s1","title":"Check the calendar"},{"id":"s2","title":"Compare flights"}],"since":"2026-11-27T09:00:05Z"}],
+             "progress":{"steps":2,"doing":"fetch_url"}},
+            {"turn_id":"t2","conversation_id":"c2","title":"Lease","prompt":"Read it","state":"working","created_at":"2026-11-27T09:01:00Z","waits":[],"progress":null},
+            {"turn_id":"t3","conversation_id":"c3","title":"Old","prompt":"x","state":"waiting","created_at":"2026-11-27T09:02:00Z",
+             "waits":[{"kind":"plan","key":"plan","since":"2026-11-27T09:02:05Z"}]}
+          ],"outbox":[],"ahead":[],"watching":[],"standing":[]}"""))
+        val day = client.timeline(day = "2026-11-27", timezone = "UTC")
+        val request = server.takeRequest()
+        assertEquals("2026-11-27", request.requestUrl?.queryParameter("day"))
+        val plan = day.now[0].waits.single()
+        assertTrue(plan.isPlan)
+        assertEquals(listOf(PlanStep("s1", "Check the calendar"), PlanStep("s2", "Compare flights")), plan.planSteps)
+        assertEquals(TurnProgress(2, "fetch_url"), day.now[0].progress)
+        assertNull(day.now[1].progress)
+        // A server from before the steps: the plan is still a plan, with nothing to agree to here.
+        assertTrue(day.now[2].waits.single().planSteps.isEmpty())
+    }
+
+    @Test
+    fun theAnswerDoesNotRepeatItsHeadline() {
+        val text = "## The plan\n\nFriday 13 to Sunday 15 March is **free**, and [it works](https://x.org) [1].\n\n### Days\n\n- Fri: Alfama"
+        assertEquals("### Days\n\n- Fri: Alfama", answerBelowHeadline(text, "Friday 13 to Sunday 15 March is free, and it works."))
+        // The heading stays when something is still under it.
+        assertEquals("## Plan\n\nMore about it.", answerBelowHeadline("## Plan\n\nIt works.\n\nMore about it.", "It works."))
+        // A summary that was cut, or says something else, takes nothing out.
+        assertEquals(text, answerBelowHeadline(text, "Friday 13 to Sunday 15 March is…"))
+        assertEquals(text, answerBelowHeadline(text, null))
+        assertEquals("", answerBelowHeadline("Only this.", "Only this."))
+        assertEquals("```\ncode\n```", answerBelowHeadline("```\ncode\n```\n\nAfter the code.", "After the code."))
+    }
+
+    @Test
+    fun aRecordRowShowsItsFields() {
+        val record = CedarJson.decodeFromString(OutcomeRecord.serializer(),
+            """{"set":"trips","key":"lisbon","data":{"city":"Lisbon","nights":3,"paid":true,"note":null,"tags":["a","b"],"empty":" "}}""")
+        assertEquals(listOf("city" to "Lisbon", "nights" to "3", "paid" to "true", "tags" to """["a","b"]"""), record.fields)
+        assertTrue(OutcomeRecord("trips").fields.isEmpty())
+    }
+
+    @Test
+    fun theWhenReadFromASentenceFillsTheForm() = runBlocking {
+        server.enqueue(json("""{"when":"every","trigger":{"kind":"time","frequency":"weekdays","time":"07:00","timezone":"Europe/Zurich"},"content":"Brief me"}"""))
+        val read = client.readWhen("Brief me every weekday at 7", "Europe/Zurich")
+        val request = server.takeRequest()
+        assertEquals("/api/asks/draft", request.path)
+        assertEquals("""{"content":"Brief me every weekday at 7","timezone":"Europe/Zurich"}""", request.body.readUtf8())
+        assertEquals("Brief me", read.content)
+        val base = AskDraft.starting(LocalDateTime.of(2026, 11, 27, 9, 30))
+        val weekdays = base.reading(read)
+        assertEquals(AskWhen.EVERY to AskFrequency.WEEKDAYS, weekdays.whenKind to weekdays.frequency)
+        assertNull(weekdays.kept)
+        assertEquals(Trigger.Time("weekdays", null, "07:00", "Europe/Zurich"), weekdays.trigger("Europe/Zurich"))
+
+        // What the form has no fields for is kept as read, until how often is changed.
+        val monthly = Trigger.Monthly(1, "08:00", "UTC")
+        val kept = base.reading(AskReading("every", monthly, "Pay rent"))
+        assertEquals(monthly, kept.kept)
+        assertEquals(monthly, kept.trigger("Europe/Zurich"))
+        assertEquals("monthly", kept.body("Pay rent", "Europe/Zurich").toJson()["trigger"].toString().let { if ("monthly" in it) "monthly" else it })
+        assertEquals("time", kept.edited().trigger("UTC")?.let { (it as? Trigger.Time)?.let { "time" } })
+        assertNull(kept.copy(whenKind = AskWhen.NOW).trigger("UTC"))
+
+        val later = base.reading(AskReading("later", Trigger.Once("2026-12-03T09:00", "UTC")))
+        assertEquals(AskWhen.LATER to LocalDateTime.of(2026, 12, 3, 9, 0), later.whenKind to later.laterAt)
+        val mail = base.reading(AskReading("watch", Trigger.Email("from:bank")))
+        assertEquals(Triple(AskWhen.WATCH, AskWatch.EMAIL, "from:bank"), Triple(mail.whenKind, mail.watch, mail.query))
+        val calendar = base.reading(AskReading("watch", Trigger.Calendar(minutesBefore = 15)))
+        assertEquals(AskWatch.CALENDAR to 15, calendar.watch to calendar.minutesBefore)
+        // Now, and a reading that doesn't hold together, leave the rest alone.
+        assertEquals(AskWhen.NOW, mail.reading(AskReading("now")).whenKind)
+        assertEquals(base, base.reading(AskReading("later", Trigger.Email("x"))))
+        assertEquals(base, base.reading(AskReading("sometime")))
+    }
+
+    @Test
+    fun searchingEverythingFindsMoreThanConversations() = runBlocking {
+        server.enqueue(json("""{"q":"lisbon",
+          "conversations":[{"id":"c1","title":"A weekend in Lisbon","created_at":"2026-11-27T09:00:00Z","updated_at":"2026-11-27T09:00:00Z","snippet":"in Lisbon","turn_id":"t1"}],
+          "agents":[{"id":"a1","title":"Watch fares to Lisbon","enabled":true,"trigger_kind":"time","trigger":{"kind":"time","frequency":"daily","time":"07:00","timezone":"UTC"},"watches":false,"next_run_at":null}],
+          "memories":[{"id":"m1","text":"Loved Lisbon in spring","kind":"fact"}],
+          "records":[{"name":"trips","description":"Trips, Lisbon included","count":3}]}"""))
+        val found = client.searchEverything("lisbon")
+        assertEquals("lisbon", server.takeRequest().requestUrl?.queryParameter("q"))
+        assertEquals("in Lisbon", found.conversations.single().snippet)
+        assertEquals("Watch fares to Lisbon", found.agents.single().title)
+        assertEquals("Loved Lisbon in spring", found.memories.single().text)
+        assertEquals(FoundRecordSet("trips", "Trips, Lisbon included", 3), found.records.single())
+        assertFalse(found.isEmpty)
+        assertTrue(Found().isEmpty)
+    }
 }
