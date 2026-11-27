@@ -5251,3 +5251,142 @@ async fn a_private_conversation_nobody_ended_is_deleted_once_idle() {
     assert_eq!(*h.cedar.deleted.lock().unwrap(), [run_id]);
     assert_eq!(cedar_chat::private::sweep(&h.state).await.unwrap(), 0);
 }
+
+/// Poll the timeline until `done` holds for it, or fail after a few seconds.
+async fn timeline_until(h: &Harness, uri: &str, done: impl Fn(&Value) -> bool) -> Value {
+    for _ in 0..100 {
+        let (status, body) = h.json(Method::GET, uri, None).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        if done(&body) {
+            return body;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    }
+    panic!("the timeline never got there: {}", h.json(Method::GET, uri, None).await.1);
+}
+
+#[tokio::test]
+async fn the_timeline_gathers_the_day_what_is_going_and_what_is_ahead() {
+    let h = Harness::new(&[]).await;
+    let uri = "/api/timeline?timezone=Europe/Zurich";
+
+    // A finished chat is earlier today, its outcome in one line.
+    let (status, asked) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "Summarise the lease" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{asked}");
+    let run_id = asked["turn"]["run_id"].as_str().unwrap().to_string();
+    h.finish_with(&run_id, "completed", Some("## Lease\n\nYou owe **two months** of rent [1].\n\n- More"), Some("end_turn"));
+    h.sync().await;
+
+    // One that waits on an OK is now, and needs the person.
+    let (_, waiting) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "NEEDS OK" }))).await;
+    let waiting_turn = waiting["turn"]["id"].as_str().unwrap().to_string();
+    let day = timeline_until(&h, uri, |t| t["needs_you"] == 1).await;
+    assert_eq!(day["timezone"], "Europe/Zurich");
+    assert_eq!(day["today"], true);
+    let earlier = day["earlier"].as_array().unwrap();
+    assert_eq!(earlier.len(), 1, "{day}");
+    assert_eq!(earlier[0]["state"], "done");
+    assert_eq!(earlier[0]["summary"], "You owe two months of rent.");
+    assert_eq!(earlier[0]["title"], "Summarise the lease");
+    let now = day["now"].as_array().unwrap();
+    assert_eq!(now.len(), 1, "{day}");
+    assert_eq!(now[0]["turn_id"], waiting_turn.as_str());
+    assert_eq!(now[0]["state"], "waiting");
+    assert_eq!(now[0]["waits"][0]["kind"], "approval");
+    assert_eq!(now[0]["waits"][0]["key"], "approval:a1");
+    assert!(now[0]["waits"][0]["reason"].as_str().unwrap().contains("Send message"), "{}", now[0]);
+
+    // A question left unanswered is now too, whatever day it was asked.
+    let (_, question) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "Cancel the gym" }))).await;
+    h.finish_with(question["turn"]["run_id"].as_str().unwrap(), "completed", Some("By letter or by email?"), Some("ask_user"));
+    h.sync().await;
+    let day = timeline_until(&h, uri, |t| t["needs_you"] == 2).await;
+    let asking = day["now"].as_array().unwrap().iter().find(|t| t["state"] == "asking").expect("the question is now");
+    assert_eq!(asking["needs_answer"], true);
+
+    // When the run ends, its wait is over.
+    let waiting_run = waiting["turn"]["run_id"].as_str().unwrap().to_string();
+    h.finish_with(&waiting_run, "cancelled", None, None);
+    h.sync().await;
+    let day = timeline_until(&h, uri, |t| t["needs_you"] == 1).await;
+    assert!(day["now"].as_array().unwrap().iter().all(|t| t["turn_id"] != waiting_turn.as_str()), "{day}");
+    assert_eq!(day["earlier"].as_array().unwrap().iter().find(|t| t["turn_id"] == waiting_turn.as_str()).unwrap()["state"], "stopped");
+
+    // Agents: a clock is ahead, a watcher is watching, and both are standing asks.
+    let daily = json!({ "kind": "time", "frequency": "daily", "time": "07:00", "timezone": "Europe/Zurich" });
+    let (status, every) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "Morning brief", "when": "every", "trigger": daily }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{every}");
+    let (status, watch) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "File receipts", "when": "watch", "trigger": { "kind": "webhook" } }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{watch}");
+    let (_, day) = h.json(Method::GET, uri, None).await;
+    assert_eq!(day["ahead"].as_array().unwrap().len(), 1, "{day}");
+    assert_eq!(day["ahead"][0]["title"], "Morning brief");
+    assert!(day["ahead"][0]["next_run_at"].is_string());
+    assert_eq!(day["watching"].as_array().unwrap().len(), 1);
+    assert_eq!(day["watching"][0]["title"], "File receipts");
+    assert_eq!(day["watching"][0]["watches"], true);
+    assert_eq!(day["standing"].as_array().unwrap().len(), 2);
+
+    // An ask off the record is nowhere in the river.
+    let (status, private) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "Secret", "private": true }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{private}");
+    assert_eq!(private["conversation"]["private"], true);
+    let (_, day) = h.json(Method::GET, uri, None).await;
+    let all: Vec<&Value> = day["earlier"].as_array().unwrap().iter().chain(day["now"].as_array().unwrap()).collect();
+    assert!(all.iter().all(|t| t["prompt"] != "Secret"), "{day}");
+
+    // Another day has none of today's, and nothing is now or ahead in the past.
+    let (_, past) = h.json(Method::GET, "/api/timeline?day=2001-02-03&timezone=UTC", None).await;
+    assert_eq!((past["today"].clone(), past["earlier"].clone(), past["now"].clone(), past["ahead"].clone()), (json!(false), json!([]), json!([]), json!([])));
+    assert_eq!(h.json(Method::GET, "/api/timeline?day=yesterday", None).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(h.json(Method::GET, "/api/timeline?timezone=Mars/Olympus", None).await.0, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn an_ask_runs_now_or_becomes_an_agent_that_fits_its_when() {
+    let h = Harness::new(&[]).await;
+    let once = json!({ "kind": "once", "at": "2099-03-13T18:00", "timezone": "UTC" });
+
+    let (status, later) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "Remind me to call the dentist", "when": "later", "trigger": once }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{later}");
+    assert_eq!(later["when"], "later");
+    assert_eq!(later["agent"]["title"], "Remind me to call the dentist");
+    assert_eq!(later["agent"]["prompt"], "Remind me to call the dentist");
+    assert_eq!(later["agent"]["trigger"]["kind"], "once");
+    assert!(h.cedar.prompts.lock().unwrap().is_empty(), "nothing runs now");
+
+    let bad = |body: Value| async { h.json(Method::POST, "/api/asks", Some(body)).await };
+    for (body, says) in [
+        (json!({ "content": "x", "when": "every", "trigger": once }), "doesn't fit"),
+        (json!({ "content": "x", "when": "later" }), "trigger is required"),
+        (json!({ "content": "x", "when": "later", "trigger": once, "private": true }), "off the record"),
+        (json!({ "content": "x", "trigger": once }), "not now"),
+        (json!({ "content": "x", "when": "soon" }), "when must be"),
+        (json!({ "content": "   " }), "content"),
+    ] {
+        let (status, body) = bad(body).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body["error"]["message"].as_str().unwrap().contains(says), "{says}: {body}");
+    }
+
+    // A message cedar refuses leaves no empty conversation behind.
+    *h.cedar.refuse_runs.lock().unwrap() = Some((StatusCode::SERVICE_UNAVAILABLE, "down"));
+    let (status, _) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "hello" }))).await;
+    assert!(!status.is_success());
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    assert_eq!(list["conversations"], json!([]));
+}
+
+#[tokio::test]
+async fn the_today_page_is_served_with_its_script_and_text() {
+    let h = Harness::new(&[]).await;
+    let (status, html) = h.call(Method::GET, "/today/", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(html.contains("/today/today.js") && html.contains("/i18n/today.js"), "{html}");
+    for path in ["/today/today.js", "/today/today.css", "/i18n/today.js"] {
+        assert_eq!(h.call(Method::GET, path, None, None).await.0, StatusCode::OK, "{path}");
+    }
+    assert_eq!(h.call(Method::GET, "/today", None, None).await.0, StatusCode::PERMANENT_REDIRECT);
+    let (_, main) = h.call(Method::GET, "/v3/", None, None).await;
+    assert!(main.contains("href=\"/today/\""), "the main page links to Today");
+}

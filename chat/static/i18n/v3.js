@@ -6,6 +6,7 @@
 
 cedarI18n.add({
   en: {
+    'v3.nav.today': "Today",
     'v3.example2.text': "A rainy weekend in Lisbon for two, planned day by day, as a PDF",
     'v3.example2.prompt': "Plan a weekend in Lisbon for two in November, when it may rain: a plan for each day with something indoors in reserve, what it will roughly cost, and a packing list. Write it as a one-page PDF.",
     'v3.nav.memory': "What Cedar knows",
@@ -242,6 +243,7 @@ cedarI18n.add({
     'v3.send': 'Send',
   },
   de: {
+    'v3.nav.today': "Heute",
     'v3.example2.text': "Ein verregnetes Wochenende in Lissabon zu zweit, Tag für Tag geplant, als PDF",
     'v3.example2.prompt': "Plane ein Wochenende in Lissabon für zwei im November, wenn es regnen kann: einen Plan für jeden Tag mit einer Alternative für drinnen, was es ungefähr kostet, und eine Packliste. Schreib es als einseitiges PDF.",
     'v3.nav.memory': "Was Cedar weiß",
@@ -478,6 +480,7 @@ cedarI18n.add({
     'v3.send': 'Senden',
   },
   fr: {
+    'v3.nav.today': "Aujourd'hui",
     'v3.example2.text': "Un week-end pluvieux à Lisbonne pour deux, planifié jour par jour, en PDF",
     'v3.example2.prompt': "Planifiez un week-end à Lisbonne pour deux en novembre, quand il peut pleuvoir\u00a0: un programme pour chaque jour avec une solution de repli à l'intérieur, une estimation du budget et une liste de bagages. Rédigez le tout dans un PDF d'une page.",
     'v3.nav.memory': "Ce que Cedar sait",
@@ -714,6 +717,7 @@ cedarI18n.add({
     'v3.send': 'Envoyer',
   },
   es: {
+    'v3.nav.today': "Hoy",
     'v3.example2.text': "Un fin de semana lluvioso en Lisboa para dos, planificado día a día, en PDF",
     'v3.example2.prompt': "Planifica un fin de semana en Lisboa para dos en noviembre, cuando puede llover: un plan para cada día con una alternativa bajo techo, lo que costará aproximadamente y una lista de equipaje. Escríbelo en un PDF de una página.",
     'v3.nav.memory': "Lo que Cedar sabe",

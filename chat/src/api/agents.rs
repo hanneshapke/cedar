@@ -215,6 +215,19 @@ pub(super) async fn list(Scoped(state): Scoped) -> Result<Json<Value>, AppError>
 }
 
 pub(super) async fn create(Scoped(state): Scoped, ApiJson(body): ApiJson<AgentBody>) -> Result<(StatusCode, Json<Value>), AppError> {
+    Ok((StatusCode::CREATED, Json(create_agent(&state, body).await?)))
+}
+
+impl AgentBody {
+    /// An agent made from one sentence and a When (`/api/asks`): the sentence is its prompt.
+    pub(super) fn for_ask(title: String, prompt: String, trigger: Value, timezone: Option<String>, model: Option<String>, reasoning: Option<String>) -> Self {
+        AgentBody { title: Some(title), prompt: Some(prompt), trigger: Some(trigger), timezone, model, reasoning, ..Default::default() }
+    }
+}
+
+/// Check and save a new agent, as the API shows it.
+pub(super) async fn create_agent(state: &AppState, body: AgentBody) -> Result<Value, AppError> {
+    let state = state.clone();
     let title = clean_title(body.title)?.ok_or_else(|| AppError::BadRequest("title must not be empty".into()))?;
     let prompt = clean_message("prompt", body.prompt.as_deref().unwrap_or_default())?;
     let (model, reasoning) = clean_model_choice(&state, body.model.as_deref(), body.reasoning.as_deref()).await?;
@@ -278,7 +291,7 @@ pub(super) async fn create(Scoped(state): Scoped, ApiJson(body): ApiJson<AgentBo
         }
         _ => schedule,
     };
-    Ok((StatusCode::CREATED, Json(view(&state, &schedule, None, hook.as_ref().map(|(_, secret)| secret.as_str())))))
+    Ok(view(&state, &schedule, None, hook.as_ref().map(|(_, secret)| secret.as_str())))
 }
 
 pub(super) async fn get(Scoped(state): Scoped, Path(id): Path<String>) -> Result<Json<Value>, AppError> {

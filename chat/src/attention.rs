@@ -82,9 +82,10 @@ async fn follow_once(state: &AppState, turn: &Turn, pending: &Pending, after: &m
                 *after = (*after).max(seq);
             }
             let kind = event["type"].as_str().unwrap_or_default();
-            on_event(state, turn, pending, kind, &event["data"]);
+            on_event(state, turn, pending, kind, &event["data"]).await;
             if matches!(kind, "run.completed" | "run.failed" | "run.cancelled") {
                 pending.lock().unwrap().clear();
+                remember(state, turn, None, None).await;
                 return Ok(true);
             }
         }
@@ -92,7 +93,26 @@ async fn follow_once(state: &AppState, turn: &Turn, pending: &Pending, after: &m
     Ok(false)
 }
 
-fn on_event(state: &AppState, turn: &Turn, pending: &Pending, kind: &str, data: &Value) {
+/// Keep what the run waits on in the database, for the timeline: `Some(waiting)` opens the wait
+/// under `key`, `None` resolves it (every wait of the turn, without a key). A failure is logged:
+/// the page and the notifications don't depend on it.
+async fn remember(state: &AppState, turn: &Turn, key: Option<&str>, waiting: Option<&Waiting>) {
+    let result = match waiting {
+        Some(waiting) => {
+            let (kind, reason) = match waiting {
+                Waiting::Approval(reason) => ("approval", Some(reason.as_str())),
+                Waiting::Plan => ("plan", None),
+            };
+            state.store.open_wait(turn.id, key.unwrap_or(kind), kind, reason).await.map(|_| ())
+        }
+        None => state.store.resolve_waits(turn.id, key).await,
+    };
+    if let Err(e) = result {
+        tracing::warn!(turn_id = %turn.id, error = %e, "could not keep what a response waits on");
+    }
+}
+
+async fn on_event(state: &AppState, turn: &Turn, pending: &Pending, kind: &str, data: &Value) {
     let (key, waiting) = match kind {
         "approval.required" => {
             let Some(id) = data["id"].as_str() else { return };
@@ -102,12 +122,15 @@ fn on_event(state: &AppState, turn: &Turn, pending: &Pending, kind: &str, data: 
         "plan" if data["awaiting"] == true => ("plan".to_string(), Waiting::Plan),
         "approval.resolved" => {
             if let Some(id) = data["id"].as_str() {
-                pending.lock().unwrap().remove(&format!("approval:{id}"));
+                let key = format!("approval:{id}");
+                pending.lock().unwrap().remove(&key);
+                remember(state, turn, Some(&key), None).await;
             }
             return;
         }
         "plan.updated" => {
             pending.lock().unwrap().remove("plan");
+            remember(state, turn, Some("plan"), None).await;
             return;
         }
         _ => return,
@@ -116,6 +139,7 @@ fn on_event(state: &AppState, turn: &Turn, pending: &Pending, kind: &str, data: 
     if !pending.lock().unwrap().insert(key.clone()) {
         return;
     }
+    remember(state, turn, Some(&key), Some(&waiting)).await;
     let what = match &waiting {
         Waiting::Approval(_) => "approval",
         Waiting::Plan => "plan",

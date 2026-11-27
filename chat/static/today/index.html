@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" data-ui="today">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cedar · Today</title>
+  <link rel="icon" href="/assets/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <link rel="stylesheet" href="/today/today.css">
+</head>
+<body>
+  <!-- The river: one day of what Cedar did (earlier), is doing and waits on you for (now, where
+       you ask), and will do (ahead). Everything is filled in by today.js from /api/timeline. -->
+  <div class="page">
+    <header class="top">
+      <a class="brand" href="/today/" aria-label="Cedar, today" data-i18n-attr="aria-label:today.brandLabel">cedar</a>
+      <nav class="day" aria-label="Day" data-i18n-attr="aria-label:today.day">
+        <button class="icon" id="prev-day" type="button" aria-label="Previous day" data-i18n-attr="aria-label:today.prevDay"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg></button>
+        <h1 class="day-name" id="day-name"></h1>
+        <button class="icon" id="next-day" type="button" aria-label="Next day" data-i18n-attr="aria-label:today.nextDay"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg></button>
+        <button class="linkish" id="to-today" type="button" hidden data-i18n="today.backToToday">Back to today</button>
+      </nav>
+      <span class="spacer"></span>
+      <a class="needs" id="needs" href="#now" hidden><span class="dot" aria-hidden="true"></span><span id="needs-text"></span></a>
+      <a class="btn" href="/v3/" data-i18n="today.allChats">All conversations</a>
+    </header>
+
+    <div class="layout">
+      <main class="river" id="river" aria-live="polite">
+        <section aria-labelledby="earlier-h">
+          <h2 class="band" id="earlier-h" data-i18n="today.earlier">Earlier</h2>
+          <ol class="rows" id="earlier"></ol>
+          <p class="quiet" id="earlier-empty" hidden data-i18n="today.earlierEmpty">Nothing yet today.</p>
+        </section>
+
+        <section id="now" aria-labelledby="now-h">
+          <div class="now-line"><span class="now-time" id="now-time"></span><h2 class="now-label" id="now-h" data-i18n="today.now">Now</h2><span class="now-rule" aria-hidden="true"></span></div>
+
+          <form class="ask" id="ask" autocomplete="off">
+            <label class="sr" for="ask-input" data-i18n="today.askLabel">Ask Cedar</label>
+            <textarea id="ask-input" rows="2" maxlength="32000" placeholder="Ask for something. Look it up, work through files, write it, keep watch." data-i18n-attr="placeholder:today.askPlaceholder"></textarea>
+            <fieldset class="when" id="when">
+              <legend data-i18n="today.when">When</legend>
+              <label><input type="radio" name="when" value="now" checked><span data-i18n="today.when.now">Now</span></label>
+              <label><input type="radio" name="when" value="later"><span data-i18n="today.when.later">Later</span></label>
+              <label><input type="radio" name="when" value="every"><span data-i18n="today.when.every">Every…</span></label>
+              <label><input type="radio" name="when" value="watch"><span data-i18n="today.when.watch">When something changes</span></label>
+            </fieldset>
+
+            <div class="when-detail" data-for="later" hidden>
+              <label><span data-i18n="today.later.at">At</span> <input type="datetime-local" id="later-at"></label>
+            </div>
+            <div class="when-detail" data-for="every" hidden>
+              <label><span class="sr" data-i18n="today.every.how">How often</span>
+                <select id="every-frequency">
+                  <option value="daily" data-i18n="today.every.daily">Every day</option>
+                  <option value="weekdays" data-i18n="today.every.weekdays">On weekdays</option>
+                  <option value="weekly" data-i18n="today.every.weekly">Every week on</option>
+                </select>
+              </label>
+              <label id="every-weekday-wrap" hidden><span class="sr" data-i18n="today.every.weekday">Weekday</span><select id="every-weekday"></select></label>
+              <label><span data-i18n="today.every.at">at</span> <input type="time" id="every-time" value="07:00"></label>
+            </div>
+            <div class="when-detail" data-for="watch" hidden>
+              <label><span class="sr" data-i18n="today.watch.what">What to watch</span>
+                <select id="watch-kind">
+                  <option value="email" data-i18n="today.watch.email">When mail arrives that matches</option>
+                  <option value="calendar" data-i18n="today.watch.calendar">Before each calendar event</option>
+                  <option value="device" data-i18n="today.watch.device">When my phone or a shortcut asks</option>
+                </select>
+              </label>
+              <label data-watch="email"><span class="sr" data-i18n="today.watch.query">Gmail search</span><input type="text" id="watch-query" placeholder="from:bank subject:invoice" maxlength="500"></label>
+              <label data-watch="calendar" hidden><input type="number" id="watch-minutes" min="1" max="1440" value="30"> <span data-i18n="today.watch.minutesBefore">minutes before</span></label>
+              <a class="linkish" href="/v3/#/agents/new" data-i18n="today.watch.other">Something else…</a>
+            </div>
+
+            <div class="ask-foot">
+              <p class="hint" id="when-hint"></p>
+              <label class="private" id="private-wrap"><input type="checkbox" id="private"><span data-i18n="today.private">Off the record</span></label>
+              <button class="primary" id="ask-send" type="submit"></button>
+            </div>
+            <p class="error" id="ask-error" role="alert" hidden></p>
+          </form>
+
+          <ol class="cards" id="now-list"></ol>
+        </section>
+
+        <section aria-labelledby="ahead-h" id="ahead-section">
+          <h2 class="band" id="ahead-h" data-i18n="today.ahead">Ahead</h2>
+          <ol class="rows ahead" id="ahead"></ol>
+          <p class="quiet" id="ahead-empty" hidden data-i18n="today.aheadEmpty">Nothing planned.</p>
+        </section>
+      </main>
+
+      <aside class="side">
+        <section aria-labelledby="standing-h">
+          <h2 id="standing-h" data-i18n="today.standing">Standing asks</h2>
+          <ul class="list" id="standing"></ul>
+          <p class="quiet" id="standing-empty" hidden data-i18n="today.standingEmpty">Pick Every… or When something changes to have Cedar do something on its own.</p>
+          <a class="linkish" href="/v3/#/agents" data-i18n="today.allAgents">All agents</a>
+        </section>
+        <section class="box" aria-labelledby="private-h">
+          <h2 id="private-h" data-i18n="today.privateTitle">Off the record</h2>
+          <p class="quiet" data-i18n="today.privateText">An ask that leaves no trace: it never enters the river, nothing is remembered, and it is gone when you close it.</p>
+          <button class="btn" id="private-offer" type="button" data-i18n="today.privateOffer">Ask off the record</button>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <dialog id="token-dialog">
+    <form method="dialog" id="token-form">
+      <p id="token-message"></p>
+      <label><span data-i18n="today.token">Access token</span> <input id="token-input" type="password" autocomplete="current-password" required></label>
+      <button class="primary" type="submit" data-i18n="today.tokenSave">Continue</button>
+    </form>
+  </dialog>
+
+  <script src="/i18n.js"></script>
+  <script src="/i18n/common.js"></script>
+  <script src="/i18n/today.js"></script>
+  <script>cedarI18n.apply(document);</script>
+  <script src="/today/today.js"></script>
+</body>
+</html>
