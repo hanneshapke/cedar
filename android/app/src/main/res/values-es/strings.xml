@@ -1117,6 +1117,23 @@
     <string name="today_outcome_step_failed">falló</string>
     <string name="today_outcome_keep_going">Seguir desde aquí</string>
     <string name="today_outcome_open">Abrir toda la conversación</string>
+    <string name="today_prev_day">Día anterior</string>
+    <string name="today_next_day">Día siguiente</string>
+    <string name="today_back_to_today">Hoy</string>
+    <string name="today_day_empty">Nada en este día.</string>
+    <string name="today_go_ahead">Adelante</string>
+    <string name="today_change_plan">Cambiar el plan</string>
+    <string name="today_work_out_when">Deducir el cuándo</string>
+    <string name="today_read_as">Cedar lo entendió así: %1$s. Revísalo y envía.</string>
+    <string name="today_read_now">Cedar no encontró ningún momento, así que se ejecuta ahora.</string>
+    <string name="today_read_kept">Como se entendió: %1$s</string>
+    <string name="today_outcome_your_answer">Tu respuesta</string>
+    <string name="today_outcome_keep_going_hint">Seguir desde aquí</string>
+    <plurals name="today_steps_so_far">
+        <item quantity="one">%d paso hasta ahora</item>
+        <item quantity="many">%d pasos hasta ahora</item>
+        <item quantity="other">%d pasos hasta ahora</item>
+    </plurals>
     <plurals name="today_needs_you">
         <item quantity="one">%d cosa te necesita</item>
         <item quantity="many">%d cosas te necesitan</item>

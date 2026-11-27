@@ -1105,6 +1105,22 @@
     <string name="today_outcome_step_failed">failed</string>
     <string name="today_outcome_keep_going">Keep Going from Here</string>
     <string name="today_outcome_open">Open the Whole Conversation</string>
+    <string name="today_prev_day">Previous day</string>
+    <string name="today_next_day">Next day</string>
+    <string name="today_back_to_today">Today</string>
+    <string name="today_day_empty">Nothing on this day.</string>
+    <string name="today_go_ahead">Go Ahead</string>
+    <string name="today_change_plan">Change the Plan</string>
+    <string name="today_work_out_when">Work Out the When</string>
+    <string name="today_read_as">Cedar read this as: %1$s. Check it, then send.</string>
+    <string name="today_read_now">Cedar found no time in it, so it runs now.</string>
+    <string name="today_read_kept">As read: %1$s</string>
+    <string name="today_outcome_your_answer">Your answer</string>
+    <string name="today_outcome_keep_going_hint">Keep going from here</string>
+    <plurals name="today_steps_so_far">
+        <item quantity="one">%d step so far</item>
+        <item quantity="other">%d steps so far</item>
+    </plurals>
     <plurals name="today_needs_you">
         <item quantity="one">%d thing needs you</item>
         <item quantity="other">%d things need you</item>

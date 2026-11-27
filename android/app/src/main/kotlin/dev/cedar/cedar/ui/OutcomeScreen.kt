@@ -25,6 +25,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,8 +67,8 @@ private const val WORKING_REFRESH_MILLIS = 3_000L
  * What one ask came to, as the web's outcome page: what was asked, the answer headed by its gist,
  * then what it left behind (what it held for approval, the files it wrote or changed, what it
  * remembered, the record rows it saved, the follow-up it suggested) and, folded, how Cedar got
- * there (its steps and sources). Keep going opens the conversation, where the next message is
- * typed; a response still going is followed until it ends.
+ * there (its steps and sources). Keep going sends the next message from here and opens the
+ * conversation, where its response streams; a response still going is followed until it ends.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,6 +85,8 @@ fun OutcomeScreen(app: AppModel, turnId: String) {
     var followupErrors by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var showingFile by remember { mutableStateOf<String?>(null) }
     var howOpen by rememberSaveable { mutableStateOf(false) }
+    var next by rememberSaveable { mutableStateOf("") }
+    var sendingNext by remember { mutableStateOf(false) }
 
     LaunchedEffect(turnId) {
         while (true) {
@@ -160,7 +164,8 @@ fun OutcomeScreen(app: AppModel, turnId: String) {
                 if (shown.laterTurns > 0) {
                     Text(plural(R.plurals.today_outcome_continued, shown.laterTurns, shown.laterTurns), style = small, color = secondary)
                 }
-                turn.finalText?.takeIf { it.isNotBlank() }?.let { MarkdownView(it) }
+                // The answer, without the paragraph the headline already says.
+                shown.answer?.let { MarkdownView(it) }
 
                 // What it held for the person's OK: what still waits first.
                 val held = shown.heldOpenFirst.map { app.heldCall(it.id) ?: it }
@@ -231,7 +236,12 @@ fun OutcomeScreen(app: AppModel, turnId: String) {
                 if (shown.records.isNotEmpty()) {
                     OutcomeHeading(stringResource(R.string.today_outcome_records))
                     shown.records.forEach { record ->
-                        Text(record.label, Modifier.fillMaxWidth().surfaceCard(radius = 12.dp).padding(12.dp))
+                        Column(Modifier.fillMaxWidth().surfaceCard(radius = 12.dp).padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(record.label, fontWeight = FontWeight.Medium)
+                            record.fields.forEach { (name, value) ->
+                                Text("$name: $value", style = small, color = secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
                     }
                 }
 
@@ -304,7 +314,7 @@ fun OutcomeScreen(app: AppModel, turnId: String) {
                             Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 shown.steps.forEachIndexed { index, step ->
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("${index + 1}. ${step.name}", style = small, fontFamily = FontFamily.Monospace)
+                                        Text("${index + 1}. ${toolLabel(step.name)}", style = small)
                                         if (step.isError) {
                                             Spacer(Modifier.width(8.dp))
                                             Text(stringResource(R.string.today_outcome_step_failed), style = small, color = CedarColors.red)
@@ -327,16 +337,44 @@ fun OutcomeScreen(app: AppModel, turnId: String) {
                     }
                 }
 
-                // The next message is the conversation's: typed there, where the response streams.
+                // The next message is typed here and sent to the conversation, which opens: its
+                // response streams there. Not while this one is still going.
                 val conversationId = shown.conversation.id
-                if (shown.laterTurns == 0) {
-                    ProminentButton(onClick = { app.open(conversationId) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(if (shown.state == TurnState.ASKING) R.string.answer else R.string.today_outcome_keep_going))
+                val asking = shown.state == TurnState.ASKING
+                if (shown.state != TurnState.WORKING && shown.state != TurnState.WAITING) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = next,
+                            onValueChange = { next = it.take(32_000) },
+                            placeholder = { Text(stringResource(if (asking) R.string.today_outcome_your_answer else R.string.today_outcome_keep_going_hint)) },
+                            maxLines = 4,
+                            enabled = !sendingNext,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = {
+                                val text = next.trim()
+                                sendingNext = true
+                                // The model's scope: this screen is left when the chat opens.
+                                app.scope.launch {
+                                    try {
+                                        if (app.keepGoing(conversationId, text)) next = ""
+                                        else actionError = app.chat(conversationId).errorMessage ?: app.describe(ChatException.NotConfigured)
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        actionError = app.describe(e)
+                                    } finally {
+                                        sendingNext = false
+                                    }
+                                }
+                            },
+                            enabled = next.isNotBlank() && !sendingNext,
+                        ) { Text(stringResource(if (asking) R.string.answer else R.string.send)) }
                     }
-                } else {
-                    OutlinedButton(onClick = { app.open(conversationId) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.today_outcome_open))
-                    }
+                }
+                OutlinedButton(onClick = { app.open(conversationId) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.today_outcome_open))
                 }
             }
         }

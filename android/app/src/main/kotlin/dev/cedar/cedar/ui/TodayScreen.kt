@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Today
@@ -32,6 +34,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -108,8 +111,20 @@ fun TodayRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
         }
     }
     val day = app.timeline
+    // The day shown: another one has no now, and nothing to ask from.
+    val shownDay = app.timelineDay?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: LocalDate.now()
+    val isToday = app.timelineDay == null
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item(key = "ask") { AskBar(enabled = app.settings.isConfigured && !app.timelineUnsupported) { asking = true } }
+        if (!app.timelineUnsupported) {
+            item(key = "day") {
+                DayBar(
+                    shownDay, isToday,
+                    onShift = { days -> onAction { app.shiftDay(days) } },
+                    onToday = { onAction { app.showDay(null) } },
+                )
+            }
+        }
+        if (isToday) item(key = "ask") { AskBar(enabled = app.settings.isConfigured && !app.timelineUnsupported) { asking = true } }
         app.timelineError?.let { error -> item(key = "error") { ErrorLine(error) } }
         when {
             app.timelineUnsupported -> item(key = "unsupported") {
@@ -137,7 +152,7 @@ fun TodayRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
                 }
                 item(key = "earlier-header") { TodayHeader(stringResource(R.string.today_earlier)) }
                 if (day.earlier.isEmpty()) {
-                    item(key = "earlier-empty") { QuietLine(stringResource(R.string.today_earlier_empty)) }
+                    item(key = "earlier-empty") { QuietLine(stringResource(if (isToday) R.string.today_earlier_empty else R.string.today_day_empty)) }
                 }
                 items(day.earlier.asReversed(), key = { "earlier-${it.turnId}" }) { turn ->
                     EarlierRow(turn) { app.showingOutcome = turn.turnId }
@@ -145,12 +160,34 @@ fun TodayRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
                 val ahead = day.ahead + day.watching
                 if (ahead.isNotEmpty()) {
                     item(key = "ahead-header") { TodayHeader(stringResource(R.string.today_ahead)) }
-                    items(ahead, key = { "ahead-${it.id}" }) { agent -> AheadRow(agent) { app.openAgent(agent.id) } }
+                    items(ahead, key = { "ahead-${it.id}" }) { agent -> AheadRow(agent, shownDay) { app.openAgent(agent.id) } }
                 }
             }
         }
     }
     if (asking) AskSheet(app, onDismiss = { asking = false })
+}
+
+/** The day the river shows, with the days around it a tap away, and the way back to today. */
+@Composable
+private fun DayBar(day: LocalDate, isToday: Boolean, onShift: (Long) -> Unit, onToday: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { onShift(-1) }) {
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, stringResource(R.string.today_prev_day))
+        }
+        Text(
+            day.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL)),
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (!isToday) TextButton(onClick = onToday) { Text(stringResource(R.string.today_back_to_today)) }
+        IconButton(onClick = { onShift(1) }) {
+            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, stringResource(R.string.today_next_day))
+        }
+    }
 }
 
 @Composable
@@ -286,9 +323,36 @@ private fun NowCard(app: AppModel, turn: TimelineTurn, onAction: (suspend () -> 
                         if (deciding) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     }
                 } else {
-                    // A plan is agreed to in the chat, where its steps can be changed first.
                     Text(stringResource(R.string.today_plan_waiting), style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(onClick = { app.open(turn.conversationId) }) { Text(stringResource(R.string.today_review_plan)) }
+                    val steps = wait.planSteps
+                    if (steps.isEmpty()) {
+                        // A server that doesn't send the steps: the plan is agreed to in the chat.
+                        OutlinedButton(onClick = { app.open(turn.conversationId) }) { Text(stringResource(R.string.today_review_plan)) }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            steps.forEachIndexed { index, step ->
+                                Text("${index + 1}. ${step.title}", style = MaterialTheme.typography.bodyMedium, color = CedarColors.secondaryText)
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = {
+                                    deciding = true
+                                    onAction {
+                                        try {
+                                            app.agreePlan(turn.turnId, steps)
+                                        } finally {
+                                            deciding = false
+                                        }
+                                    }
+                                },
+                                enabled = !deciding,
+                            ) { Text(stringResource(R.string.today_go_ahead)) }
+                            // Its steps are changed in the chat.
+                            OutlinedButton(onClick = { app.open(turn.conversationId) }, enabled = !deciding) { Text(stringResource(R.string.today_change_plan)) }
+                            if (deciding) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        }
+                    }
                 }
             }
             TurnState.ASKING -> {
@@ -298,7 +362,28 @@ private fun NowCard(app: AppModel, turn: TimelineTurn, onAction: (suspend () -> 
             else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.today_working), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText)
+                // What it is doing now and how far it has come, once its run has called a tool.
+                val progress = turn.progress
+                val doing = progress?.doing?.takeIf { it.isNotBlank() }?.let { toolLabel(it) }
+                val where = if (progress != null && progress.steps > 0) {
+                    listOfNotNull(doing, plural(R.plurals.today_steps_so_far, progress.steps, progress.steps)).joinToString(" · ")
+                } else {
+                    stringResource(R.string.today_working)
+                }
+                Text(where, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                TextButton(
+                    onClick = {
+                        deciding = true
+                        onAction {
+                            try {
+                                app.stopTurn(turn.turnId)
+                            } finally {
+                                deciding = false
+                            }
+                        }
+                    },
+                    enabled = !deciding,
+                ) { Text(stringResource(R.string.stop)) }
             }
         }
     }
@@ -366,12 +451,12 @@ private fun EarlierRow(turn: TimelineTurn, onClick: () -> Unit) {
 
 /** An agent ahead: when it runs next, or "any time" for one that something outside starts. */
 @Composable
-private fun AheadRow(agent: Agent, onClick: () -> Unit) {
+private fun AheadRow(agent: Agent, shownDay: LocalDate, onClick: () -> Unit) {
     val context = LocalContext.current
     val next = agent.nextRunAt
     val time = when {
         agent.trigger.byEvent || next == null -> stringResource(R.string.today_any_time)
-        next.atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now() -> shortTime(next)
+        next.atZone(ZoneId.systemDefault()).toLocalDate() == shownDay -> shortTime(next)
         else -> skeletonDate(next, "EEEjm")
     }
     Row(
@@ -415,6 +500,43 @@ private fun AskSheet(app: AppModel, onDismiss: () -> Unit) {
     var minutes by remember { mutableStateOf(draft.minutesBefore.toString()) }
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // The When the server read out of the sentence, said back until something is changed.
+    var reading by remember { mutableStateOf(false) }
+    var readAs by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val noText = stringResource(R.string.today_problem_no_text)
+    val readNow = stringResource(R.string.today_read_now)
+
+    fun workOut() {
+        if (text.isBlank()) {
+            error = noText
+            return
+        }
+        error = null
+        reading = true
+        scope.launch {
+            try {
+                val read = app.readWhen(text)
+                val filled = draft.reading(read)
+                draft = filled
+                minutes = filled.minutesBefore.toString()
+                val trigger = filled.trigger(java.util.TimeZone.getDefault().id)
+                if (filled.whenKind != AskWhen.NOW && trigger != null) {
+                    // What runs is the sentence without its timing.
+                    if (read.content.isNotBlank()) text = read.content
+                    readAs = context.getString(R.string.today_read_as, context.describe(trigger))
+                } else {
+                    readAs = readNow
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = app.describe(e)
+            } finally {
+                reading = false
+            }
+        }
+    }
     val problemTexts = mapOf(
         AskProblem.NO_TEXT to stringResource(R.string.today_problem_no_text),
         AskProblem.NO_TIME to stringResource(R.string.today_problem_no_time),
@@ -458,7 +580,12 @@ private fun AskSheet(app: AppModel, onDismiss: () -> Unit) {
                 maxLines = 6,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(stringResource(R.string.today_when), style = MaterialTheme.typography.labelMedium, color = CedarColors.secondaryText)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.today_when), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = CedarColors.secondaryText)
+                if (reading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                TextButton(onClick = { workOut() }, enabled = !reading && !sending) { Text(stringResource(R.string.today_work_out_when)) }
+            }
+            readAs?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
             ChipRow(
                 options = listOf(
                     AskWhen.NOW to stringResource(R.string.today_when_now),
@@ -467,7 +594,10 @@ private fun AskSheet(app: AppModel, onDismiss: () -> Unit) {
                     AskWhen.WATCH to stringResource(R.string.today_when_watch),
                 ),
                 selected = draft.whenKind,
-            ) { draft = draft.copy(whenKind = it) }
+            ) {
+                draft = draft.copy(whenKind = it)
+                readAs = null
+            }
 
             when (draft.whenKind) {
                 AskWhen.NOW -> if (app.serverHasPrivateChats) {
@@ -482,6 +612,10 @@ private fun AskSheet(app: AppModel, onDismiss: () -> Unit) {
                     AskTimeRow(at.toLocalTime()) { draft = draft.copy(laterAt = LocalDateTime.of(at.toLocalDate(), it)) }
                 }
                 AskWhen.EVERY -> {
+                    // Read from the sentence and not one of the choices below: sent as it is, until one is picked.
+                    draft.kept?.let { kept ->
+                        Text(stringResource(R.string.today_read_kept, context.describe(kept)), style = MaterialTheme.typography.bodyMedium)
+                    }
                     ChipRow(
                         options = listOf(
                             AskFrequency.DAILY to stringResource(R.string.today_every_daily),
@@ -489,15 +623,15 @@ private fun AskSheet(app: AppModel, onDismiss: () -> Unit) {
                             AskFrequency.WEEKLY to stringResource(R.string.today_every_weekly),
                         ),
                         selected = draft.frequency,
-                    ) { draft = draft.copy(frequency = it) }
+                    ) { draft = draft.copy(frequency = it).edited() }
                     if (draft.frequency == AskFrequency.WEEKLY) {
                         ChipRow(
                             options = DayOfWeek.values().map { AskDraft.weekday(it) to it.getDisplayName(TextStyle.SHORT_STANDALONE, Locale.getDefault()) },
                             selected = draft.weekday,
-                        ) { draft = draft.copy(weekday = it) }
+                        ) { draft = draft.copy(weekday = it).edited() }
                     }
                     val time = runCatching { LocalTime.parse(draft.time) }.getOrDefault(LocalTime.of(7, 0))
-                    AskTimeRow(time) { draft = draft.copy(time = it.format(DateTimeFormatter.ofPattern("HH:mm"))) }
+                    AskTimeRow(time) { draft = draft.copy(time = it.format(DateTimeFormatter.ofPattern("HH:mm"))).edited() }
                 }
                 AskWhen.WATCH -> {
                     ChipRow(
@@ -550,7 +684,7 @@ private fun AskSheet(app: AppModel, onDismiss: () -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                 if (sending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-                Button(onClick = { send() }, enabled = !sending) {
+                Button(onClick = { send() }, enabled = !sending && !reading) {
                     Text(
                         stringResource(
                             when (draft.whenKind) {

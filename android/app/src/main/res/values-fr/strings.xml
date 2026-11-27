@@ -1116,6 +1116,23 @@
     <string name="today_outcome_step_failed">en échec</string>
     <string name="today_outcome_keep_going">Continuer à partir d\'ici</string>
     <string name="today_outcome_open">Ouvrir toute la conversation</string>
+    <string name="today_prev_day">Jour précédent</string>
+    <string name="today_next_day">Jour suivant</string>
+    <string name="today_back_to_today">Aujourd\'hui</string>
+    <string name="today_day_empty">Rien ce jour-là.</string>
+    <string name="today_go_ahead">Allez-y</string>
+    <string name="today_change_plan">Modifier le plan</string>
+    <string name="today_work_out_when">Trouver le moment</string>
+    <string name="today_read_as">Cedar a compris : %1$s. Vérifiez, puis envoyez.</string>
+    <string name="today_read_now">Cedar n\'y a trouvé aucun moment, la demande s\'exécute donc maintenant.</string>
+    <string name="today_read_kept">Tel que compris : %1$s</string>
+    <string name="today_outcome_your_answer">Votre réponse</string>
+    <string name="today_outcome_keep_going_hint">Continuer à partir d\'ici</string>
+    <plurals name="today_steps_so_far">
+        <item quantity="one">%d étape jusqu\'ici</item>
+        <item quantity="many">%d étapes jusqu\'ici</item>
+        <item quantity="other">%d étapes jusqu\'ici</item>
+    </plurals>
     <plurals name="today_needs_you">
         <item quantity="one">%d chose vous attend</item>
         <item quantity="many">%d choses vous attendent</item>

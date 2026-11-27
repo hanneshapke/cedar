@@ -781,7 +781,7 @@ private fun openCardOnWeb(name: String): Int = when (name) {
  * tool) is shown by its own name with the underscores taken out: `gmail_search` reads "Gmail search".
  */
 @Composable
-private fun toolLabel(name: String): String = when (name) {
+internal fun toolLabel(name: String): String = when (name) {
     "web_search" -> stringResource(R.string.tool_web_search)
     "bash" -> stringResource(R.string.tool_command)
     "run_python" -> stringResource(R.string.tool_code)
