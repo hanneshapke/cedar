@@ -33,6 +33,12 @@ class GoogleMock:
     def __init__(self, persona: Persona):
         self.persona = persona
         self.drafts: list[dict] = []
+        # Events the agent created, kept apart from the persona's so a reset forgets them.
+        self.created: list[Event] = []
+
+    @property
+    def events(self) -> list[Event]:
+        return self.persona.events + self.created
 
     # -- Gmail ---------------------------------------------------------------------------------
 
@@ -151,11 +157,32 @@ class GoogleMock:
             case ["calendars", cal, "events"]:
                 return self._list_events(cal, query)
             case ["calendars", cal, "events", eid]:
-                for e in p.events:
+                for e in self.events:
                     if e.id == eid and self._on(e, cal):
                         return self._event(e)
                 raise NotFound(eid)
         raise NotFound("/".join(parts))
+
+    def calendar_create_event(self, cal: str, body: dict) -> dict:
+        def when(v: dict) -> dt.datetime | dt.date:
+            if "date" in v:
+                return dt.date.fromisoformat(v["date"])
+            return timeutil.parse_rfc3339(v["dateTime"])
+
+        event = Event(
+            id=f"created-{len(self.created) + 1}",
+            summary=body.get("summary", ""),
+            start=when(body["start"]),
+            end=when(body["end"]),
+            attendees=[{"email": a["email"], "responseStatus": "needsAction"}
+                       for a in body.get("attendees", [])],
+            organizer=self.persona.email,
+            location=body.get("location"),
+            description=body.get("description"),
+            calendar="primary" if cal in ("primary", self.persona.email) else cal,
+        )
+        self.created.append(event)
+        return self._event(event)
 
     def free_busy(self, body: dict) -> dict:
         lo = timeutil.parse_rfc3339(body["timeMin"])
@@ -164,7 +191,7 @@ class GoogleMock:
         for item in body.get("items", []):
             cid = item["id"]
             if cid in ("primary", self.persona.email):
-                spans = [self._span(e) for e in self.persona.events if self._on(e, "primary")]
+                spans = [self._span(e) for e in self.events if self._on(e, "primary")]
             elif cid in self.persona.busy:
                 spans = self.persona.busy[cid]
             else:
@@ -193,7 +220,7 @@ class GoogleMock:
         hi = timeutil.parse_rfc3339(query["timeMax"]) if "timeMax" in query else None
         words = query.get("q", "").lower().split()
         hits = []
-        for e in self.persona.events:
+        for e in self.events:
             if not self._on(e, cal):
                 continue
             s, en = self._span(e)
