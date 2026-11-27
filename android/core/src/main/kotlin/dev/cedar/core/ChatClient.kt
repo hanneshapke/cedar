@@ -382,6 +382,31 @@ class ChatClient(val baseURL: HttpUrl, val accessToken: String, private val http
     suspend fun decideOutbox(id: String, approve: Boolean): OutboxItem =
         decode(request("api/outbox/$id", "POST", buildJsonObject { put("decision", if (approve) "approve" else "discard") }), OutboxItem.serializer())
 
+    // Today
+
+    /**
+     * One day as a river (`GET /api/timeline`): what Cedar did, is doing or waits on the person
+     * for, and will do. `day` is `YYYY-MM-DD` in `timezone` (the device's IANA zone); without it,
+     * today. 404 on a server from before Today.
+     */
+    suspend fun timeline(day: String? = null, timezone: String? = null): Timeline {
+        val query = buildMap<String, String> {
+            day?.let { put("day", it) }
+            timezone?.let { put("timezone", it) }
+        }
+        return decode(request("api/timeline", query = query), Timeline.serializer())
+    }
+
+    /** What one ask came to (`GET /api/turns/{id}/outcome`): the answer and what it left behind. */
+    suspend fun outcome(turnId: String): Outcome = decode(request("api/turns/$turnId/outcome"), Outcome.serializer())
+
+    /**
+     * Asks with a When (`POST /api/asks`). Now starts a new conversation with the sentence as its
+     * first message, and the answer has the conversation and the turn; any other When makes an
+     * agent of it, and the answer has the agent. 400 when the trigger doesn't fit the When.
+     */
+    suspend fun ask(body: AskBody): AskResult = decode(request("api/asks", "POST", body.toJson()), AskResult.serializer())
+
     /**
      * Streams a turn's events after `after`: a replay of the stored log, then live events. The flow
      * completes after the terminal event, or when the server closes the connection.

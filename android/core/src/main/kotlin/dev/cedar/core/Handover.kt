@@ -138,6 +138,8 @@ data class OutboxItem(
     @SerialName("created_at") val createdAt: Instant? = null,
     @SerialName("decided_at") val decidedAt: Instant? = null,
     @SerialName("conversation_id") val conversationId: String? = null,
+    /** The turn whose run held it, when the run is one of this chat's: its outcome shows the call. */
+    @SerialName("turn_id") val turnId: String? = null,
     val title: String? = null,
     val agent: OutboxAgent? = null,
 ) {
