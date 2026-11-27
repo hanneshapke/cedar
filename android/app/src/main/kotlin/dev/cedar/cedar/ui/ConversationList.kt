@@ -82,7 +82,7 @@ import dev.cedar.core.searchRanges
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** The list: a search field over Chats | Starred | Agents, as iOS/Cedar/Features/Conversations/ConversationListView.swift. */
+/** The list: a search field over Today | Chats | Starred | Agents, as iOS/Cedar/Features/Conversations/ConversationListView.swift. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListScreen(app: AppModel) {
@@ -105,6 +105,7 @@ fun ConversationListScreen(app: AppModel) {
 
     LaunchedEffect(app.sidebarMode) {
         when (app.sidebarMode) {
+            SidebarMode.TODAY -> app.refreshTimeline()
             SidebarMode.CHATS -> {}
             // Stars set on the web or the desktop app since the last refresh.
             SidebarMode.STARRED -> app.refresh()
@@ -150,14 +151,21 @@ fun ConversationListScreen(app: AppModel) {
             if (!app.isSearching) {
                 SegmentedSwitch(
                     options = listOf(
+                        SidebarMode.TODAY to stringResource(R.string.tab_today),
                         SidebarMode.CHATS to stringResource(R.string.tab_chats),
                         SidebarMode.STARRED to stringResource(R.string.tab_starred),
                         SidebarMode.AGENTS to stringResource(R.string.tab_agents),
                     ),
                     selected = app.sidebarMode,
                     onSelect = { app.sidebarMode = it },
-                    // How many agents' runs wait to be read.
-                    count = { if (it == SidebarMode.AGENTS) app.agentsUnread else 0 },
+                    // How many agents' runs wait to be read, and how many things on Today need the person.
+                    count = {
+                        when (it) {
+                            SidebarMode.AGENTS -> app.agentsUnread
+                            SidebarMode.TODAY -> app.timeline?.needsYou ?: 0
+                            else -> 0
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
                 )
             }
@@ -170,6 +178,7 @@ fun ConversationListScreen(app: AppModel) {
                     SearchRows(app, onAction = ::act)
                 } else {
                     when (app.sidebarMode) {
+                        SidebarMode.TODAY -> TodayRows(app, onAction = ::act)
                         SidebarMode.CHATS -> ChatRows(app, onAction = ::act, onRename = { renaming = it })
                         SidebarMode.STARRED -> StarredRows(app, onAction = ::act)
                         SidebarMode.AGENTS -> AgentRows(app, onAction = ::act)

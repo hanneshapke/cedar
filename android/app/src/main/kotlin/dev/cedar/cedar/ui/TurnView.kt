@@ -548,7 +548,7 @@ internal fun HeldCallView(
  * passed can only be dismissed.
  */
 @Composable
-private fun FollowUpView(
+internal fun FollowUpView(
     suggestion: FollowUpSuggestion,
     decision: Followup?,
     deciding: Boolean,
