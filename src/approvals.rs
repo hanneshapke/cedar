@@ -1,6 +1,6 @@
 //! Which tool calls wait for the user's OK before they run, in runs whose client answers
-//! (`interactive`). The rules are a heuristic on the tool and its input: sending email, posting
-//! to Slack, saving files from the web, installing packages (when the sandbox reaches a network
+//! (`interactive`). The rules are a heuristic on the tool and its input: sending email, inviting
+//! guests to a calendar event, posting to Slack, saving files from the web, installing packages (when the sandbox reaches a network
 //! at all), deleting files, every call of a community tool installed from the marketplace, and
 //! every `computer` call on the user's own computer (`COMPUTER_RUNTIME=native`).
 //! The `network` rule
@@ -19,7 +19,8 @@ use std::collections::BTreeSet;
 /// A kind of call that needs approval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Rule {
-    /// Gmail tools that send, draft or change mail.
+    /// Gmail tools that send, draft or change mail, and Calendar tools that invite guests, whom
+    /// Google emails.
     Email,
     /// Slack tools that post a message.
     Slack,
@@ -219,6 +220,28 @@ pub fn check(rules: &Rules, name: &str, input: &Value, reach: &Reach) -> Option<
                 grants: vec![],
             })
         }
+        // An event with guests is mail to them: Google sends the invitations.
+        _ if rules.has(Rule::Email)
+            && group_of(name) == "calendar"
+            && writes(name)
+            && !guests(input).is_empty() =>
+        {
+            let mut reason = format!(
+                "{} in your calendar and invite {}",
+                humanize(name),
+                guests(input).join(", ")
+            );
+            if let Some(summary) = input["summary"].as_str().filter(|s| !s.trim().is_empty()) {
+                reason.push_str(&format!(": \"{}\"", one_line(summary)));
+            }
+            reason.push('.');
+            Some(Gate {
+                rule: Rule::Email,
+                reason,
+                scope: None,
+                grants: vec![],
+            })
+        }
         _ if rules.has(Rule::Slack) && group_of(name) == "slack" && writes(name) => {
             let mut reason = format!("{} in Slack", humanize(name));
             if let Some(channel) = input["channel"].as_str().filter(|c| !c.is_empty()) {
@@ -382,6 +405,7 @@ pub fn describe(name: &str, input: &Value) -> String {
         "drive" => "your Google Drive",
         "sheets" => "your Google Sheets",
         "slides" => "your Google Slides",
+        "tasks" => "your Google Tasks",
         "gmail" => "your Gmail",
         "slack" => "Slack",
         _ => "your account",
@@ -395,6 +419,16 @@ pub fn describe(name: &str, input: &Value) -> String {
     }
     reason.push('.');
     reason
+}
+
+/// The guests a Calendar call names, as an array or one comma-separated string.
+fn guests(input: &Value) -> Vec<&str> {
+    let list: Vec<&str> = match &input["attendeeEmails"] {
+        Value::Array(a) => a.iter().filter_map(Value::as_str).collect(),
+        Value::String(s) => s.split(',').collect(),
+        _ => Vec::new(),
+    };
+    list.into_iter().map(str::trim).filter(|g| !g.is_empty()).collect()
 }
 
 /// `gmail_send_message` -> "Send message".
@@ -610,6 +644,23 @@ mod tests {
     }
 
     #[test]
+    fn an_event_with_guests_asks_like_mail() {
+        let own = json!({ "summary": "Dentist", "startTime": "2026-10-12T09:00", "attendeeEmails": [] });
+        assert!(check(&all(), "calendar_create_event", &own, &Reach::Nothing).is_none());
+        let invite = json!({ "summary": "Sync", "attendeeEmails": ["bo@x.org", " cy@x.org "] });
+        let gate = check(&all(), "calendar_create_event", &invite, &Reach::Nothing).unwrap();
+        assert_eq!(gate.rule, Rule::Email);
+        assert_eq!(
+            gate.reason,
+            "Create event in your calendar and invite bo@x.org, cy@x.org: \"Sync\"."
+        );
+        assert_eq!(describe("calendar_create_event", &invite), gate.reason);
+        let slack_only = Rules::parse("slack").unwrap();
+        assert!(check(&slack_only, "calendar_create_event", &invite, &Reach::Nothing).is_none());
+        assert!(check(&all(), "calendar_list_events", &invite, &Reach::Nothing).is_none());
+    }
+
+    #[test]
     fn a_held_call_is_described_in_a_line() {
         assert_eq!(
             describe("gmail_send_message", &json!({ "to": "a@x.org", "subject": "Q3" })),
@@ -620,6 +671,10 @@ mod tests {
             "Create event in your calendar: \"Dentist\"."
         );
         assert_eq!(describe("sheets_append_values", &json!({})), "Append values in your Google Sheets.");
+        assert_eq!(
+            describe("tasks_create_task", &json!({ "title": "Renew passport" })),
+            "Create task in your Google Tasks: \"Renew passport\"."
+        );
         assert_eq!(
             describe("slides_create_presentation", &json!({ "title": "Q3 review", "slides": [] })),
             "Create presentation in your Google Slides: \"Q3 review\"."

@@ -120,7 +120,7 @@ const TOOL_KEYS = {
   search_flights: 'flights', search_products: 'products', weather: 'weather', weather_forecast: 'weather',
   stock: 'stocks', stocks: 'stocks', compare_stocks: 'stocks', plan_trip: 'trip', show_map: 'map', show_recipe: 'recipe',
 };
-const TOOL_PRODUCTS = { gmail: 'Gmail', calendar: 'Google Calendar', drive: 'Google Drive', sheets: 'Google Sheets', slides: 'Google Slides', slack: 'Slack' };
+const TOOL_PRODUCTS = { gmail: 'Gmail', calendar: 'Google Calendar', tasks: 'Google Tasks', drive: 'Google Drive', sheets: 'Google Sheets', slides: 'Google Slides', slack: 'Slack' };
 function toolLabel(name) {
   const tool = String(name || '');
   if (TOOL_KEYS[tool]) return tr(`today.tool.${TOOL_KEYS[tool]}`);

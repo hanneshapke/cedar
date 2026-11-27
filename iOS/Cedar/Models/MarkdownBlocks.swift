@@ -186,3 +186,38 @@ private struct Parser {
         blocks.append(.table(header: header, rows: rows))
     }
 }
+
+/// `[n]` in the agent's text, pointing at the numbered sources of its run.
+enum Citations {
+    /// `text` with each `[n]` that names a source linked to it. Code spans and links are left
+    /// as they are, and so is a number no source has.
+    static func link(_ text: AttributedString, sources: [Int: URL]) -> AttributedString {
+        guard !sources.isEmpty else { return text }
+        // Found first, as character offsets, and linked after: linking changes the runs.
+        var found: [(offset: Int, length: Int, url: URL)] = []
+        var offset = 0
+        for run in text.runs {
+            let piece = Array(text[run.range].characters)
+            defer { offset += piece.count }
+            if run.link != nil || run.inlinePresentationIntent?.contains(.code) == true { continue }
+            var i = 0
+            while i < piece.count {
+                guard piece[i] == "[" else { i += 1; continue }
+                var end = i + 1
+                while end < piece.count, end - i <= 2, piece[end].isASCII, piece[end].isNumber { end += 1 }
+                guard end > i + 1, end < piece.count, piece[end] == "]",
+                      let n = Int(String(piece[(i + 1)..<end])), let url = sources[n]
+                else { i += 1; continue }
+                found.append((offset + i, end + 1 - i, url))
+                i = end + 1
+            }
+        }
+        var out = text
+        for cite in found {
+            let start = out.characters.index(out.startIndex, offsetBy: cite.offset)
+            let end = out.characters.index(start, offsetBy: cite.length)
+            out[start..<end].link = cite.url
+        }
+        return out
+    }
+}

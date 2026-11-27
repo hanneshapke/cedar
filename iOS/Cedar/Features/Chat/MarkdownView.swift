@@ -3,6 +3,8 @@ import SwiftUI
 /// Renders the agent's Markdown: blocks from `MarkdownBlock`, inline styling from `Text`.
 struct MarkdownView: View {
     let text: String
+    /// The run's numbered sources: `[n]` in the text links to the one it names.
+    var sources: [Int: URL] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -12,6 +14,18 @@ struct MarkdownView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
+        .environment(\.citationSources, sources)
+    }
+}
+
+private struct CitationSourcesKey: EnvironmentKey {
+    static let defaultValue: [Int: URL] = [:]
+}
+
+private extension EnvironmentValues {
+    var citationSources: [Int: URL] {
+        get { self[CitationSourcesKey.self] }
+        set { self[CitationSourcesKey.self] = newValue }
     }
 }
 
@@ -73,9 +87,10 @@ private struct BlockView: View {
     }
 }
 
-/// A run of inline Markdown (emphasis, code spans, links), keeping line breaks.
+/// A run of inline Markdown (emphasis, code spans, links, `[n]` citations), keeping line breaks.
 private struct InlineText: View {
     let source: String
+    @Environment(\.citationSources) private var sources
 
     init(_ source: String) {
         self.source = source
@@ -87,6 +102,7 @@ private struct InlineText: View {
 
     private var attributed: AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: source, options: options)) ?? AttributedString(source)
+        let text = (try? AttributedString(markdown: source, options: options)) ?? AttributedString(source)
+        return Citations.link(text, sources: sources)
     }
 }

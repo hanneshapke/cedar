@@ -179,6 +179,20 @@ class FixtureServerTest(unittest.TestCase):
         found = self.get("/google/calendar/calendars/primary/events", {"q": "priya"})
         self.assertEqual([e["summary"] for e in found["items"]], ["Lunch with Priya"])
 
+    def test_calendar_keeps_created_events_until_reset(self):
+        made = self.post("/google/calendar/calendars/primary/events?sendUpdates=all", {
+            "summary": "Kiln pickup",
+            "start": {"dateTime": "2026-11-04T18:00:00-08:00", "timeZone": "America/Los_Angeles"},
+            "end": {"dateTime": "2026-11-04T18:30:00-08:00", "timeZone": "America/Los_Angeles"},
+            "attendees": [{"email": "sam@example.com"}]})
+        self.assertEqual(made["id"], "created-1")
+        found = self.get("/google/calendar/calendars/primary/events", {"q": "kiln"})
+        self.assertEqual([e["id"] for e in found["items"]], ["created-1"])
+        state = self.get("/_admin/state")
+        self.assertEqual(state["events"][0]["attendees"][0]["email"], "sam@example.com")
+        self.post("/_admin/reset", {"persona": "maya", "anchor": ANCHOR})
+        self.assertEqual(self.get("/_admin/state")["events"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

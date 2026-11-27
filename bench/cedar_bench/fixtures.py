@@ -14,8 +14,8 @@ that point at them:
 
 and the harness's own routes:
 
-    POST /_admin/reset  {"persona", "anchor"?}   load a persona and forget drafts and the log
-    GET  /_admin/state                            drafts, the request log, and fixture misses
+    POST /_admin/reset  {"persona", "anchor"?}   load a persona and forget drafts, created events and the log
+    GET  /_admin/state                            drafts, created events, the request log, and fixture misses
     GET  /_admin/health
 
 The server holds one persona at a time, so trials against one server run one after another.
@@ -88,6 +88,7 @@ class Fixtures:
             "anchor": self.anchor.isoformat(),
             "base": self.public_url,
             "drafts": self.google.drafts if self.google else [],
+            "events": [g._event(e) for e in g.created] if (g := self.google) else [],
             "requests": self.log,
             "misses": [r for r in self.log if r["status"] == 404],
         }
@@ -383,6 +384,8 @@ class Handler(BaseHTTPRequestHandler):
             if parts[:1] == ["calendar"]:
                 if method == "POST" and parts[1:] == ["freeBusy"]:
                     return 200, *_json(g.free_busy(json.loads(body)))
+                if method == "POST" and parts[1:2] == ["calendars"] and parts[3:] == ["events"]:
+                    return 200, *_json(g.calendar_create_event(parts[2], json.loads(body)))
                 if method == "GET":
                     return 200, *_json(g.calendar_get(parts[1:], query))
         raise NotFound("/".join(parts))

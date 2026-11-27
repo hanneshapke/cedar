@@ -902,6 +902,7 @@ impl Integrations {
             ("drive", google("drive", "DRIVE")),
             ("sheets", google("sheets", "SHEETS")),
             ("slides", google("slides", "SLIDES")),
+            ("tasks", google("tasks", "TASKS")),
             (
                 "slack",
                 if cfg.slack {
@@ -1460,7 +1461,7 @@ impl Integrations {
         let services = self.google_services();
         let client = self.google_oauth();
         let unavailable = if services.is_empty() {
-            Some("Gmail, Calendar, Drive, Sheets and Slides are off on the server")
+            Some("Gmail, Calendar, Drive, Sheets, Slides and Tasks are off on the server")
         } else if client.is_none() {
             Some("The server has no Google OAuth client yet; an admin sets one up")
         } else if self.secrets.is_none() {

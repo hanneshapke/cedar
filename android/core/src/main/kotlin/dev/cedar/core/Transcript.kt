@@ -386,6 +386,21 @@ data class TurnTranscript(
     val awaitingPlan: Plan?
         get() = items.asReversed().firstNotNullOfOrNull { (it as? TranscriptItem.PlanItem)?.plan?.takeIf(Plan::awaiting) }
 
+    /**
+     * Where each `[n]` in the run's text points: the web sources its tools read, by the number the
+     * model cites them by.
+     */
+    val citations: Map<Int, String>
+        get() {
+            val out = linkedMapOf<Int, String>()
+            for (item in items) {
+                for (source in (item as? TranscriptItem.Tool)?.call?.sources.orEmpty()) {
+                    if (source.url.startsWith("https://") || source.url.startsWith("http://")) out.putIfAbsent(source.n, source.url)
+                }
+            }
+            return out
+        }
+
     /** The follow-ups the turn's finished tool calls suggested, in order, each with its tool call's id. */
     val followUps: List<Pair<String, FollowUpSuggestion>>
         get() = items.mapNotNull { item -> (item as? TranscriptItem.Tool)?.call?.let { call -> call.followUp?.let { call.id to it } } }
