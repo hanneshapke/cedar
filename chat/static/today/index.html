@@ -25,6 +25,10 @@
         <button class="linkish" id="to-today" type="button" hidden data-i18n="today.backToToday">Back to today</button>
       </nav>
       <span class="spacer"></span>
+      <form class="search" id="search-form" role="search">
+        <label class="sr" for="search-input" data-i18n="today.search.placeholder">Search everything</label>
+        <input type="search" id="search-input" maxlength="200" placeholder="Search everything" data-i18n-attr="placeholder:today.search.placeholder">
+      </form>
       <a class="needs" id="needs" href="#now" hidden><span class="dot" aria-hidden="true"></span><span id="needs-text"></span></a>
       <a class="btn" href="/v3/" data-i18n="today.allChats">All conversations</a>
     </header>
@@ -32,6 +36,9 @@
     <!-- One ask's outcome (#/t/<turn>): the answer and what it left behind, filled in by today.js
          from /api/turns/{id}/outcome. While it shows, the river is hidden. -->
     <article class="outcome" id="outcome" hidden aria-live="polite"></article>
+
+    <!-- What a search found (#/q/<words>): conversations, agents, memories and record sets. -->
+    <section class="outcome" id="search" hidden aria-live="polite"></section>
 
     <div class="layout" id="layout">
       <main class="river" id="river" aria-live="polite">
@@ -80,6 +87,10 @@
               <label data-watch="email"><span class="sr" data-i18n="today.watch.query">Gmail search</span><input type="text" id="watch-query" placeholder="from:bank subject:invoice" maxlength="500"></label>
               <label data-watch="calendar" hidden><input type="number" id="watch-minutes" min="1" max="1440" value="30"> <span data-i18n="today.watch.minutesBefore">minutes before</span></label>
               <a class="linkish" href="/v3/#/agents/new" data-i18n="today.watch.other">Something else…</a>
+            </div>
+
+            <div class="draft-row">
+              <button class="linkish" id="when-draft" type="button" data-i18n="today.draft.button">Work out the When from what I wrote</button>
             </div>
 
             <div class="ask-foot">

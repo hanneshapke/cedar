@@ -12,9 +12,11 @@
 const $ = (id) => document.getElementById(id);
 const TOKEN_KEY = 'cedar-chat-token';
 /** How often the river refreshes while the page is in view. */
-const REFRESH_MS = 15000;
+const REFRESH_MS = 60000;
+/** How long after a notice from the server the page reloads: several often come together. */
+const NOTICE_SETTLE_MS = 400;
 
-const state = { day: null, data: null, timer: null, sending: false };
+const state = { day: null, data: null, timer: null, sending: false, drafted: null, draftNote: '' };
 
 function storage(op, key, value) {
   try {
@@ -94,7 +96,12 @@ function describe(trigger, kind) {
       if (t.frequency === 'weekdays') return tr('today.desc.weekdays', { time: fmtClock(t.time) });
       if (t.frequency === 'weekly') return tr('today.desc.weekly', { day: weekdayName(t.weekday ?? 0), time: fmtClock(t.time) });
       return tr('today.desc.daily', { time: fmtClock(t.time) });
-    case 'once': return tr('today.desc.once');
+    case 'once': {
+      const at = t.at ? new Date(t.at) : null;
+      return at && !Number.isNaN(at.getTime())
+        ? tr('today.desc.onceAt', { when: at.toLocaleString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) })
+        : tr('today.desc.once');
+    }
     case 'interval': return tr('today.desc.interval', { count: t.every_minutes });
     case 'monthly': return tr('today.desc.monthly', { day: String(t.day), time: fmtClock(t.time) });
     case 'email': return tr('today.desc.email');
@@ -102,6 +109,25 @@ function describe(trigger, kind) {
     case 'webhook': case 'device': return tr('today.desc.call');
     default: return tr('today.desc.change');
   }
+}
+
+/** What a tool is, in a word or two; a tool this page doesn't know keeps its own name. */
+const TOOL_KEYS = {
+  web_search: 'webSearch', fetch_url: 'page', web_fetch: 'page', bash: 'command', run_python: 'code',
+  read_file: 'file', write_file: 'file', read_document: 'file', download_file: 'file',
+  generate_pdf: 'pdf', generate_chart: 'chart', remember: 'memory', recall: 'memory', ask_user: 'question',
+  follow_up: 'followUp', suggest_follow_up: 'followUp', computer: 'computer', browser: 'browser',
+  search_flights: 'flights', search_products: 'products', weather: 'weather', weather_forecast: 'weather',
+  stock: 'stocks', stocks: 'stocks', compare_stocks: 'stocks', plan_trip: 'trip', show_map: 'map', show_recipe: 'recipe',
+};
+const TOOL_PRODUCTS = { gmail: 'Gmail', calendar: 'Google Calendar', drive: 'Google Drive', sheets: 'Google Sheets', slides: 'Google Slides', slack: 'Slack' };
+function toolLabel(name) {
+  const tool = String(name || '');
+  if (TOOL_KEYS[tool]) return tr(`today.tool.${TOOL_KEYS[tool]}`);
+  const family = tool.split('_')[0];
+  if (TOOL_PRODUCTS[family]) return TOOL_PRODUCTS[family];
+  if (family === 'records') return tr('today.tool.records');
+  return tool.replace(/_/g, ' ');
 }
 
 // -- DOM helpers -------------------------------------------------------------------------------
@@ -184,8 +210,20 @@ function nowCard(t) {
     for (const wait of t.waits) {
       if (wait.kind === 'plan') {
         body.append(el('p', '', tr('today.planWaiting')));
+        const steps = Array.isArray(wait.steps) ? wait.steps.filter((s) => s && typeof s.title === 'string') : [];
         const actions = el('div', 'actions');
-        actions.append(link(conversationHref(t.conversation_id), 'go', tr('today.reviewPlan')));
+        if (steps.length) {
+          // The plan as cedar wrote it: the go-ahead agrees to exactly these steps.
+          const list = el('ol', 'plan');
+          for (const step of steps) list.append(el('li', '', step.title));
+          body.append(list);
+          actions.append(
+            button(tr('today.goAhead'), 'go', (e) => busy(e.currentTarget, body, () => api('POST', `/turns/${t.turn_id}/plan`, { steps }))),
+            link(conversationHref(t.conversation_id), '', tr('today.changePlan')),
+          );
+        } else {
+          actions.append(link(conversationHref(t.conversation_id), 'go', tr('today.reviewPlan')));
+        }
         body.append(actions);
       } else {
         const approval = wait.key.replace(/^approval:/, '');
@@ -218,13 +256,18 @@ function nowCard(t) {
     body.append(form);
   } else {
     const actions = el('div', 'actions');
-    actions.append(el('span', 'progress', tr('today.working')));
+    actions.append(el('span', 'progress', progressText(t.progress)));
     actions.append(button(tr('today.stop'), '', (e) => busy(e.currentTarget, body, () => api('POST', `/turns/${t.turn_id}/cancel`))));
     body.append(actions);
   }
   card.append(body);
   return card;
 }
+
+/** Where a response still going is: what it is using now and how many steps so far. */
+const progressText = (progress) => (progress?.steps
+  ? `${toolLabel(progress.doing)} · ${tr('today.stepsSoFar', { count: progress.steps })}`
+  : tr('today.working'));
 
 /** A call an unattended run held for the person's OK (the outbox), under now: where it came from,
  *  and the shared card that sends, edits or discards it. */
@@ -336,14 +379,16 @@ const HINTS = { now: 'today.hint.now', later: 'today.hint.later', every: 'today.
 
 const currentWhen = () => document.querySelector('input[name=when]:checked')?.value || 'now';
 
-function whenChanged() {
+function whenChanged(event) {
+  // A choice made by hand replaces what was read out of the sentence.
+  if (event) { state.drafted = null; state.draftNote = ''; }
   const when = currentWhen();
   for (const detail of document.querySelectorAll('.when-detail')) detail.hidden = detail.dataset.for !== when;
   const privateBox = $('private');
   if (when !== 'now') privateBox.checked = false;
   $('private-wrap').hidden = when !== 'now';
   $('ask-send').textContent = tr(SEND_LABELS[when]);
-  $('when-hint').textContent = tr(privateBox.checked ? 'today.hint.private' : HINTS[when]);
+  $('when-hint').textContent = state.draftNote || tr(privateBox.checked ? 'today.hint.private' : HINTS[when]);
   $('every-weekday-wrap').hidden = $('every-frequency').value !== 'weekly';
   const kind = $('watch-kind').value;
   for (const field of document.querySelectorAll('[data-watch]')) field.hidden = field.dataset.watch !== kind;
@@ -351,6 +396,8 @@ function whenChanged() {
 
 /** The trigger the form describes for a When other than now. */
 function triggerFor(when) {
+  // A reading the form can't show (monthly, every N minutes) is sent as it was read.
+  if (state.drafted?.when === when) return state.drafted.trigger;
   if (when === 'later') {
     const at = $('later-at').value;
     if (!at) throw new Error(tr('today.later.missing'));
@@ -395,6 +442,9 @@ async function ask(e) {
   try {
     const made = await api('POST', '/asks', body);
     $('ask-input').value = '';
+    state.drafted = null;
+    state.draftNote = '';
+    whenChanged();
     // Off the record stays out of the river: it lives only in its conversation.
     if (made.conversation?.private) { location.href = conversationHref(made.conversation.id); return; }
     await load();
@@ -565,6 +615,7 @@ async function showOutcome(id) {
   clearTimeout(outcomeState.timer);
   $('layout').hidden = true;
   $('day-nav').hidden = true;
+  $('search').hidden = true;
   $('outcome').hidden = false;
   if (first) { $('outcome').replaceChildren(el('p', 'quiet', tr('today.outcome.loading'))); window.scrollTo(0, 0); }
   let o;
@@ -660,7 +711,14 @@ function renderOutcome(o) {
   });
   const records = o.records.map((r) => {
     const row = el('div', 'kept');
-    row.append(el('span', '', tr('today.outcome.saved', { set: r.set, key: r.key || '' })));
+    const text = el('span', 'record');
+    text.append(el('span', '', tr('today.outcome.saved', { set: r.set, key: r.key || '' })));
+    // The row's values, briefly: text and numbers only.
+    const values = Object.entries(r.data && typeof r.data === 'object' ? r.data : {})
+      .filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v) && String(v) !== '')
+      .slice(0, 6).map(([k, v]) => `${k}: ${String(v).slice(0, 80)}`);
+    if (values.length) text.append(el('span', 'tag', values.join(' · ')));
+    row.append(text);
     return row;
   });
   cedarFollowUp.known(o.followup_decisions);
@@ -693,7 +751,9 @@ function renderOutcome(o) {
       const list = el('ol', 'steps');
       for (const s of o.steps) {
         const li = el('li', s.is_error ? 'failed' : '');
-        li.append(el('code', '', s.name));
+        const what = el('span', '', toolLabel(s.name));
+        what.title = s.name;
+        li.append(what);
         if (s.is_error) li.append(el('span', 'tag failed', tr('today.outcome.stepFailed')));
         list.append(li);
       }
@@ -755,13 +815,155 @@ async function busyOutcome(node, work) {
   }
 }
 
+// -- reading the When, searching, and hearing from the server -----------------------------------
+
+/** Ask the server what When the sentence asks for, and set the form to it; nothing is sent. */
+async function draftWhen() {
+  const content = $('ask-input').value.trim();
+  const error = $('ask-error');
+  error.hidden = true;
+  if (!content) { $('ask-input').focus(); return; }
+  const node = $('when-draft');
+  node.disabled = true;
+  node.textContent = tr('today.draft.working');
+  try {
+    applyDraft(await api('POST', '/asks/draft', { content, timezone: zone }));
+  } catch (e) {
+    error.textContent = e.message;
+    error.hidden = false;
+  } finally {
+    node.disabled = false;
+    node.textContent = tr('today.draft.button');
+  }
+}
+
+/** Put a reading (`{when, trigger, content}`) into the form, for the person to check and send. */
+function applyDraft(d) {
+  const when = ['now', 'later', 'every', 'watch'].includes(d.when) ? d.when : 'now';
+  const t = d.trigger || {};
+  if (typeof d.content === 'string' && d.content.trim()) $('ask-input').value = d.content;
+  document.querySelector(`input[name=when][value=${when}]`).checked = true;
+  state.drafted = null;
+  if (t.kind === 'once' && t.at) $('later-at').value = String(t.at).slice(0, 16);
+  else if (t.kind === 'time') {
+    $('every-frequency').value = ['daily', 'weekdays', 'weekly'].includes(t.frequency) ? t.frequency : 'daily';
+    if (t.weekday != null) $('every-weekday').value = String(t.weekday);
+    if (t.time) $('every-time').value = t.time;
+  } else if (t.kind === 'email') { $('watch-kind').value = 'email'; $('watch-query').value = t.query || ''; }
+  else if (t.kind === 'calendar') { $('watch-kind').value = 'calendar'; $('watch-minutes').value = String(t.minutes_before || 30); }
+  else if (t.kind) state.drafted = { when, trigger: t };
+  state.draftNote = when === 'now' ? tr('today.draft.now') : tr('today.draft.read', { what: describe(t, t.kind) });
+  whenChanged();
+  // What the form can't show is said by the note alone: its own fields stay out of the way.
+  if (state.drafted) for (const detail of document.querySelectorAll('.when-detail')) detail.hidden = true;
+}
+
+let searchToken = 0;
+async function showSearch(q) {
+  const token = ++searchToken;
+  clearTimeout(outcomeState.timer);
+  $('layout').hidden = true;
+  $('day-nav').hidden = true;
+  $('outcome').hidden = true;
+  const view = $('search');
+  view.hidden = false;
+  $('search-input').value = q;
+  const back = link('#', 'back', '');
+  back.append(el('span', '', tr('today.outcome.back')));
+  view.replaceChildren(back, el('p', 'quiet', tr('today.outcome.loading')));
+  let found;
+  try {
+    found = await api('GET', `/search?q=${encodeURIComponent(q)}`);
+  } catch (e) {
+    if (token === searchToken) view.replaceChildren(back, el('p', 'error', e.message));
+    return;
+  }
+  if (token !== searchToken) return;
+  document.title = tr('today.pageTitle', { day: q });
+
+  const conversations = found.conversations.map((c) => {
+    const row = el('div', 'hit');
+    const title = c.title || c.snippet || '';
+    row.append(c.turn_id ? link(outcomeHref(c.turn_id), 'file-name', title) : link(conversationHref(c.id), 'file-name', title));
+    if (c.snippet) row.append(el('span', 'summary', c.snippet));
+    if (c.schedule_title) row.append(el('span', 'tag', c.schedule_title));
+    return row;
+  });
+  const agents = found.agents.map((a) => {
+    const row = el('div', 'hit');
+    row.append(link(agentHref(a.id), 'file-name', a.title), el('span', 'tag', describe(a.trigger, a.trigger_kind)));
+    return row;
+  });
+  const memories = found.memories.map((m) => {
+    const row = el('div', 'kept');
+    row.append(el('span', '', m.text));
+    row.append(button(tr('today.outcome.forget'), 'linkish', async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        await api('DELETE', `/memory/${encodeURIComponent(m.id)}`);
+        row.replaceChildren(el('span', 'quiet', tr('today.outcome.forgotten', { text: m.text })));
+      } catch (err) { e.currentTarget.disabled = false; toast(err.message); }
+    }));
+    return row;
+  });
+  const records = found.records.map((r) => {
+    const row = el('div', 'hit');
+    row.append(el('span', 'file-name', r.name));
+    if (r.description) row.append(el('span', 'summary', r.description));
+    row.append(el('span', 'tag', tr('today.search.rows', { count: Number(r.count) || 0 })));
+    return row;
+  });
+  const parts = [
+    part(tr('today.search.conversations'), conversations),
+    part(tr('today.search.agents'), agents),
+    part(tr('today.search.memories'), memories),
+    part(tr('today.search.records'), records),
+  ].filter(Boolean);
+  const head = el('header', 'outcome-head');
+  head.append(back, el('h1', '', tr('today.search.title', { q })));
+  view.replaceChildren(head, ...(parts.length ? parts : [el('p', 'quiet', tr('today.search.none'))]));
+}
+
+/**
+ * Hear from the server (GET /api/events: a response finished, one waits, the outbox changed) and
+ * reload what is showing, so the page doesn't wait for its next minute. The stream has no replay,
+ * and the minute's reload covers what it misses.
+ */
+async function listen() {
+  let settle = null;
+  const changed = () => {
+    clearTimeout(settle);
+    settle = setTimeout(() => {
+      if (document.visibilityState !== 'visible') return;
+      if (outcomeState.id) showOutcome(outcomeState.id);
+      else if (!$('layout').hidden && !$('now-list').contains(document.activeElement)) load();
+    }, NOTICE_SETTLE_MS);
+  };
+  const decoder = new TextDecoder();
+  for (;;) {
+    try {
+      const res = await fetch('/api/events', { headers: memoryToken ? { Authorization: `Bearer ${memoryToken}` } : {} });
+      if (res.ok && res.body) {
+        const reader = res.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          // Keep-alive comments are not news.
+          if (/^data:/m.test(decoder.decode(value, { stream: true }))) changed();
+        }
+      }
+    } catch { /* offline, or the server restarted: try again */ }
+    await new Promise((resolve) => { setTimeout(resolve, 5000); });
+  }
+}
+
 // -- start -------------------------------------------------------------------------------------
 
 function refreshSoon() {
   clearInterval(state.timer);
   state.timer = setInterval(() => {
     // Not while an answer is being typed: rendering would replace the field.
-    if (document.visibilityState !== 'visible' || !$('outcome').hidden || $('now-list').contains(document.activeElement)) return;
+    if (document.visibilityState !== 'visible' || $('layout').hidden || $('now-list').contains(document.activeElement)) return;
     load();
   }, REFRESH_MS);
 }
@@ -774,6 +976,8 @@ function start() {
 
   for (const input of document.querySelectorAll('input[name=when]')) input.addEventListener('change', whenChanged);
   for (const id of ['every-frequency', 'watch-kind', 'private']) $(id).addEventListener('change', whenChanged);
+  // A field changed by hand is no longer what was read out of the sentence.
+  for (const id of ['later-at', 'every-time', 'every-weekday', 'watch-query', 'watch-minutes']) $(id).addEventListener('input', whenChanged);
   $('ask').addEventListener('submit', ask);
   $('ask-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('ask').requestSubmit(); }
@@ -787,12 +991,19 @@ function start() {
   $('prev-day').addEventListener('click', () => shift(-1));
   $('next-day').addEventListener('click', () => shift(1));
   $('to-today').addEventListener('click', () => go(null));
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && $('outcome').hidden) load(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !$('layout').hidden) load(); });
   window.addEventListener('hashchange', route);
 
   whenChanged();
   refreshSoon();
+  $('when-draft').addEventListener('click', draftWhen);
+  $('search-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = $('search-input').value.trim();
+    if (q) location.hash = `#/q/${encodeURIComponent(q)}`;
+  });
   cedarFollowUp.init({ api, toast });
+  listen();
   if (!route()) go(null);
 }
 
@@ -803,8 +1014,11 @@ function route() {
   const hash = location.hash.slice(1);
   if (hash.startsWith('/agents')) { location.href = `/v3/#${hash}`; return true; }
   const turn = hash.match(/^\/t\/([0-9a-fA-F-]{36})$/);
-  if (turn) { showOutcome(turn[1]); return true; }
-  const wasOutcome = !$('outcome').hidden;
+  if (turn) { $('search').hidden = true; showOutcome(turn[1]); return true; }
+  const found = hash.match(/^\/q\/(.+)$/);
+  if (found) { hideOutcome(); showSearch(decodeURIComponent(found[1])); return true; }
+  const wasOutcome = !$('outcome').hidden || !$('search').hidden;
+  $('search').hidden = true;
   hideOutcome();
   if (!hash || /^\d{4}-\d{2}-\d{2}$/.test(hash)) { go(hash || null); return true; }
   if (wasOutcome) load();

@@ -233,3 +233,18 @@ a.tag { text-decoration: underline; }
 @media (max-width: 640px) {
   .outcome h1 { font-size: 25px; }
 }
+
+/* -- search, the plan in the river, reading the When -------------------------------------- */
+.search input { height: 44px; width: 220px; max-width: 100%; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line); background: transparent; }
+.search input:focus { border-color: var(--now); outline: none; }
+.hit { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.hit a { text-decoration: none; }
+.hit a:hover { text-decoration: underline; }
+.plan { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); }
+.draft-row { display: flex; }
+.draft-row .linkish { padding-left: 0; min-height: 44px; text-align: left; }
+.record { display: flex; flex-direction: column; gap: 2px; }
+@media (max-width: 640px) {
+  .search { flex: 1 1 100%; order: 5; }
+  .search input { width: 100%; }
+}
