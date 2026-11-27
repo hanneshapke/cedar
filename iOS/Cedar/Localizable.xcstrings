@@ -1858,6 +1858,29 @@
         }
       }
     },
+    "%lld steps so far" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bisher %lld Schritte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pasos hasta ahora"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld étapes jusqu'ici"
+          }
+        }
+      }
+    },
     "%lld stop" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2344,6 +2367,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 étape"
+          }
+        }
+      }
+    },
+    "1 step so far" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bisher 1 Schritt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 paso hasta ahora"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 étape jusqu'ici"
           }
         }
       }
@@ -4001,6 +4047,28 @@
         }
       }
     },
+    "Back to Today" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurück zu heute"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a hoy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revenir à aujourd'hui"
+          }
+        }
+      }
+    },
     "Bad response" : {
       "localizations" : {
         "de" : {
@@ -4728,6 +4796,51 @@
         }
       }
     },
+    "Cedar did nothing on this day, and nothing is due." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar hat an diesem Tag nichts getan, und nichts ist fällig."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar no hizo nada este día, y no hay nada pendiente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar n'a rien fait ce jour-là, et rien n'est prévu."
+          }
+        }
+      }
+    },
+    "Cedar found no time in this sentence. It runs now." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar hat in diesem Satz keine Zeit gefunden. Es läuft jetzt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar no encontró ningún momento en esta frase. Se ejecuta ahora."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar n'a trouvé aucun moment dans cette phrase. Elle s'exécute maintenant."
+          }
+        }
+      }
+    },
     "Cedar is busy right now, so %@ was not started. Try again in a moment." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4747,6 +4860,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cedar est occupé en ce moment ; %@ n’a donc pas été lancé. Réessayez dans un instant."
+          }
+        }
+      }
+    },
+    "Cedar is still answering in this conversation." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar antwortet in dieser Unterhaltung noch."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar todavía está respondiendo en esta conversación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar répond encore dans cette conversation."
           }
         }
       }
@@ -4906,6 +5042,51 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cedar a planifié ceci et attend votre feu vert"
+          }
+        }
+      }
+    },
+    "Cedar read the When from your sentence. Check it, then send." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar hat das Wann aus deinem Satz gelesen. Prüfe es und sende dann."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar leyó el cuándo en tu frase. Revísalo y luego envía."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar a lu le moment dans votre phrase. Vérifiez-le, puis envoyez."
+          }
+        }
+      }
+    },
+    "Cedar read this from your sentence. Pick another When to change it." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar hat das aus deinem Satz gelesen. Wähle ein anderes Wann, um es zu ändern."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar leyó esto en tu frase. Elige otro cuándo para cambiarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cedar a lu cela dans votre phrase. Choisissez un autre moment pour le modifier."
           }
         }
       }
@@ -5256,6 +5437,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Variation"
+          }
+        }
+      }
+    },
+    "Change the Plan" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan ändern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar el plan"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier le plan"
           }
         }
       }
@@ -11476,6 +11679,28 @@
         }
       }
     },
+    "Next day" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nächster Tag"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Día siguiente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jour suivant"
+          }
+        }
+      }
+    },
     "No" : {
       "localizations" : {
         "de" : {
@@ -12304,6 +12529,28 @@
         }
       }
     },
+    "Nothing on This Day" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nichts an diesem Tag"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada en este día"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien ce jour-là"
+          }
+        }
+      }
+    },
     "Nothing sent yet." : {
       "localizations" : {
         "de" : {
@@ -12992,6 +13239,28 @@
         }
       }
     },
+    "Open the Whole Conversation" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ganze Unterhaltung öffnen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir toda la conversación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir toute la conversation"
+          }
+        }
+      }
+    },
     "Open the chart on the web" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13284,28 +13553,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ouvre la carte en plein écran"
-          }
-        }
-      }
-    },
-    "Opens the whole conversation, where you send the next message." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öffnet die ganze Unterhaltung, in der du die nächste Nachricht sendest."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre toda la conversación, donde envías el siguiente mensaje."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvre toute la conversation, où vous envoyez le message suivant."
           }
         }
       }
@@ -14183,6 +14430,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Préparation"
+          }
+        }
+      }
+    },
+    "Previous day" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorheriger Tag"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Día anterior"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jour précédent"
           }
         }
       }
@@ -21288,6 +21557,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Retirée"
+          }
+        }
+      }
+    },
+    "Work Out the When" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wann herausfinden"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deducir el cuándo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déterminer le moment"
           }
         }
       }

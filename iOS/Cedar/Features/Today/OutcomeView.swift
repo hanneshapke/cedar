@@ -3,8 +3,8 @@ import SwiftUI
 /// What one ask came to, in a sheet: the answer rather than the transcript. What was asked, the
 /// gist as the headline, the answer, then what the turn left behind (the files it wrote or
 /// changed, what it remembered, the record rows it saved, the follow-up it suggested, what it
-/// held for your OK), with its steps and sources folded underneath. Keep going opens the
-/// conversation, where the next message is sent.
+/// held for your OK), with its steps and sources folded underneath. Keep going sends the next
+/// message from here and opens the conversation, where the reply streams.
 struct OutcomeView: View {
     let turnId: String
     @Environment(AppModel.self) private var app
@@ -19,6 +19,9 @@ struct OutcomeView: View {
     @State private var showingHow = false
     @State private var busy = false
     @State private var actionError: String?
+    /// The next message, typed under the outcome.
+    @State private var next = ""
+    @State private var sending = false
 
     var body: some View {
         NavigationStack {
@@ -91,7 +94,8 @@ struct OutcomeView: View {
                         .disabled(busy)
                 }
             }
-            if let answer = outcome.turn.finalText, !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // Without the paragraph the headline already says.
+            if let answer = outcome.answer {
                 MarkdownView(text: answer)
             }
             if !outcome.held.isEmpty {
@@ -116,11 +120,7 @@ struct OutcomeView: View {
             if !outcome.records.isEmpty {
                 part(L10n.string("Saved to your records")) {
                     ForEach(outcome.records, id: \.self) { record in
-                        Text(verbatim: record.label)
-                            .font(.subheadline)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .surfaceCard(radius: 12)
+                        recordRow(record)
                     }
                 }
             }
@@ -200,6 +200,24 @@ struct OutcomeView: View {
         }
     }
 
+    /// A record row the run saved: its set and key, and its values underneath.
+    private func recordRow(_ record: AskOutcome.Record) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: record.label)
+                .font(.subheadline.weight(.medium))
+            ForEach(record.values(), id: \.self) { value in
+                Text(verbatim: value)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .surfaceCard(radius: 12)
+        .textSelection(.enabled)
+    }
+
     /// Something the run remembered, with Forget; once forgotten, it says so.
     private func memoryRow(_ memory: AskOutcome.Memory) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -241,8 +259,8 @@ struct OutcomeView: View {
                         Text(verbatim: "\(index + 1).")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
-                        Text(verbatim: step.name)
-                            .font(.footnote.monospaced())
+                        // "Web search", not `web_search`, as the chat names its steps.
+                        Text(verbatim: stepLabel(step.name))
                         if step.isError {
                             Text("Failed")
                                 .font(.caption)
@@ -285,18 +303,34 @@ struct OutcomeView: View {
         .surfaceCard()
     }
 
-    /// Keep going: the conversation, where the next message (or the answer to its question) goes.
+    /// Keep going: the next message (or the answer to its question), sent from here; the
+    /// conversation then opens, where the reply streams. The whole conversation is one tap away.
     private func foot(_ outcome: AskOutcome) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                open(outcome.conversation.id)
-            } label: {
-                Text(verbatim: L10n.string(outcome.state == .asking ? "Answer" : "Keep going from here"))
+        let asking = outcome.state == .asking
+        let text = next.trimmingCharacters(in: .whitespacesAndNewlines)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField(L10n.string(asking ? "Your answer" : "Keep going from here"), text: $next, axis: .vertical)
+                    .lineLimit(1...5)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(sending)
+                if sending {
+                    ProgressView()
+                } else {
+                    Button {
+                        keepGoing(outcome.conversation.id, text)
+                    } label: {
+                        Text(verbatim: L10n.string(asking ? "Answer" : "Send"))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.green)
+                    // A response still going takes no new message.
+                    .disabled(text.isEmpty || outcome.state == .working)
+                }
             }
-            .buttonStyle(ProminentButtonStyle())
-            Text("Opens the whole conversation, where you send the next message.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Button("Open the Whole Conversation") { open(outcome.conversation.id) }
+                .buttonStyle(.borderless)
+                .font(.footnote)
         }
         .padding(.top, 4)
     }
@@ -322,6 +356,23 @@ struct OutcomeView: View {
     private func open(_ conversationId: String) {
         app.open(conversationId: conversationId)
         dismiss()
+    }
+
+    /// Sends the next message; the conversation opens under this sheet as it starts.
+    private func keepGoing(_ conversationId: String, _ text: String) {
+        guard !text.isEmpty else { return }
+        sending = true
+        Task {
+            defer { sending = false }
+            do {
+                try await app.keepGoing(conversationId: conversationId, text: text)
+                next = ""
+                dismiss()
+            } catch is CancellationError {
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
     }
 
     private func forget(_ memory: AskOutcome.Memory) {

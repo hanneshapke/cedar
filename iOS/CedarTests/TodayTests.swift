@@ -118,6 +118,9 @@ final class TodayTests: XCTestCase {
         // Only http(s) addresses open; a source without a title is called by its address or path.
         XCTAssertEqual(outcome.sources.map(\.label), ["Visit Lisbon", "javascript:alert(1)", "notes.md"])
         XCTAssertEqual(outcome.sources.map { $0.link?.absoluteString }, ["https://visit.example/lisbon", nil, nil])
+        // The answer was only its gist, under a heading: the headline says it all.
+        XCTAssertNil(outcome.answer)
+        XCTAssertEqual(outcome.records[0].values(), [L10n.labeled("city", "Lisbon")])
         XCTAssertEqual(outcome.followups[0].followUp?.title, "Fares")
         XCTAssertNil(outcome.followups[1].followUp)
         XCTAssertEqual(outcome.decision(for: outcome.followups[0])?.isDismissed, true)
@@ -144,6 +147,10 @@ final class TodayTests: XCTestCase {
         var draft = AskDraft(now: now, timezone: zone)
         // Two hours on, on the hour; mornings at seven.
         XCTAssertEqual(AgentClock.at(draft.laterAt, timezone: zone), "2026-11-27T12:00")
+        // The hour is the local clock's: half past a UTC hour where the zone is half an hour off.
+        let kolkata = AskDraft(now: now, timezone: "Asia/Kolkata")
+        XCTAssertEqual(AgentClock.at(kolkata.laterAt, timezone: "Asia/Kolkata"), "2026-11-27T17:00")
+        XCTAssertEqual(CedarDate.parse("2026-11-27T11:30:00Z"), kolkata.laterAt)
         XCTAssertEqual(AgentClock.time(draft.time, timezone: zone), "07:00")
         XCTAssertNotNil(draft.problem(now: now), "nothing to ask yet")
 
@@ -221,5 +228,167 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(later.when, "later")
         XCTAssertNil(later.conversation)
         XCTAssertEqual(later.agent?.trigger, .once(at: "2026-12-03T09:00", timezone: "UTC"))
+    }
+
+    func testAPlanComesWithItsStepsAndAResponseWithWhereItIs() throws {
+        let timeline = try JSONDecoder.cedar.decode(Timeline.self, from: Data("""
+        {"day":"2026-11-27","today":true,"needs_you":1,
+         "now":[
+          {"turn_id":"t1","conversation_id":"c1","prompt":"Plan Lisbon","state":"waiting","created_at":"2026-11-27T09:30:00Z",
+           "waits":[{"kind":"plan","key":"plan","reason":null,
+                     "steps":[{"id":"s1","title":"Check the calendar"},{"id":"s2","title":"Compare flights"}]}],
+           "progress":{"steps":2,"doing":"fetch_url"}},
+          {"turn_id":"t2","conversation_id":"c2","prompt":"Older server","state":"waiting","created_at":"2026-11-27T09:31:00Z",
+           "waits":[{"kind":"plan","key":"plan"},{"kind":"plan","key":"plan2","steps":"not a list"}],"progress":null},
+          {"turn_id":"t3","conversation_id":"c3","prompt":"Just started","state":"working","created_at":"2026-11-27T09:32:00Z"}]}
+        """.utf8))
+        let plan = try XCTUnwrap(timeline.now[0].waits.first)
+        XCTAssertTrue(plan.isPlan)
+        XCTAssertEqual(plan.steps, [PlanStep(id: "s1", title: "Check the calendar"), PlanStep(id: "s2", title: "Compare flights")])
+        XCTAssertEqual(timeline.now[0].progress, TimelineProgress(steps: 2, doing: "fetch_url"))
+        // No steps, or steps of another shape, read as none: the plan then opens its chat.
+        XCTAssertEqual(timeline.now[1].waits.map(\.steps.count), [0, 0])
+        XCTAssertNil(timeline.now[1].progress)
+        XCTAssertNil(timeline.now[2].progress)
+    }
+
+    func testDaysAreCountedOnTheCalendar() {
+        XCTAssertEqual(Timeline.day("2026-11-27", offsetBy: -1), "2026-11-26")
+        XCTAssertEqual(Timeline.day("2026-12-31", offsetBy: 1), "2027-01-01")
+        XCTAssertEqual(Timeline.day("2028-03-01", offsetBy: -1), "2028-02-29")
+        // Across a clock change the day after is still the next date.
+        XCTAssertEqual(Timeline.day("2026-03-28", offsetBy: 2), "2026-03-30")
+        XCTAssertNil(Timeline.day("yesterday", offsetBy: 1))
+        XCTAssertEqual(Timeline.title(of: "2026-11-27", locale: Locale(identifier: "en_US")), "Friday, November 27")
+        XCTAssertEqual(Timeline.title(of: "soon", locale: Locale(identifier: "en_US")), "soon")
+    }
+
+    func testTheAnswerDoesNotRepeatItsHeadline() {
+        let summary = "Friday 13 to Sunday 15 March is free, and it works."
+        let answer = "## The plan\n\nFriday 13 to Sunday 15 March is **free**, and [it works](https://x.org) [1].\n\n### Days\n\n- Fri: Alfama\n- Sat: Belém"
+        // The paragraph the headline says goes, and so does the heading left with nothing under it.
+        XCTAssertEqual(AskOutcome.withoutHeadline(answer, summary: summary), "### Days\n\n- Fri: Alfama\n- Sat: Belém")
+        // A heading that still has something under it stays.
+        XCTAssertEqual(AskOutcome.withoutHeadline("## The plan\n\nIt works.\n\nFlights are cheap.", summary: "It works."),
+                       "## The plan\n\nFlights are cheap.")
+        // A paragraph over two lines is one, as the summary has it.
+        XCTAssertEqual(AskOutcome.withoutHeadline("It works,\nand well.\n\nMore.", summary: "It works, and well."), "More.")
+        // Nothing else was said: nothing is left.
+        XCTAssertEqual(AskOutcome.withoutHeadline("It works.", summary: "It works."), "")
+        // Another gist (cut short, say), none at all, or prose that comes after a list: as it was.
+        XCTAssertEqual(AskOutcome.withoutHeadline(answer, summary: "Friday 13 to Sunday 15 March is free…"), answer)
+        XCTAssertEqual(AskOutcome.withoutHeadline(answer, summary: nil), answer)
+        let listFirst = "- One\n- Two\n\nIt works."
+        XCTAssertEqual(AskOutcome.withoutHeadline(listFirst, summary: "It works."), listFirst)
+        // Code is kept whole, blank lines and all.
+        let code = "It works.\n\n```\na\n\nb\n```"
+        XCTAssertEqual(AskOutcome.withoutHeadline(code, summary: "It works."), "```\na\n\nb\n```")
+    }
+
+    func testARecordRowShowsItsPlainValues() throws {
+        let outcome = try JSONDecoder.cedar.decode([AskOutcome.Record].self, from: Data("""
+        [{"set":"trips","key":"lisbon","data":{"city":"Lisbon","nights":3,"price":412.5,"booked":true,"notes":"  ",
+                                               "tags":["a"],"stay":{"name":"x"},"left":null}},
+         {"set":"weight","key":42,"data":{"kg":71}},
+         {"set":"log"}]
+        """.utf8))
+        XCTAssertEqual(outcome[0].label, L10n.labeled("trips", "lisbon"))
+        XCTAssertEqual(outcome[0].values(), [L10n.labeled("booked", L10n.string("Yes")), L10n.labeled("city", "Lisbon"),
+                                             L10n.labeled("nights", "3"), L10n.labeled("price", "412.5")])
+        XCTAssertEqual(outcome[0].values(limit: 2).count, 2)
+        XCTAssertEqual(outcome[1].key, "42")
+        XCTAssertEqual(outcome[1].values(), [L10n.labeled("kg", "71")])
+        XCTAssertEqual(outcome[2].label, "log")
+        XCTAssertEqual(outcome[2].values(), [])
+    }
+
+    func testAReadingFillsTheSheetOrIsKeptAsRead() throws {
+        let zone = "Europe/Zurich"
+        let now = try XCTUnwrap(CedarDate.parse("2026-11-27T09:42:10Z"))
+        func reading(_ json: String) throws -> AskReading {
+            try JSONDecoder.cedar.decode(AskReading.self, from: Data(json.utf8))
+        }
+
+        // A clock the sheet shows: its fields are filled in, and the sentence loses its timing.
+        var draft = AskDraft(now: now, timezone: zone)
+        draft.text = "Brief me every Tuesday at 7:30"
+        draft.offTheRecord = true
+        draft.apply(try reading("""
+        {"when":"every","trigger":{"kind":"time","frequency":"weekly","weekday":1,"time":"07:30","timezone":"Europe/Zurich"},"content":"Brief me"}
+        """), now: now)
+        XCTAssertEqual(draft.text, "Brief me")
+        XCTAssertEqual(draft.when, .every)
+        XCTAssertFalse(draft.offTheRecord)
+        XCTAssertNil(draft.keptTrigger)
+        XCTAssertEqual(draft.trigger(), .time(frequency: "weekly", weekday: 1, time: "07:30", timezone: zone))
+
+        // Once, mail and the calendar are shown too.
+        draft.apply(try reading("""
+        {"when":"later","trigger":{"kind":"once","at":"2026-12-03T09:00","timezone":"Europe/Zurich"},"content":"Call the dentist"}
+        """), now: now)
+        XCTAssertEqual(draft.when, .later)
+        XCTAssertEqual(draft.trigger(), .once(at: "2026-12-03T09:00", timezone: zone))
+        draft.apply(try reading("""
+        {"when":"watch","trigger":{"kind":"email","query":"from:bank","every_minutes":5},"content":"File it"}
+        """), now: now)
+        XCTAssertEqual(draft.when, .watch)
+        XCTAssertEqual(draft.watch, .email)
+        XCTAssertEqual(draft.query, "from:bank")
+        draft.apply(try reading("""
+        {"when":"watch","trigger":{"kind":"calendar","minutes_before":15,"new_events":false,"every_minutes":5},"content":"Prepare me"}
+        """), now: now)
+        XCTAssertEqual(draft.watch, .calendar)
+        XCTAssertEqual(draft.minutesBefore, 15)
+        XCTAssertNil(draft.keptTrigger)
+
+        // A trigger the fields can't show is kept as read, and sent unchanged...
+        draft.apply(try reading("""
+        {"when":"every","trigger":{"kind":"monthly","day":1,"time":"08:00","timezone":"Europe/Zurich"},"content":"Pay the rent"}
+        """), now: now)
+        let monthly = Trigger.monthly(day: 1, time: "08:00", timezone: zone)
+        XCTAssertEqual(draft.keptTrigger, monthly)
+        XCTAssertEqual(draft.trigger(), monthly)
+        XCTAssertNil(draft.problem(now: now))
+        let body = try json(draft.body())
+        XCTAssertEqual(body["when"] as? String, "every")
+        XCTAssertEqual((body["trigger"] as? [String: Any])?["kind"] as? String, "monthly")
+        // ...until another When is picked; coming back, the fields speak again.
+        draft.when = .later
+        XCTAssertNil(draft.keptTrigger)
+        XCTAssertEqual(draft.trigger(), .once(at: "2026-12-03T09:00", timezone: zone))
+        draft.apply(try reading("""
+        {"when":"every","trigger":{"kind":"interval","every_minutes":60},"content":"Check the queue"}
+        """), now: now)
+        XCTAssertEqual(draft.keptTrigger, .interval(everyMinutes: 60))
+
+        // No time in the sentence, or an answer this app can't read: it runs now, as written.
+        draft.apply(try reading("""
+        {"when":"now","trigger":null,"content":"What is the tallest mountain?"}
+        """), now: now)
+        XCTAssertEqual(draft.when, .now)
+        XCTAssertNil(draft.keptTrigger)
+        XCTAssertNil(draft.trigger())
+        XCTAssertEqual(draft.text, "What is the tallest mountain?")
+        draft.apply(try reading("""
+        {"when":"every","trigger":"soon","content":""}
+        """), now: now)
+        XCTAssertEqual(draft.when, .now)
+        XCTAssertEqual(draft.text, "What is the tallest mountain?", "an empty sentence leaves what was typed")
+    }
+
+    func testDecodesWhatElseASearchFound() throws {
+        let extras = try JSONDecoder.cedar.decode(SearchExtras.self, from: Data("""
+        {"q":"lisbon","conversations":[{"id":"c1","turn_id":"t1"}],
+         "agents":[{"id":"a1","title":"Watch fares to Lisbon","enabled":true,"trigger_kind":"time",
+                    "trigger":{"kind":"time","frequency":"daily","time":"07:00","timezone":"UTC"},"watches":false,"next_run_at":null}],
+         "memories":[{"id":"m1","text":"Loved Lisbon in spring","kind":"fact"}],
+         "records":[{"name":"trips","description":"Trips, Lisbon included","count":3}]}
+        """.utf8))
+        XCTAssertFalse(extras.isEmpty)
+        XCTAssertEqual(extras.agents.map(\.title), ["Watch fares to Lisbon"])
+        XCTAssertEqual(extras.memories.map(\.text), ["Loved Lisbon in spring"])
+        XCTAssertEqual(extras.records.map(\.name), ["trips"])
+        // An older server's answer, or one with nothing, is empty.
+        XCTAssertTrue(try JSONDecoder.cedar.decode(SearchExtras.self, from: Data("{}".utf8)).isEmpty)
     }
 }

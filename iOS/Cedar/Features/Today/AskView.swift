@@ -3,13 +3,18 @@ import SwiftUI
 /// Asking with a When, in a sheet: one sentence, and when it should run. Now starts a
 /// conversation (off the record, if chosen: a private chat). Later, Every… and When something
 /// changes make an agent of the sentence, with the trigger the choices describe; anything a
-/// trigger needs beyond that is in the agent form.
+/// trigger needs beyond that is in the agent form. Work Out the When has Cedar read the When
+/// out of the sentence: it fills the choices in (or keeps a trigger they can't show, as read),
+/// and nothing is sent until the person sends it.
 struct AskView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var draft = AskDraft()
     @State private var busy = false
     @State private var error: String?
+    /// Cedar is reading the When out of the sentence; and what it said once it has.
+    @State private var reading = false
+    @State private var readNote: String?
     @FocusState private var typing: Bool
 
     /// Monday first, as the server counts weekdays.
@@ -23,6 +28,11 @@ struct AskView: View {
                               text: $draft.text, axis: .vertical)
                         .lineLimit(3...8)
                         .focused($typing)
+                    readButton
+                } footer: {
+                    if let readNote {
+                        Text(verbatim: readNote)
+                    }
                 }
                 Section {
                     Picker("When", selection: $draft.when) {
@@ -68,14 +78,48 @@ struct AskView: View {
             .onChange(of: draft.when) { _, when in
                 // Nothing of an ask off the record is kept for later.
                 if when != .now { draft.offTheRecord = false }
+                // A trigger kept as read belongs to the When it was read for.
+                if when != draft.keptWhen {
+                    draft.kept = nil
+                    draft.keptWhen = nil
+                }
                 error = nil
             }
         }
     }
 
-    /// What the chosen When needs.
+    /// Has Cedar read the When out of the sentence.
+    private var readButton: some View {
+        Button {
+            read()
+        } label: {
+            HStack(spacing: 8) {
+                Label("Work Out the When", systemImage: "wand.and.stars")
+                if reading {
+                    Spacer(minLength: 4)
+                    ProgressView().controlSize(.small)
+                }
+            }
+        }
+        .disabled(reading || busy || draft.content.isEmpty)
+    }
+
+    /// What the chosen When needs; or, for a trigger kept as Cedar read it, what it says.
     @ViewBuilder
     private var details: some View {
+        if let kept = draft.keptTrigger {
+            Section {
+                Label(kept.summary, systemImage: kept.systemImage)
+            } footer: {
+                Text("Cedar read this from your sentence. Pick another When to change it.")
+            }
+        } else {
+            fields
+        }
+    }
+
+    @ViewBuilder
+    private var fields: some View {
         switch draft.when {
         case .now:
             if app.serverHasPrivateChats {
@@ -126,6 +170,29 @@ struct AskView: View {
                 }
             } footer: {
                 Text("For anything else to watch (a price, a page, your records), make an agent under Agents.")
+            }
+        }
+    }
+
+    /// Asks Cedar what When the sentence means and fills the sheet with its reading.
+    private func read() {
+        reading = true
+        error = nil
+        readNote = nil
+        let asked = draft.content
+        Task {
+            defer { reading = false }
+            do {
+                let answer = try await app.readAsk(asked)
+                // The sentence was changed meanwhile: the reading is of another one.
+                guard draft.content == asked else { return }
+                draft.apply(answer)
+                readNote = draft.when == .now
+                    ? L10n.string("Cedar found no time in this sentence. It runs now.")
+                    : L10n.string("Cedar read the When from your sentence. Check it, then send.")
+            } catch is CancellationError {
+            } catch {
+                self.error = error.localizedDescription
             }
         }
     }

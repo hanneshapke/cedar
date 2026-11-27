@@ -9,7 +9,9 @@ struct OutcomeSelection: Identifiable, Hashable {
 /// The sidebar's Today list: one day as a river. What is going or waits on you comes first
 /// (Now): a risky call is allowed or denied right there, a held call approved or discarded, and
 /// a plan or a question opens its conversation. Earlier is what Cedar did today, newest first,
-/// each opening its outcome; Ahead is the agents due next and the ones that keep watch.
+/// each opening its outcome; Ahead is the agents due next and the ones that keep watch. The bar
+/// on top moves to other days, which show what happened or is due then; Now and asking are
+/// today's.
 struct TodayRows: View {
     @Environment(AppModel.self) private var app
     @Binding var actionError: String?
@@ -22,15 +24,22 @@ struct TodayRows: View {
 
     var body: some View {
         Section {
-            Button {
-                ask()
-            } label: {
-                Label("Ask for Something", systemImage: "square.and.pencil")
+            if let timeline = app.timeline {
+                TodayDayBar(day: timeline.day, isToday: timeline.today)
+                    .listRowSeparator(.hidden)
+                    .sidebarRow()
             }
-            .buttonStyle(ProminentButtonStyle())
-            .disabled(!app.settings.isConfigured)
-            .listRowSeparator(.hidden)
-            .sidebarRow()
+            if app.timeline?.today != false {
+                Button {
+                    ask()
+                } label: {
+                    Label("Ask for Something", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(ProminentButtonStyle())
+                .disabled(!app.settings.isConfigured)
+                .listRowSeparator(.hidden)
+                .sidebarRow()
+            }
         }
         if let error = app.todayError {
             Section {
@@ -53,8 +62,7 @@ struct TodayRows: View {
     @ViewBuilder
     private func river(_ timeline: Timeline) -> some View {
         if timeline.isEmpty {
-            ContentUnavailableView("Nothing Yet Today", systemImage: "calendar",
-                                   description: Text("Ask for something, and it lands here."))
+            empty(today: timeline.today)
                 .listRowSeparator(.hidden)
                 .sidebarRow()
         }
@@ -116,6 +124,17 @@ struct TodayRows: View {
             } header: {
                 Text("Ahead")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func empty(today: Bool) -> some View {
+        if today {
+            ContentUnavailableView("Nothing Yet Today", systemImage: "calendar",
+                                   description: Text("Ask for something, and it lands here."))
+        } else {
+            ContentUnavailableView("Nothing on This Day", systemImage: "calendar",
+                                   description: Text("Cedar did nothing on this day, and nothing is due."))
         }
     }
 
@@ -189,7 +208,7 @@ private struct TodayNowRow: View {
             default:
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
-                    Text("Working on it")
+                    Text(verbatim: working)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 4)
@@ -205,6 +224,14 @@ private struct TodayNowRow: View {
         .surfaceCard(stroke: needsYou ? Theme.clay.opacity(0.6) : Theme.line)
     }
 
+    /// Where it is: what it is doing and how many steps it has taken, once it has taken one.
+    private var working: String {
+        guard let progress = turn.progress, progress.steps > 0 else { return L10n.string("Working on it") }
+        let count = progress.steps == 1 ? L10n.string("1 step so far") : L10n.format("%lld steps so far", progress.steps)
+        guard let doing = progress.doing, !doing.isEmpty else { return count }
+        return "\(stepLabel(doing)) · \(count)"
+    }
+
     private var pill: String {
         switch turn.state {
         case .waiting: return L10n.string("Waiting for you")
@@ -213,9 +240,44 @@ private struct TodayNowRow: View {
         }
     }
 
-    /// A plan opens its conversation, where its steps can be changed; a call is decided here.
+    /// A call is decided here, and so is a plan whose steps came with it; changing the steps
+    /// is the conversation's. A plan without its steps (an older server) opens the conversation.
     @ViewBuilder
     private func waiting(_ wait: TimelineWait) -> some View {
+        if wait.isPlan, !wait.steps.isEmpty {
+            plan(wait.steps)
+        } else {
+            decision(wait)
+        }
+    }
+
+    /// The plan's steps, with the go-ahead.
+    private func plan(_ steps: [PlanStep]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(verbatim: "\(index + 1).")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                    Text(verbatim: step.title)
+                }
+                .font(.subheadline)
+            }
+            HStack(spacing: 8) {
+                Button("Go ahead") { agree(steps) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.clay)
+                    .disabled(busy)
+                Button("Change the Plan") { app.open(conversationId: turn.conversationId) }
+                    .buttonStyle(.bordered)
+                    .disabled(busy)
+                if busy { ProgressView().controlSize(.small) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func decision(_ wait: TimelineWait) -> some View {
         if let approvalId = wait.approvalId {
             let reason = (wait.reason ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             Text(verbatim: reason.isEmpty ? L10n.string("Cedar wants to do something that needs your OK.") : reason)
@@ -256,6 +318,21 @@ private struct TodayNowRow: View {
         }
     }
 
+    private func agree(_ steps: [PlanStep]) {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await app.agreePlan(turnId: turn.turnId, steps: steps)
+            } catch is CancellationError {
+            } catch {
+                // Agreed elsewhere meanwhile, or the wait ran out: the river says which.
+                actionError = error.localizedDescription
+                await app.refreshToday()
+            }
+        }
+    }
+
     private func stop() {
         busy = true
         Task {
@@ -267,6 +344,67 @@ private struct TodayNowRow: View {
                 actionError = error.localizedDescription
                 await app.refreshToday()
             }
+        }
+    }
+}
+
+/// The bar over the river: the day it shows, the days before and after, and the way back.
+private struct TodayDayBar: View {
+    @Environment(AppModel.self) private var app
+    /// `YYYY-MM-DD`, as the river says it.
+    let day: String
+    let isToday: Bool
+    @State private var moving = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    move(by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 44, height: 36)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(Text("Previous day"))
+                Spacer(minLength: 0)
+                Text(verbatim: Timeline.title(of: day, locale: L10n.locale))
+                    .font(.subheadline.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+                Button {
+                    move(by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .frame(width: 44, height: 36)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(Text("Next day"))
+            }
+            .disabled(moving)
+            if !isToday {
+                Button("Back to Today") { back() }
+                    .buttonStyle(.borderless)
+                    .font(.footnote)
+                    .disabled(moving)
+            }
+        }
+    }
+
+    private func move(by offset: Int) {
+        moving = true
+        Task {
+            await app.moveToday(by: offset)
+            moving = false
+        }
+    }
+
+    private func back() {
+        moving = true
+        Task {
+            await app.backToToday()
+            moving = false
         }
     }
 }

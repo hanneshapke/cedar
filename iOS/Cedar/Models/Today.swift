@@ -253,10 +253,16 @@ struct Timeline: Decodable, Sendable {
         return dayFormatter.string(from: moved)
     }
 
-    /// `day` as an instant at noon UTC, which is that calendar day when shown in UTC; `nil`
-    /// when it isn't a date.
-    static func noon(of day: String) -> Date? {
-        dayFormatter.date(from: day)?.addingTimeInterval(12 * 3600)
+    /// `day` written out for a heading ("Friday, 27 November"), in `locale`; `day` itself when
+    /// it isn't a date.
+    static func title(of day: String, locale: Locale) -> String {
+        guard let date = dayFormatter.date(from: day) else { return day }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
+        return formatter.string(from: date)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -702,7 +708,10 @@ struct AskDraft: Hashable, Sendable {
 
     init(now: Date = Date(), timezone: String = TimeZone.current.identifier) {
         self.timezone = timezone
-        laterAt = Self.defaultLater(now: now)
+        // The hour is the zone's the times are in: this device's, unless a test says otherwise.
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: timezone) ?? .current
+        laterAt = Self.defaultLater(now: now, calendar: calendar)
         time = AgentClock.date(time: "07:00", timezone: timezone, on: now) ?? now
     }
 

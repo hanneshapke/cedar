@@ -551,8 +551,8 @@ struct CodeBox: View {
 /// What the step is called: "Web search" or "Chart", not the tool's function name
 /// (`web_search`, `generate_chart`). A tool the app has no word for (one of Google's, a personal
 /// or community tool) is shown by its own name with the underscores taken out: `gmail_search`
-/// reads "Gmail search".
-private func stepLabel(_ name: String) -> String {
+/// reads "Gmail search". Today's rows and outcomes name a run's steps the same way.
+func stepLabel(_ name: String) -> String {
     switch name {
     case "web_search": return L10n.string("Web search")
     case "bash": return L10n.string("Command")
