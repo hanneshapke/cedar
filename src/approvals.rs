@@ -405,6 +405,7 @@ pub fn describe(name: &str, input: &Value) -> String {
         "drive" => "your Google Drive",
         "sheets" => "your Google Sheets",
         "slides" => "your Google Slides",
+        "tasks" => "your Google Tasks",
         "gmail" => "your Gmail",
         "slack" => "Slack",
         _ => "your account",
@@ -670,6 +671,10 @@ mod tests {
             "Create event in your calendar: \"Dentist\"."
         );
         assert_eq!(describe("sheets_append_values", &json!({})), "Append values in your Google Sheets.");
+        assert_eq!(
+            describe("tasks_create_task", &json!({ "title": "Renew passport" })),
+            "Create task in your Google Tasks: \"Renew passport\"."
+        );
         assert_eq!(
             describe("slides_create_presentation", &json!({ "title": "Q3 review", "slides": [] })),
             "Create presentation in your Google Slides: \"Q3 review\"."

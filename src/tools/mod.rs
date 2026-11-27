@@ -41,6 +41,7 @@ mod products;
 mod python;
 mod recipe;
 mod stocks;
+mod tasks;
 mod transit;
 mod weather;
 mod web_search;
@@ -296,6 +297,7 @@ impl AccountTools {
                 "drive" => drive::tools(api, auth.clone())?,
                 "sheets" => sheets::tools(api, auth.clone())?,
                 "slides" => slides::tools(api, auth.clone())?,
+                "tasks" => tasks::tools(api, auth.clone())?,
                 other => anyhow::bail!("no REST API tools for {other}"),
             };
             tools.extend(made.into_iter().map(Arc::from));
@@ -726,6 +728,7 @@ const GROUP_WORDS: &[(&str, &[&str])] = &[
     ("drive", &["drive", "doc", "docs", "gdoc", "folder", "google"]),
     ("sheets", &["sheet", "spreadsheet", "google"]),
     ("slides", &["slide", "slides", "deck", "presentation", "powerpoint", "keynote", "pitch"]),
+    ("tasks", &["task", "todo", "to-do", "reminder", "remind", "checklist"]),
     (slack::PREFIX, &["slack", "channel", "dm"]),
 ];
 
@@ -791,16 +794,17 @@ pub const GROUPS: &[(&str, &str)] = &[
     ("drive", "Google Drive & Docs"),
     ("sheets", "Google Sheets"),
     ("slides", "Google Slides"),
+    ("tasks", "Google Tasks"),
     (slack::PREFIX, "Slack"),
     (custom::GROUP, "Personal tools"),
 ];
 
 /// The groups that act for the connected Google account; each tool's name starts with its group.
-pub const GOOGLE_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", "slides"];
+pub const GOOGLE_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", "slides", "tasks"];
 
 /// The groups that act for a connected account, Google's or Slack's: their tools read what other
 /// people wrote, some of them write, and each one's name starts with its group.
-pub const ACCOUNT_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", "slides", slack::PREFIX];
+pub const ACCOUNT_GROUPS: &[&str] = &["gmail", "calendar", "drive", "sheets", "slides", "tasks", slack::PREFIX];
 
 /// The group a tool belongs to, by name. Personal tools can have any name, so use
 /// [`ToolSet::group`] where the set is at hand.
@@ -828,6 +832,7 @@ pub fn group_of(name: &str) -> &'static str {
         n if n.starts_with("drive_") => "drive",
         n if n.starts_with("sheets_") => "sheets",
         n if n.starts_with("slides_") => "slides",
+        n if n.starts_with("tasks_") => "tasks",
         n if n.starts_with("slack_") => slack::PREFIX,
         _ => "core",
     }
@@ -930,7 +935,7 @@ impl<'a> ToolView<'a> {
         } else if !how.interactive && how.hold_writes && account_writes {
             note.push_str(
                 "Nobody is reading along in this run, so you can't ask anything, and whatever \
-                 you send or change in the user's accounts (mail, calendar, files, Slack) is not \
+                 you send or change in the user's accounts (mail, calendar, tasks, files, Slack) is not \
                  done right away: each such call is held in their outbox, where they approve, \
                  edit or discard it later. Write each one complete and ready to go, since it is \
                  sent as you wrote it and you won't be asked again. Make each call once, don't \
@@ -1122,6 +1127,9 @@ impl<'a> ToolView<'a> {
         }
         if calendar {
             note.push_str(" For the user's calendar, use the calendar_ tools.");
+        }
+        if has("tasks") {
+            note.push_str(" For the user's to-do list (Google Tasks), use the tasks_ tools.");
         }
         if drive || sheets {
             note.push_str(" For the user's files in Google Drive, use the");
@@ -1873,6 +1881,8 @@ mod tests {
         assert!(writes("gmail_create_draft"));
         assert!(writes("gmail_send_message"));
         assert!(writes("calendar_update_event"));
+        assert_eq!(group_of("tasks_list_tasks"), "tasks");
+        assert!(writes("tasks_create_task") && !writes("tasks_list_tasks"));
         assert!(!writes("write_file"));
         assert_eq!(group_of("slack_read_messages"), "slack");
         assert!(writes("slack_send_message"));

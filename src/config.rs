@@ -41,6 +41,7 @@ pub const DEFAULT_GOOGLE_SCOPES: &str = "openid email \
     https://www.googleapis.com/auth/gmail.compose \
     https://www.googleapis.com/auth/calendar.readonly \
     https://www.googleapis.com/auth/calendar.events \
+    https://www.googleapis.com/auth/tasks \
     https://www.googleapis.com/auth/drive.readonly \
     https://www.googleapis.com/auth/drive.file";
 pub const DEFAULT_GMAIL_MCP_URL: &str = "https://gmailmcp.googleapis.com/mcp/v1";
@@ -66,6 +67,10 @@ pub const DEFAULT_SHEETS_TOOLS: &str = "get_spreadsheet,read_range";
 /// The Slides tools: making a presentation, adding slides to one cedar made, and reading one's
 /// outline. With the `drive.file` scope they reach only the presentations cedar itself created.
 pub const DEFAULT_SLIDES_TOOLS: &str = "create_presentation,append_slides,get_presentation";
+pub const DEFAULT_TASKS_API_URL: &str = "https://tasks.googleapis.com/tasks/v1";
+/// The Google Tasks tools: reading the lists and their tasks, and adding a task. Nothing that
+/// completes, changes, or deletes one.
+pub const DEFAULT_TASKS_TOOLS: &str = "list_task_lists,list_tasks,create_task";
 pub const DEFAULT_SYSTEM_PROMPT: &str = "\
 You are Cedar, a personal AI assistant. You work for one person and help with whatever they bring \
 you: questions, research, writing, email and calendar, shopping, travel, money, code and files. \
@@ -569,7 +574,7 @@ impl Config {
         };
         let mut google_apis = Vec::new();
         let mut mcp_servers = Vec::new();
-        // Google has MCP servers for Gmail and Calendar; Drive, Sheets and Slides are REST only.
+        // Google has MCP servers for Gmail and Calendar; Drive, Sheets, Slides and Tasks are REST only.
         for (prefix, flag_name, default_mcp_url, default_api_url, default_tools) in [
             (
                 "gmail",
@@ -605,6 +610,13 @@ impl Config {
                 None,
                 DEFAULT_SLIDES_API_URL,
                 DEFAULT_SLIDES_TOOLS,
+            ),
+            (
+                "tasks",
+                "TASKS",
+                None,
+                DEFAULT_TASKS_API_URL,
+                DEFAULT_TASKS_TOOLS,
             ),
         ] {
             // On unless turned off: the tools only appear once a Google OAuth client is there
@@ -1368,7 +1380,7 @@ mod tests {
         let cfg = Config::from_lookup(lookup(&[("CEDAR_API_KEYS", "a")])).unwrap();
         assert!(cfg.mcp_servers.is_empty());
         let prefixes: Vec<&str> = cfg.google_apis.iter().map(|a| a.prefix.as_str()).collect();
-        assert_eq!(prefixes, ["gmail", "calendar", "drive", "sheets", "slides"]);
+        assert_eq!(prefixes, ["gmail", "calendar", "drive", "sheets", "slides", "tasks"]);
         assert!(cfg.google_oauth.is_none());
         assert_eq!(cfg.google.auth_url, DEFAULT_GOOGLE_AUTH_URL);
         assert!(cfg.google.scopes.iter().any(|s| s == "email"));
@@ -1379,7 +1391,8 @@ mod tests {
             ("CALENDAR", "off"),
             ("DRIVE", "off"),
             ("SHEETS", "off"),
-                    ("SLIDES", "off"),
+            ("SLIDES", "off"),
+            ("TASKS", "off"),
         ]))
         .unwrap();
         assert!(cfg.google_apis.is_empty());
@@ -1521,6 +1534,11 @@ mod tests {
                     url: DEFAULT_SLIDES_API_URL.into(),
                     tools: DEFAULT_SLIDES_TOOLS.split(',').map(String::from).collect(),
                 },
+                GoogleApiConfig {
+                    prefix: "tasks".into(),
+                    url: DEFAULT_TASKS_API_URL.into(),
+                    tools: DEFAULT_TASKS_TOOLS.split(',').map(String::from).collect(),
+                },
             ]
         );
 
@@ -1535,6 +1553,7 @@ mod tests {
                     ("DRIVE_TOOLS", "search_files"),
                     ("SHEETS", "off"),
                     ("SLIDES", "off"),
+                    ("TASKS", "off"),
                 ],
             ]
             .concat(),
@@ -1576,6 +1595,7 @@ mod tests {
                     ("DRIVE", "off"),
                     ("SHEETS", "off"),
                     ("SLIDES", "off"),
+                    ("TASKS", "off"),
                     ("GOOGLE_BACKEND", "MCP"),
                     ("CALENDAR_MCP_URL", "http://localhost:9999/mcp"),
                     ("CALENDAR_TOOLS", "list_events, create_event"),

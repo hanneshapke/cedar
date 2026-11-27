@@ -1,4 +1,4 @@
-//! The Gmail, Calendar, Drive, Sheets and Slides tools through Google's REST APIs (`GOOGLE_BACKEND=api`,
+//! The Gmail, Calendar, Drive, Sheets, Slides and Tasks tools through Google's REST APIs (`GOOGLE_BACKEND=api`,
 //! the default), against a local mock of the token endpoint and the APIs.
 
 mod common;
@@ -303,6 +303,47 @@ async fn slides_get(
     .into_response()
 }
 
+async fn tasks_get(
+    State(mock): State<Arc<Mock>>,
+    Path(path): Path<String>,
+    RawQuery(query): RawQuery,
+    headers_in: HeaderMap,
+) -> Response {
+    mock.record("GET", &format!("/tasks/{path}"), query, &headers_in);
+    match path.as_str() {
+        "users/@me/lists" => Json(json!({ "items": [
+            { "id": "list-1", "title": "My Tasks", "updated": "2026-10-01T10:00:00.000Z" },
+        ] }))
+        .into_response(),
+        "lists/@default/tasks" => Json(json!({ "items": [
+            { "id": "k1", "title": "Renew passport", "status": "needsAction",
+              "due": "2026-10-20T00:00:00.000Z", "notes": "Form DS-82" },
+            { "id": "k2", "title": "Book flights", "status": "completed", "parent": "k1",
+              "completed": "2026-10-02T09:00:00.000Z" },
+        ], "nextPageToken": "page-2" }))
+        .into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `tasks.insert`: the task comes back as posted, with an ID.
+async fn tasks_post(
+    State(mock): State<Arc<Mock>>,
+    Path(path): Path<String>,
+    headers_in: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    mock.record("POST", &format!("/tasks/{path}"), None, &headers_in);
+    if path != "lists/list-1/tasks" {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    mock.posted.lock().unwrap().push(body.clone());
+    let mut task = body;
+    task["id"] = json!("k9");
+    task["status"] = json!("needsAction");
+    Json(task).into_response()
+}
+
 async fn start(mock: Mock) -> (String, Arc<Mock>) {
     let mock = Arc::new(mock);
     let app = Router::new()
@@ -313,6 +354,7 @@ async fn start(mock: Mock) -> (String, Arc<Mock>) {
         .route("/calendar/{*path}", get(calendar_get).post(calendar_post))
         .route("/drive/{*path}", get(drive_get))
         .route("/sheets/{*path}", get(sheets_get))
+        .route("/tasks/{*path}", get(tasks_get).post(tasks_post))
         .route("/slides", post(slides_post))
         .route("/slides/{*path}", get(slides_get).post(slides_post))
         .with_state(mock.clone());
@@ -328,6 +370,7 @@ async fn app(script: Vec<Step>, base: &str, extra: &[(&str, &str)]) -> TestApp {
     let drive = format!("{base}/drive");
     let sheets = format!("{base}/sheets");
     let slides = format!("{base}/slides");
+    let tasks = format!("{base}/tasks");
     let token = format!("{base}/token");
     let mut env = vec![
         ("GMAIL", "on"),
@@ -337,6 +380,7 @@ async fn app(script: Vec<Step>, base: &str, extra: &[(&str, &str)]) -> TestApp {
         ("DRIVE_API_URL", drive.as_str()),
         ("SHEETS_API_URL", sheets.as_str()),
         ("SLIDES_API_URL", slides.as_str()),
+        ("TASKS_API_URL", tasks.as_str()),
         ("GOOGLE_CLIENT_ID", "client"),
         ("GOOGLE_CLIENT_SECRET", "secret"),
         ("GOOGLE_REFRESH_TOKEN", "refresh"),
@@ -630,6 +674,71 @@ async fn an_event_is_added_to_the_calendar() {
 }
 
 #[tokio::test]
+async fn tasks_are_listed_and_one_is_added() {
+    let (base, mock) = start(Mock::default()).await;
+    let app = app(
+        vec![
+            Step::Reply(tool_use("t1", "tasks_list_task_lists", json!({}))),
+            Step::Reply(tool_use(
+                "t2",
+                "tasks_list_tasks",
+                json!({ "showCompleted": true, "dueBefore": "2026-10-31" }),
+            )),
+            Step::Reply(tool_use(
+                "t3",
+                "tasks_create_task",
+                json!({ "title": "Call Ana", "due": "2026-10-15", "taskListId": "list-1" }),
+            )),
+            Step::Reply(tool_use("t4", "tasks_create_task", json!({ "title": "x", "due": "soon" }))),
+            Step::Reply(text("done")),
+        ],
+        &base,
+        &[("GMAIL", "off"), ("CALENDAR", "off")],
+    )
+    .await;
+    run_to_completion(&app).await;
+
+    let first = &app.llm.requests()[0];
+    let names: Vec<&str> = first["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .filter(|n| n.starts_with("tasks_"))
+        .collect();
+    assert_eq!(names, ["tasks_list_task_lists", "tasks_list_tasks", "tasks_create_task"]);
+    let system = first["system"].as_str().unwrap();
+    assert!(system.contains("use the tasks_ tools"), "{system}");
+
+    let lists = result_json(&app, 1);
+    assert_eq!(lists["taskLists"], json!([{ "id": "list-1", "title": "My Tasks", "updated": "2026-10-01T10:00:00.000Z" }]));
+
+    let tasks = result_json(&app, 2);
+    assert_eq!(tasks["nextPageToken"], "page-2");
+    assert_eq!(
+        tasks["tasks"][0],
+        json!({ "id": "k1", "title": "Renew passport", "notes": "Form DS-82", "due": "2026-10-20" })
+    );
+    assert_eq!(tasks["tasks"][1]["done"], true);
+    assert_eq!(tasks["tasks"][1]["parentTaskId"], "k1");
+    let (path, query) = mock.requests("/tasks/lists/@default")[0].clone();
+    assert_eq!(path, "/tasks/lists/@default/tasks");
+    assert!(query.contains("showCompleted=true&showHidden=true"), "{query}");
+    // The whole of the last day counts.
+    assert!(query.contains("dueMax=2026-11-01T00%3A00%3A00.000Z"), "{query}");
+
+    let made = result_json(&app, 3);
+    assert_eq!(made["task"]["id"], "k9");
+    assert_eq!(made["task"]["due"], "2026-10-15");
+    let posted = mock.posted.lock().unwrap().clone();
+    assert_eq!(posted, [json!({ "title": "Call Ana", "due": "2026-10-15T00:00:00.000Z" })]);
+
+    let refused = tool_result(&app, 4);
+    assert_eq!(refused["is_error"], true);
+    assert!(refused["content"].as_str().unwrap().contains("due: invalid date"));
+}
+
+#[tokio::test]
 async fn drive_files_are_found_read_and_saved_and_sheets_are_read() {
     let (base, mock) = start(Mock::default()).await;
     let app = app(
@@ -856,8 +965,19 @@ async fn mail_and_calendar_can_be_read_outside_a_run() {
     assert_eq!(body["is_error"], false, "{body}");
     assert!(body["json"]["events"].is_array(), "{body}");
 
+    let (status, body) = app
+        .json(
+            Method::POST,
+            "/v1/tools/tasks_list_tasks/call",
+            Some(KEY_A),
+            Some(json!({ "input": {} })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["json"]["tasks"][0]["title"], "Renew passport", "{body}");
+
     // Reading one thread, or writing a draft, stays inside runs.
-    for name in ["gmail_get_thread", "gmail_create_draft", "calendar_get_event", "calendar_create_event"] {
+    for name in ["gmail_get_thread", "gmail_create_draft", "calendar_get_event", "calendar_create_event", "tasks_create_task"] {
         let (status, _) = app
             .json(Method::POST, &format!("/v1/tools/{name}/call"), Some(KEY_A), Some(json!({})))
             .await;

@@ -135,7 +135,7 @@ every service key can act for every user. A service key also gets one stream of 
 A user's runs never act for the server's Google account (the one an admin connects, or
 `GOOGLE_REFRESH_TOKEN`): that one is for the keys' own runs. Each user connects an account of
 their own, through the same OAuth client, and until they have, their runs are offered no Gmail,
-Calendar, Drive, Sheets or Slides tools and `GET /v1/tools` lists those groups as unavailable to them:
+Calendar, Drive, Sheets, Slides or Tasks tools and `GET /v1/tools` lists those groups as unavailable to them:
 
 | Route | What it does |
 | --- | --- |
@@ -173,7 +173,7 @@ can use), the personal tools in `TOOLS_DIR`, and `MAX_CONCURRENT_RUNS`, which al
 | `records` | `records_list`, `records_describe`, `records_save`, `records_lookup`, `records_drop`, and the list of the sets the run keeps (see [Records](#records)) |
 | `browser` | `browser` |
 | `computer` | `computer` |
-| `gmail`, `calendar`, `drive`, `sheets`, `slides` | every `gmail_*`, `calendar_*`, `drive_*`, `sheets_*` or `slides_*` tool, or name single ones (`gmail_search_threads`) |
+| `gmail`, `calendar`, `drive`, `sheets`, `slides`, `tasks` | every `gmail_*`, `calendar_*`, `drive_*`, `sheets_*`, `slides_*` or `tasks_*` tool, or name single ones (`gmail_search_threads`) |
 | `slack` | every `slack_*` tool, or name single ones (`slack_read_messages` to read without posting) |
 | `custom` | every [personal Python tool](#personal-tools-in-python) in `TOOLS_DIR`, or name single ones |
 
@@ -269,8 +269,9 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 ```
 
 - Only tools that read and need nothing of a run can be called: `weather_forecast`,
-  `compare_stocks`, `gmail_search_threads`, `calendar_list_calendars`, `calendar_list_events` and
-  `calendar_search_events` and `drive_search_files` (with the built-in Google backend, not
+  `compare_stocks`, `gmail_search_threads`, `calendar_list_calendars`, `calendar_list_events`,
+  `calendar_search_events`, `drive_search_files`, `tasks_list_task_lists` and `tasks_list_tasks`
+  (with the built-in Google backend, not
   `GOOGLE_BACKEND=mcp`), and
   [personal tools](#personal-tools-in-python). `GET /v1/tools` marks them `pollable`. Everything
   else (the sandbox tools, `fetch_url`, anything that writes, remembers or asks) is a `400`.
@@ -385,7 +386,7 @@ The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-se
 A run nobody answers can't ask for approval, so it either has no tools that write or acts with
 nobody looking. `"hold_writes": true` on `POST /v1/runs` is the third way: in a run that isn't
 interactive, every call that would send or change something in a connected account (the Gmail,
-Calendar, Drive, Sheets, Slides and Slack tools that write; reading is never held) is **not made**. It is
+Calendar, Drive, Sheets, Slides, Tasks and Slack tools that write; reading is never held) is **not made**. It is
 kept as a held call, exactly as the model wrote it, a `call.held` event says so, and the model is
 told the call waits for you and to go on without it.
 
@@ -909,9 +910,10 @@ Settings come from environment variables. The important ones:
 | `CEDAR_ADMIN_KEYS` | empty (comma-separated subset of `CEDAR_API_KEYS` that may manage [integrations](#integrations)) |
 | `CEDAR_SERVICE_KEYS` | empty (comma-separated subset of `CEDAR_API_KEYS` that may [act for users](#acting-for-users) with `X-Cedar-User`) |
 | `CEDAR_SECRET_KEY` | empty (64 hex characters, `openssl rand -hex 32`; encrypts integration credentials saved through the API, which can't be saved without it) |
-| `GOOGLE_SCOPES` | `openid email` plus `gmail.readonly`, `gmail.compose`, `calendar.readonly`, `calendar.events`, `drive.readonly`, `drive.file` (what "Connect Google" asks for; space- or comma-separated full scope URLs) |
+| `GOOGLE_SCOPES` | `openid email` plus `gmail.readonly`, `gmail.compose`, `calendar.readonly`, `calendar.events`, `tasks`, `drive.readonly`, `drive.file` (what "Connect Google" asks for; space- or comma-separated full scope URLs) |
 | `GMAIL_TOOLS` | `search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft` (`*` for every tool the server lists) |
 | `CALENDAR_TOOLS` | `list_calendars,list_events,get_event,search_events,suggest_time,create_event` |
+| `TASKS` / `TASKS_TOOLS` / `TASKS_API_URL` | `on` / `list_task_lists,list_tasks,create_task` / `https://tasks.googleapis.com/tasks/v1` (see [Google Tasks](#google-tasks)) |
 | `GMAIL_MCP_URL` / `CALENDAR_MCP_URL` | `https://gmailmcp.googleapis.com/mcp/v1` / `https://calendarmcp.googleapis.com/mcp/v1` |
 | `DOCKER_BIN` | `docker` (the Docker CLI, as a name on `PATH` or an absolute path; the desktop app sets it) |
 | `CEDAR_EXIT_ON_STDIN_EOF` | `off` (set `1` to shut down when stdin reaches end-of-file: a launcher holding a pipe to cedar then takes it down with itself) |
@@ -1152,8 +1154,8 @@ It needs a cedar built with the driver, `cargo build --features native-computer`
 ### Gmail and Calendar
 
 cedar offers tools for one Google account's mail and calendar (and its files in Drive, see
-[Google Drive, Docs and Sheets](#google-drive-docs-and-sheets), and presentations, see
-[Google Slides](#google-slides)) once a Google OAuth client is set
+[Google Drive, Docs and Sheets](#google-drive-docs-and-sheets), presentations, see
+[Google Slides](#google-slides), and to-dos, see [Google Tasks](#google-tasks)) once a Google OAuth client is set
 up and an account connected through it; `GMAIL=off` or `CALENDAR=off` removes the tools. They run
 in the cedar process (the sandbox has no network, and the Google tokens stay out of it) and use
 one of two backends, chosen with `GOOGLE_BACKEND`:
@@ -1179,10 +1181,10 @@ you; the environment works too, for a server without a chat or one you configure
 **From the chat UI** (Settings → Server, which needs `CEDAR_SECRET_KEY` and an admin key, see
 [Integrations](#integrations); the desktop app has both):
 
-1. In a Google Cloud project, enable the Gmail, Google Calendar, Google Drive, Google Sheets
-   and Google Slides APIs (`gcloud services enable gmail.googleapis.com
+1. In a Google Cloud project, enable the Gmail, Google Calendar, Google Drive, Google Sheets,
+   Google Slides and Google Tasks APIs (`gcloud services enable gmail.googleapis.com
    calendar-json.googleapis.com drive.googleapis.com sheets.googleapis.com
-   slides.googleapis.com --project=PROJECT_ID`; for `GOOGLE_BACKEND=mcp`,
+   slides.googleapis.com tasks.googleapis.com --project=PROJECT_ID`; for `GOOGLE_BACKEND=mcp`,
    `gmailmcp.googleapis.com calendarmcp.googleapis.com` as well).
 2. Set up the consent screen (Google Auth Platform in the console) with the scopes below, and
    publish it (*In production*). While it stays in *Testing*, Google expires the refresh token
@@ -1214,12 +1216,13 @@ redirect URI. The default tools need `https://www.googleapis.com/auth/gmail.read
 `https://www.googleapis.com/auth/gmail.compose` (drafts),
 `https://www.googleapis.com/auth/calendar.readonly`,
 `https://www.googleapis.com/auth/calendar.events` (adding events),
+`https://www.googleapis.com/auth/tasks` (Google Tasks),
 `https://www.googleapis.com/auth/drive.readonly` (Drive, Docs and Sheets) and
 `https://www.googleapis.com/auth/drive.file` (Slides: making files, and changing only the ones
 cedar made).
 
 When a cedar upgrade asks for a scope the connected account didn't grant (0.3.7 added
-`drive.readonly`, the Slides tools `drive.file`, and `calendar_create_event` `calendar.events`), the tools answer Google's "insufficient scopes" error until the account is
+`drive.readonly`, the Slides tools `drive.file`, `calendar_create_event` `calendar.events`, and the Tasks tools `tasks`), the tools answer Google's "insufficient scopes" error until the account is
 connected again; the Server page says which scopes are missing, and *Reconnect* grants them.
 
 cedar trades the refresh token for an access token when it first needs one and again shortly
@@ -1279,6 +1282,26 @@ Drive and Sheets APIs enabled in the Cloud project, and the `drive.readonly` sco
 - `sheets_read_range` reads a tab by name in windows of rows (`startRow`, `maxRows`, 100 by
   default and at most 1000) or an A1 range as given, formatted as the sheet shows the values, or
   raw, or as formulas.
+
+### Google Tasks
+
+With the same account, cedar reads the user's to-do lists in Google Tasks and adds to them. The
+`tasks` tool group is on by default and needs the Tasks API enabled in the Cloud project and the
+`tasks` scope, which "Connect Google" asks for (Google has no narrower scope that can add a task).
+`TASKS=off` removes the tools, `TASKS_TOOLS` chooses single ones: `list_task_lists,list_tasks`
+for lists the agent only reads.
+
+- `tasks_list_task_lists` lists the account's task lists with their IDs.
+- `tasks_list_tasks` lists the tasks on one (`taskListId`, by default the account's default
+  list): title, notes, due date, whether it is done, and a subtask's parent. Open tasks only
+  unless `showCompleted` is true; `dueAfter` and `dueBefore` narrow it to a range of days.
+- `tasks_create_task` adds a task with a `title` and optionally `notes` and a `due` date.
+
+A task is due on a day, not at a time: Google keeps only the date, so the tools take and give
+dates. Nothing completes, changes, or deletes a task. Adding one tells nobody else, so it needs
+no approval in an interactive run; a run with `hold_writes` keeps it in
+[the outbox](#the-outbox). The two reading tools can be
+[called outside a run](#calling-a-tool-outside-a-run).
 
 ### Google Slides
 
