@@ -8,6 +8,7 @@
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
   <link rel="stylesheet" href="/fonts/fonts.css">
+  <link rel="stylesheet" href="/followup-view.css">
   <link rel="stylesheet" href="/today/today.css">
 </head>
 <body>
@@ -16,7 +17,7 @@
   <div class="page">
     <header class="top">
       <a class="brand" href="/today/" aria-label="Cedar, today" data-i18n-attr="aria-label:today.brandLabel">cedar</a>
-      <nav class="day" aria-label="Day" data-i18n-attr="aria-label:today.day">
+      <nav class="day" id="day-nav" aria-label="Day" data-i18n-attr="aria-label:today.day">
         <button class="icon" id="prev-day" type="button" aria-label="Previous day" data-i18n-attr="aria-label:today.prevDay"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg></button>
         <h1 class="day-name" id="day-name"></h1>
         <button class="icon" id="next-day" type="button" aria-label="Next day" data-i18n-attr="aria-label:today.nextDay"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg></button>
@@ -27,7 +28,11 @@
       <a class="btn" href="/v3/" data-i18n="today.allChats">All conversations</a>
     </header>
 
-    <div class="layout">
+    <!-- One ask's outcome (#/t/<turn>): the answer and what it left behind, filled in by today.js
+         from /api/turns/{id}/outcome. While it shows, the river is hidden. -->
+    <article class="outcome" id="outcome" hidden aria-live="polite"></article>
+
+    <div class="layout" id="layout">
       <main class="river" id="river" aria-live="polite">
         <section aria-labelledby="earlier-h">
           <h2 class="band" id="earlier-h" data-i18n="today.earlier">Earlier</h2>
@@ -110,6 +115,8 @@
     </div>
   </div>
 
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
   <dialog id="token-dialog">
     <form method="dialog" id="token-form">
       <p id="token-message"></p>
@@ -120,8 +127,10 @@
 
   <script src="/i18n.js"></script>
   <script src="/i18n/common.js"></script>
+  <script src="/i18n/agents.js"></script>
   <script src="/i18n/today.js"></script>
   <script>cedarI18n.apply(document);</script>
+  <script src="/followup-view.js"></script>
   <script src="/today/today.js"></script>
 </body>
 </html>

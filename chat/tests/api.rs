@@ -416,6 +416,24 @@ async fn events(State(s): State<Shared>, Path(id): Path<Uuid>, axum::extract::Ra
     if prompt.contains("NEEDS OK") {
         return ([("content-type", "text/event-stream")], asks.to_string());
     }
+    // A run that searched, read a page, failed a step and suggested a follow-up.
+    if prompt.contains("OUTCOME") {
+        let lines = [
+            json!({ "type": "tool.call", "data": { "id": "t1", "name": "web_search", "input": { "query": "lisbon" } } }),
+            json!({ "type": "tool.result", "data": { "id": "t1", "output": "results", "sources": [{ "n": 1, "url": "https://visit.example/lisbon", "title": "Visit Lisbon" }] } }),
+            json!({ "type": "tool.call", "data": { "id": "t2", "name": "bash", "input": {} } }),
+            json!({ "type": "tool.result", "data": { "id": "t2", "output": "no", "is_error": true } }),
+            json!({ "type": "tool.call", "data": { "id": "t3", "name": "suggest_follow_up", "input": {} } }),
+            json!({ "type": "tool.result", "data": { "id": "t3", "output": "{\"follow_up\":{\"title\":\"Fares\",\"prompt\":\"Check fares\",\"at\":\"2099-01-01T09:00:00Z\"}}" } }),
+            json!({ "type": "run.completed", "data": {} }),
+        ];
+        let body: String = lines.iter().enumerate().map(|(i, e)| {
+            let mut e = e.clone();
+            e["seq"] = json!(i + 1);
+            format!("id: {}\nevent: {}\ndata: {e}\n\n", i + 1, e["type"].as_str().unwrap())
+        }).collect();
+        return ([("content-type", "text/event-stream")], body);
+    }
     if prompt.contains("ANSWERED OK") {
         let rest = "id: 2\nevent: approval.resolved\ndata: {\"seq\":2,\"type\":\"approval.resolved\",\"data\":{\"id\":\"a1\",\"decision\":\"allow\",\"by\":\"user\"}}\n\n\
                     id: 3\nevent: run.completed\ndata: {\"seq\":3,\"type\":\"run.completed\",\"data\":{}}\n\n";
@@ -515,9 +533,14 @@ async fn list_files(State(s): State<Shared>, Path(id): Path<Uuid>) -> axum::resp
     if s.expired.lock().unwrap().contains(&id) {
         return cedar_error(StatusCode::NOT_FOUND, "not_found", "the run's workspace no longer exists");
     }
+    // An OUTCOME run has just written a plan, beside the older report.
+    let mut files = vec![json!({ "path": "out/report.pdf", "size": 4, "modified_at": "2026-10-11T12:00:00Z" })];
+    if s.runs.lock().unwrap()[&id]["prompt"].as_str().is_some_and(|p| p.contains("OUTCOME")) {
+        files.push(json!({ "path": "out/plan.md", "size": 120, "modified_at": Utc::now() }));
+    }
     Json(json!({
         "workspace_id": id,
-        "files": [{ "path": "out/report.pdf", "size": 4, "modified_at": "2026-10-11T12:00:00Z" }],
+        "files": files,
         "truncated": false,
     }))
     .into_response()
@@ -5389,4 +5412,70 @@ async fn the_today_page_is_served_with_its_script_and_text() {
     assert_eq!(h.call(Method::GET, "/today", None, None).await.0, StatusCode::PERMANENT_REDIRECT);
     let (_, main) = h.call(Method::GET, "/v3/", None, None).await;
     assert!(main.contains("href=\"/today/\""), "the main page links to Today");
+}
+
+#[tokio::test]
+async fn an_outcome_is_the_answer_and_what_the_ask_left_behind() {
+    let h = Harness::new(&[]).await;
+    let (_, asked) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "Plan Lisbon OUTCOME" }))).await;
+    let turn_id = asked["turn"]["id"].as_str().unwrap().to_string();
+    let run_id = asked["turn"]["run_id"].as_str().unwrap().to_string();
+    let uri = format!("/api/turns/{turn_id}/outcome");
+
+    // While it works, the outcome says so and reads nothing of the run.
+    let (status, going) = h.json(Method::GET, &uri, None).await;
+    assert_eq!(status, StatusCode::OK, "{going}");
+    assert_eq!(going["state"], "working");
+    assert_eq!(going["steps"], json!([]));
+
+    // What cedar keeps for the run: a memory and a record row of its own, and others' that aren't.
+    *h.cedar.memory.lock().unwrap() = Some(vec![
+        json!({ "id": "m1", "text": "Prefers walking to taxis", "kind": "preference", "run_id": run_id }),
+        json!({ "id": "m2", "text": "Lives in Zurich", "kind": "fact", "run_id": Uuid::new_v4() }),
+    ]);
+    let set = json!({ "id": Uuid::new_v4(), "name": "trips", "description": "Trips", "key_fields": ["city"], "health_data": false,
+                      "count": 2, "columns": [], "created_at": "2026-01-01T08:00:00Z", "updated_at": Utc::now() });
+    let old = json!({ "id": Uuid::new_v4(), "name": "old", "description": "Untouched", "key_fields": [], "health_data": false,
+                      "count": 1, "columns": [], "created_at": "2020-01-01T08:00:00Z", "updated_at": "2020-01-01T08:00:00Z" });
+    *h.cedar.records.lock().unwrap() = Some(vec![
+        json!({ "set": set, "records": [
+            { "id": Uuid::new_v4(), "key": "lisbon", "data": { "city": "Lisbon" }, "run_id": run_id, "created_at": Utc::now(), "updated_at": Utc::now() },
+            { "id": Uuid::new_v4(), "key": "porto", "data": { "city": "Porto" }, "run_id": null, "created_at": Utc::now(), "updated_at": Utc::now() },
+        ] }),
+        json!({ "set": old, "records": [{ "id": Uuid::new_v4(), "key": "x", "data": {}, "run_id": run_id, "created_at": "2020-01-01T08:00:00Z", "updated_at": "2020-01-01T08:00:00Z" }] }),
+    ]);
+    h.finish_with(&run_id, "completed", Some("## Lisbon\n\nFriday 13 to Sunday 15 March works.\n\n- Fri: Alfama"), Some("end_turn"));
+    h.sync().await;
+
+    let (status, out) = h.json(Method::GET, &uri, None).await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["state"], "done");
+    assert_eq!(out["summary"], "Friday 13 to Sunday 15 March works.");
+    assert_eq!(out["turn"]["prompt"], "Plan Lisbon OUTCOME");
+    assert!(out["turn"]["final_text"].as_str().unwrap().contains("Alfama"));
+    assert_eq!(out["conversation"]["title"], "Plan Lisbon OUTCOME");
+    assert_eq!(out["steps"].as_array().unwrap().len(), 3);
+    assert_eq!(out["steps"][1]["is_error"], true);
+    assert_eq!(out["sources"], json!([{ "url": "https://visit.example/lisbon", "path": null, "title": "Visit Lisbon" }]));
+    assert_eq!(out["followups"][0]["call_id"], "t3");
+    assert_eq!(out["followup_decisions"], json!([]));
+    assert_eq!(out["memories"], json!([{ "id": "m1", "text": "Prefers walking to taxis", "kind": "preference" }]));
+    assert_eq!(out["records"], json!([{ "set": "trips", "key": "lisbon", "data": { "city": "Lisbon" } }]));
+    let files: Vec<&str> = out["files"].as_array().unwrap().iter().map(|f| f["path"].as_str().unwrap()).collect();
+    assert_eq!(files, ["out/plan.md"], "only what changed since the ask");
+
+    // Deciding the follow-up shows on the outcome, and a later message makes it an earlier turn.
+    let cid = out["conversation"]["id"].as_str().unwrap().to_string();
+    let (status, _) = h.json(Method::PUT, &format!("/api/turns/{turn_id}/followups/t3"), Some(json!({ "decision": "dismiss" }))).await;
+    assert!(status.is_success(), "{status}");
+    h.json(Method::POST, &format!("/api/conversations/{cid}/messages"), Some(json!({ "content": "Make it four days" }))).await;
+    let (_, out) = h.json(Method::GET, &uri, None).await;
+    assert_eq!(out["followup_decisions"][0]["status"], "dismissed");
+    assert_eq!(out["later_turns"], 1);
+
+    // A workspace that is gone leaves no files, and the outcome still opens; others' turns don't.
+    h.cedar.expired.lock().unwrap().push(Uuid::parse_str(&run_id).unwrap());
+    let (status, out) = h.json(Method::GET, &uri, None).await;
+    assert_eq!((status, out["files"].clone()), (StatusCode::OK, json!([])));
+    assert_eq!(h.json(Method::GET, &format!("/api/turns/{}/outcome", Uuid::new_v4()), None).await.0, StatusCode::NOT_FOUND);
 }

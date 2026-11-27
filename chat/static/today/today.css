@@ -163,3 +163,68 @@ dialog input { height: 44px; padding: 0 12px; border-radius: 10px; border: 1px s
   .when legend { width: 100%; line-height: 1.4; }
   .when-detail input[type=text] { min-width: 0; width: 100%; }
 }
+
+/* -- one ask's outcome -------------------------------------------------------------------- */
+/* The follow-up card (followup-view.css) draws with these. */
+:root { --sheet: var(--surface); --ink: var(--text); --ink-2: var(--text-2); --accent: var(--now); }
+
+.outcome { max-width: 720px; margin: 0 auto; padding-top: 20px; display: flex; flex-direction: column; gap: 28px; }
+.outcome-head { display: flex; flex-direction: column; gap: 8px; }
+.outcome-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; text-decoration: none; font-weight: 500; }
+.back::before { content: ''; width: 8px; height: 8px; border-left: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: rotate(45deg); }
+.back:hover span { text-decoration: underline; }
+.outcome-meta .tag { margin-left: auto; }
+.asked { margin: 8px 0 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.outcome h1 { margin: 0; font: 700 30px/1.2 var(--display); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+a.tag { text-decoration: underline; }
+
+.outcome-body { display: flex; flex-direction: column; gap: 16px; }
+.answer-text { color: var(--text-2); line-height: 1.6; overflow-wrap: anywhere; }
+.answer-text > :first-child { margin-top: 0; }
+.answer-text h2, .answer-text h3, .answer-text h4, .answer-text h5, .answer-text h6 { color: var(--text); font: 600 18px/1.3 var(--display); margin: 24px 0 8px; }
+.answer-text p, .answer-text ul, .answer-text ol, .answer-text blockquote, .answer-text pre { margin: 0 0 12px; }
+.answer-text ul, .answer-text ol { padding-left: 22px; }
+.answer-text li + li { margin-top: 4px; }
+.answer-text strong { color: var(--text); }
+.answer-text a { color: var(--now); }
+.answer-text code { font: 0.9em var(--mono); background: var(--surface); padding: 1px 5px; border-radius: 5px; }
+.answer-text pre { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+.answer-text pre code { background: none; padding: 0; }
+.answer-text blockquote { border-left: 2px solid var(--line-strong); padding-left: 14px; color: var(--muted); }
+.answer-text sup { font-size: 0.7em; }
+.table-wrap { overflow-x: auto; margin: 0 0 12px; }
+.answer-text table { border-collapse: collapse; font-size: 14px; }
+.answer-text th, .answer-text td { border-bottom: 1px solid var(--line); padding: 6px 12px 6px 0; text-align: left; vertical-align: top; }
+.answer-text th { color: var(--text); font-weight: 600; }
+
+.part { display: flex; flex-direction: column; gap: 8px; }
+.part h2 { margin: 0; font: 500 12px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.file { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 52px; padding: 8px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); text-align: left; cursor: pointer; }
+.file:hover { border-color: var(--line-strong); }
+.file-name { font-weight: 600; overflow-wrap: anywhere; }
+.file .tag { overflow-wrap: anywhere; }
+.kept { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 4px 0 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.kept > span { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; padding: 8px 0; }
+.part .cedar-followup { margin: 0; max-width: none; }
+.part .cedar-followup-foot .copy-btn, .part .cedar-followup-foot .primary { min-height: 44px; padding: 0 16px; border-radius: 22px; }
+
+.how { border: 1px dashed var(--line-strong); border-radius: 14px; padding: 4px 14px; }
+.how summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--text-2); font-size: 14px; }
+.how ol { margin: 4px 0 12px; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); }
+.how li { overflow-wrap: anywhere; }
+.how code { font: 13px var(--mono); }
+.how li .tag { margin-left: 8px; }
+.how a { color: var(--now); }
+
+.outcome-foot { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+.keep-going { display: flex; gap: 8px; }
+.keep-going input { flex: 1 1 0; min-width: 0; height: 52px; padding: 0 20px; border-radius: 26px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 16px; }
+.keep-going .primary { height: 52px; }
+.outcome-foot .linkish { align-self: flex-start; padding-left: 0; }
+
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px; background: var(--text); color: var(--bg); font-size: 14px; z-index: 10; }
+
+@media (max-width: 640px) {
+  .outcome h1 { font-size: 25px; }
+}

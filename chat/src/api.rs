@@ -39,6 +39,7 @@ use uuid::Uuid;
 mod actions;
 mod agents;
 mod asks;
+mod outcome;
 mod timeline;
 mod handover;
 mod slack;
@@ -394,6 +395,7 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
         .route("/turns/{id}/trace", get(turn_trace))
+        .route("/turns/{id}/outcome", get(outcome::outcome))
         .route("/turns/{id}/cancel", post(cancel_turn))
         .route("/turns/{id}/plan", post(approve_plan))
         .route("/turns/{id}/approvals/{approval_id}", post(decide_approval))

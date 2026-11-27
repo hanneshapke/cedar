@@ -128,6 +128,7 @@ function button(text, className, onClick) {
 
 const conversationHref = (id) => `/v3/#/c/${encodeURIComponent(id)}`;
 const agentHref = (id) => `/v3/#/agents/${encodeURIComponent(id)}`;
+const outcomeHref = (id) => `#/t/${encodeURIComponent(id)}`;
 
 /** Run `work` with `node` disabled, showing a failure under `where`. */
 async function busy(node, where, work) {
@@ -152,7 +153,7 @@ function turnRow(t) {
   row.append(el('div', 'time', fmtTime(t.created_at)));
   const what = el('div', 'what');
   const head = el('div', 'what-head');
-  head.append(link(conversationHref(t.conversation_id), 'what-title', t.title || t.prompt));
+  head.append(link(outcomeHref(t.turn_id), 'what-title', t.title || t.prompt));
   if (t.agent) {
     // A run titled like its agent says when the agent runs; another names the agent.
     const agent = state.data.standing.find((a) => a.id === t.agent.id);
@@ -174,7 +175,7 @@ function nowCard(t) {
   card.append(el('div', 'time', fmtTime(t.created_at)));
   const body = el('div', 'card-body');
   const head = el('div', 'card-head');
-  head.append(link(conversationHref(t.conversation_id), 'card-title', t.title || t.prompt));
+  head.append(link(outcomeHref(t.turn_id), 'card-title', t.title || t.prompt));
   const pill = { waiting: 'today.pill.waiting', asking: 'today.pill.asking' }[t.state] || 'today.pill.working';
   head.append(el('span', 'pill', tr(pill)));
   body.append(head);
@@ -389,13 +390,349 @@ function defaultLater() {
   return `${localDay(at)}T${String(at.getHours()).padStart(2, '0')}:00`;
 }
 
+// -- one ask's outcome -------------------------------------------------------------------------
+
+let toastTimer = null;
+function toast(message) {
+  const box = $('toast');
+  box.textContent = message;
+  box.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { box.hidden = true; }, 5000);
+}
+
+/** Markdown as DOM: headings, lists, quotes, code, tables and inline marks, every piece of text
+ *  set as text. Links go only to http(s); `[n]` citations link to the run's nth source. */
+function renderMarkdown(text, sources = []) {
+  const root = document.createDocumentFragment();
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  const item = /^\s*([-*+]|\d+[.)])\s+/;
+  const block = (line) => /^\s*(```|#{1,6}\s|>|\|)/.test(line) || item.test(line);
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    let m;
+    if (/^\s*```/.test(line)) {
+      const code = [];
+      for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) code.push(lines[i]);
+      i++;
+      const pre = el('pre');
+      pre.append(el('code', '', code.join('\n')));
+      root.append(pre);
+    } else if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+      // The page's own heading is the outcome; the answer's start a level below it.
+      const h = el(`h${Math.min(6, m[1].length + 1)}`);
+      inline(h, m[2], sources);
+      root.append(h);
+      i++;
+    } else if (item.test(line)) {
+      const list = el(/^\s*\d/.test(line) ? 'ol' : 'ul');
+      for (; i < lines.length && item.test(lines[i]); i++) {
+        const li = el('li');
+        inline(li, lines[i].replace(item, ''), sources);
+        list.append(li);
+      }
+      root.append(list);
+    } else if (/^\s*>/.test(line)) {
+      const quoted = [];
+      for (; i < lines.length && /^\s*>/.test(lines[i]); i++) quoted.push(lines[i].replace(/^\s*> ?/, ''));
+      const q = el('blockquote');
+      q.append(renderMarkdown(quoted.join('\n'), sources));
+      root.append(q);
+    } else if (/^\s*\|/.test(line)) {
+      const rows = [];
+      for (; i < lines.length && /^\s*\|/.test(lines[i]); i++) rows.push(lines[i]);
+      const cells = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+      const wrap = el('div', 'table-wrap');
+      const table = el('table');
+      rows.filter((r) => !/^\s*\|[\s:|-]+\|\s*$/.test(r)).forEach((row, n) => {
+        const tr_ = el('tr');
+        for (const c of cells(row)) { const cell = el(n === 0 ? 'th' : 'td'); inline(cell, c, sources); tr_.append(cell); }
+        table.append(tr_);
+      });
+      wrap.append(table);
+      root.append(wrap);
+    } else if (!line.trim()) {
+      i++;
+    } else {
+      const para = [];
+      for (; i < lines.length && lines[i].trim() && !block(lines[i]); i++) para.push(lines[i].trim());
+      const p = el('p');
+      inline(p, para.join(' '), sources);
+      root.append(p);
+    }
+  }
+  return root;
+}
+
+function inline(parent, text, sources) {
+  const token = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\)|\[\d+\]|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/;
+  for (const part of String(text).split(token)) {
+    if (!part) continue;
+    let m;
+    if (/^\*\*.+\*\*$/.test(part)) parent.append(el('strong', '', part.slice(2, -2)));
+    else if (/^`.+`$/.test(part)) parent.append(el('code', '', part.slice(1, -1)));
+    else if ((m = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/))) {
+      if (/^https?:\/\//i.test(m[2])) {
+        const a = link(m[2], '', m[1]);
+        a.rel = 'noopener noreferrer';
+        a.target = '_blank';
+        parent.append(a);
+      } else parent.append(document.createTextNode(m[1]));
+    } else if ((m = part.match(/^\[(\d+)\]$/))) {
+      const source = sources[Number(m[1]) - 1];
+      if (source?.url && /^https?:\/\//i.test(source.url)) {
+        const sup = el('sup');
+        const a = link(source.url, '', m[1]);
+        a.rel = 'noopener noreferrer';
+        a.target = '_blank';
+        a.title = source.title || source.url;
+        sup.append(a);
+        parent.append(sup);
+      } else parent.append(document.createTextNode(part));
+    } else if (/^([*_]).+\1$/.test(part)) parent.append(el('em', '', part.slice(1, -1)));
+    else parent.append(document.createTextNode(part));
+  }
+}
+
+const fmtSize = (bytes) => bytes < 1024 ? tr('today.outcome.bytes', { size: cedarI18n.number(bytes) })
+  : bytes < 1024 * 1024 ? tr('today.outcome.kb', { size: cedarI18n.number(Math.round(bytes / 1024)) })
+  : tr('today.outcome.mb', { size: cedarI18n.number(bytes / 1048576, { maximumFractionDigits: 1 }) });
+
+/** Download a workspace file with the access token, as the main page does. */
+async function download(conversationId, path, node) {
+  node.disabled = true;
+  try {
+    const url = `/api/conversations/${conversationId}/files/${path.split('/').map(encodeURIComponent).join('/')}`;
+    let res = await fetch(url, { headers: memoryToken ? { Authorization: `Bearer ${memoryToken}` } : {} });
+    if (res.status === 401) { await askToken(true); res = await fetch(url, { headers: { Authorization: `Bearer ${memoryToken}` } }); }
+    if (!res.ok) throw new Error(tr('today.requestFailed', { status: String(res.status) }));
+    const href = URL.createObjectURL(await res.blob());
+    const a = link(href, '', '');
+    a.download = path.split('/').pop();
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 60000);
+  } catch (e) { toast(e.message); } finally { node.disabled = false; }
+}
+
+/** A titled part of the outcome; nothing when it would be empty. */
+function part(title, children) {
+  if (!children.length) return null;
+  const section = el('section', 'part');
+  section.append(el('h2', '', title), ...children);
+  return section;
+}
+
+const outcomeState = { id: null, timer: null };
+
+function hideOutcome() {
+  outcomeState.id = null;
+  clearTimeout(outcomeState.timer);
+  $('outcome').hidden = true;
+  $('layout').hidden = false;
+  $('day-nav').hidden = false;
+}
+
+async function showOutcome(id) {
+  const first = outcomeState.id !== id;
+  outcomeState.id = id;
+  clearTimeout(outcomeState.timer);
+  $('layout').hidden = true;
+  $('day-nav').hidden = true;
+  $('outcome').hidden = false;
+  if (first) { $('outcome').replaceChildren(el('p', 'quiet', tr('today.outcome.loading'))); window.scrollTo(0, 0); }
+  let o;
+  try {
+    o = await api('GET', `/turns/${encodeURIComponent(id)}/outcome`);
+  } catch (e) {
+    if (outcomeState.id === id) $('outcome').replaceChildren(backLink(null), el('p', 'error', e.message));
+    return;
+  }
+  if (outcomeState.id !== id) return;
+  // Not while something is being typed into it: rendering would replace the field.
+  if (!first && $('outcome').contains(document.activeElement) && document.activeElement.matches('input, textarea')) return;
+  renderOutcome(o);
+  document.title = tr('today.pageTitle', { day: o.conversation.title || o.turn.prompt });
+  // A response still going is followed until it ends.
+  if (o.state === 'working') outcomeState.timer = setTimeout(() => showOutcome(id), 3000);
+}
+
+/** Back to the river of the day the ask was made. */
+function backLink(turn) {
+  const day = turn ? localDay(new Date(turn.created_at)) : null;
+  const a = link(!day || day === localDay(new Date()) ? '#' : `#${day}`, 'back', '');
+  a.append(el('span', '', tr('today.outcome.back')));
+  return a;
+}
+
+function renderOutcome(o) {
+  const t = o.turn;
+  const head = el('header', 'outcome-head');
+  const meta = el('div', 'outcome-meta');
+  meta.append(backLink(t));
+  const when = {
+    done: () => tr('today.outcome.doneAt', { time: fmtTime(t.finished_at || t.created_at) }),
+    failed: () => tr('today.outcome.failedAt', { time: fmtTime(t.finished_at || t.created_at) }),
+    stopped: () => tr('today.outcome.stopped'),
+    asking: () => tr('today.pill.asking'),
+    working: () => tr('today.working'),
+  }[o.state]();
+  meta.append(el('span', `tag ${o.state === 'failed' ? 'failed' : ''}`, o.agent ? `${when} · ${o.agent.title}` : when));
+  head.append(meta);
+  head.append(el('p', 'asked', tr('today.outcome.youAsked', { prompt: t.prompt })));
+  const headline = o.state === 'failed' ? (t.error || tr('today.failed')) : (o.summary || o.conversation.title || t.prompt);
+  head.append(el('h1', '', headline));
+  if (o.later_turns) {
+    const more = link(conversationHref(o.conversation.id), 'tag', tr('today.outcome.continued', { count: o.later_turns }));
+    head.append(more);
+  }
+
+  const body = el('div', 'outcome-body');
+  if (o.state === 'working') {
+    const actions = el('div', 'actions');
+    actions.append(el('span', 'progress', tr('today.working')));
+    actions.append(button(tr('today.stop'), '', (e) => busyOutcome(e.currentTarget, () => api('POST', `/turns/${t.id}/cancel`))));
+    body.append(actions);
+  }
+  if (t.final_text) {
+    const answer = el('div', 'answer-text');
+    answer.append(renderMarkdown(t.final_text, o.sources));
+    // The headline is the answer's first paragraph: it isn't said twice.
+    const first = answer.querySelector('p');
+    if (first && o.summary) {
+      const plain = first.cloneNode(true);
+      plain.querySelectorAll('sup').forEach((n) => n.remove());
+      const words = (x) => x.replace(/\s+([.,;:!?])/g, '$1').replace(/\s+/g, ' ').trim();
+      if (words(plain.textContent) === words(o.summary)) {
+        // A heading left with nothing under it goes too.
+        const [before, after] = [first.previousElementSibling, first.nextElementSibling];
+        first.remove();
+        if (before && /^H\d$/.test(before.tagName) && (!after || /^H\d$/.test(after.tagName))) before.remove();
+      }
+    }
+    if (answer.childNodes.length) body.append(answer);
+  }
+
+  // What it left behind.
+  const files = o.files.map((f) => {
+    const b = button('', 'file', (e) => download(o.conversation.id, f.path, e.currentTarget));
+    b.append(el('span', 'file-name', f.path.split('/').pop()), el('span', 'tag', `${f.path} · ${fmtSize(f.size || 0)}`));
+    return b;
+  });
+  const memories = o.memories.map((m) => {
+    const row = el('div', 'kept');
+    row.append(el('span', '', m.text));
+    const forget = button(tr('today.outcome.forget'), 'linkish', async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        await api('DELETE', `/memory/${encodeURIComponent(m.id)}`);
+        row.replaceChildren(el('span', 'quiet', tr('today.outcome.forgotten', { text: m.text })));
+      } catch (err) { e.currentTarget.disabled = false; toast(err.message); }
+    });
+    row.append(forget);
+    return row;
+  });
+  const records = o.records.map((r) => {
+    const row = el('div', 'kept');
+    row.append(el('span', '', tr('today.outcome.saved', { set: r.set, key: r.key || '' })));
+    return row;
+  });
+  cedarFollowUp.known(o.followup_decisions);
+  const followups = o.followups.map((f) => {
+    const spec = cedarFollowUp.parse(String(f.output ?? ''));
+    return spec && cedarFollowUp.element(spec, { turnId: t.id, callId: f.call_id });
+  }).filter(Boolean);
+
+  const parts = [
+    part(tr('today.outcome.files'), files),
+    part(tr('today.outcome.remembered'), memories),
+    part(tr('today.outcome.records'), records),
+    part(tr('followup.suggests'), followups),
+  ].filter(Boolean);
+
+  // How it got there, folded.
+  if (o.steps.length || o.sources.length) {
+    const how = el('details', 'how');
+    const failed = o.steps.filter((s) => s.is_error).length;
+    const counts = [tr('today.outcome.steps', { count: o.steps.length })];
+    if (o.sources.length) counts.push(tr('today.outcome.sources', { count: o.sources.length }));
+    if (failed) counts.push(tr('today.outcome.stepsFailed', { count: failed }));
+    how.append(el('summary', '', `${tr('today.outcome.how')} · ${counts.join(' · ')}`));
+    if (o.steps.length) {
+      const list = el('ol', 'steps');
+      for (const s of o.steps) {
+        const li = el('li', s.is_error ? 'failed' : '');
+        li.append(el('code', '', s.name));
+        if (s.is_error) li.append(el('span', 'tag failed', tr('today.outcome.stepFailed')));
+        list.append(li);
+      }
+      how.append(list);
+    }
+    if (o.sources.length) {
+      const list = el('ol', 'sources');
+      for (const s of o.sources) {
+        const li = el('li');
+        if (s.url && /^https?:\/\//i.test(s.url)) {
+          const a = link(s.url, '', s.title || s.url);
+          a.rel = 'noopener noreferrer';
+          a.target = '_blank';
+          li.append(a);
+        } else li.append(el('span', '', s.title || s.path || s.url || ''));
+        list.append(li);
+      }
+      how.append(list);
+    }
+    parts.push(how);
+  }
+
+  // Keep going: the next message of the same conversation, or the answer to its question.
+  const form = el('form', 'keep-going');
+  const input = el('input');
+  input.type = 'text';
+  input.required = true;
+  input.maxLength = 32000;
+  const label = o.state === 'asking' ? tr('today.answerPlaceholder') : tr('today.outcome.keepGoing');
+  input.placeholder = label;
+  input.setAttribute('aria-label', label);
+  const send = el('button', 'primary', o.state === 'asking' ? tr('today.answer') : tr('today.send.now'));
+  send.type = 'submit';
+  send.disabled = o.state === 'working';
+  form.append(input, send);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const content = input.value.trim();
+    if (!content) return;
+    busyOutcome(send, async () => {
+      const next = await api('POST', `/conversations/${o.conversation.id}/messages`, { content, locale, timezone: zone });
+      location.hash = outcomeHref(next.id);
+    });
+  });
+  const foot = el('footer', 'outcome-foot');
+  foot.append(form, link(conversationHref(o.conversation.id), 'linkish', tr('today.outcome.open')));
+
+  $('outcome').replaceChildren(head, body, ...parts, foot);
+}
+
+async function busyOutcome(node, work) {
+  node.disabled = true;
+  try {
+    await work();
+    if (outcomeState.id) await showOutcome(outcomeState.id);
+  } catch (e) {
+    node.disabled = false;
+    toast(e.message);
+  }
+}
+
 // -- start -------------------------------------------------------------------------------------
 
 function refreshSoon() {
   clearInterval(state.timer);
   state.timer = setInterval(() => {
     // Not while an answer is being typed: rendering would replace the field.
-    if (document.visibilityState !== 'visible' || $('now-list').contains(document.activeElement)) return;
+    if (document.visibilityState !== 'visible' || !$('outcome').hidden || $('now-list').contains(document.activeElement)) return;
     load();
   }, REFRESH_MS);
 }
@@ -421,17 +758,28 @@ function start() {
   $('prev-day').addEventListener('click', () => shift(-1));
   $('next-day').addEventListener('click', () => shift(1));
   $('to-today').addEventListener('click', () => go(null));
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(); });
-  // A day in the address moves the river there; other anchors (#now) only scroll.
-  window.addEventListener('hashchange', () => {
-    const hash = location.hash.slice(1);
-    if (!hash || /^\d{4}-\d{2}-\d{2}$/.test(hash)) go(hash || null);
-  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && $('outcome').hidden) load(); });
+  window.addEventListener('hashchange', route);
 
   whenChanged();
   refreshSoon();
-  const day = location.hash.slice(1);
-  go(/^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null);
+  cedarFollowUp.init({ api, toast });
+  if (!route()) go(null);
+}
+
+/** Follow the address: `#/t/<turn>` is an outcome, a date is that day's river, `#/agents/…` (from a
+ *  follow-up card) is on the main page, and other anchors (#now) only scroll. Says whether it
+ *  showed something. */
+function route() {
+  const hash = location.hash.slice(1);
+  if (hash.startsWith('/agents')) { location.href = `/v3/#${hash}`; return true; }
+  const turn = hash.match(/^\/t\/([0-9a-fA-F-]{36})$/);
+  if (turn) { showOutcome(turn[1]); return true; }
+  const wasOutcome = !$('outcome').hidden;
+  hideOutcome();
+  if (!hash || /^\d{4}-\d{2}-\d{2}$/.test(hash)) { go(hash || null); return true; }
+  if (wasOutcome) load();
+  return false;
 }
 
 start();
