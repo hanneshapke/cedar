@@ -560,7 +560,7 @@ tools](#personal-tools-in-python) see the locale as `CEDAR_LOCALE` (`de-CH`) and
 (`de`), and community tool listings can carry translated summaries (see
 [registry/CONTRIBUTING.md](registry/CONTRIBUTING.md#translations)).
 
-The chat asks for the language first, on a new browser or phone, and keeps it in Settings → Language.
+The chat starts in the browser's language (or the one another device saved) without asking, and Settings → Language changes it.
 It sends the locale with every message, and saves it on its server too, so agents' runs and
 notifications use it. Translators: see [docs/i18n-glossary.md](docs/i18n-glossary.md) for the terms
 and tone.

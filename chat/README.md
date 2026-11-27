@@ -1,6 +1,6 @@
 # cedar-chat
 
-A web chat for a cedar server, with two selectable looks. It is a separate Rust service
+A web chat for a cedar server. It is a separate Rust service
 (axum + SQLite) that serves a single-page UI and sits between the browser and cedar:
 
 ```
@@ -9,33 +9,54 @@ browser  ──/api──▶  cedar-chat  ──/v1 (Bearer CEDAR_API_KEY)──
 
 The cedar API key stays on the server. The browser only talks to cedar-chat.
 
-## Interfaces
+## The interface
 
-The settings button (sliders icon, top right) switches between:
+There is one, at `/v3/` (where `/` sends the browser): say on the left, show on the right. The
+conversation (prompts, Cedar's prose, its questions, the plan, approvals, and tool calls folded
+into a "Worked through N steps" line) is a narrow column, and everything a tool produced is a
+card on a "stage" beside it, grouped by turn, with a rail of the sources the turn read.
 
-| | Style | Layout |
-| --- | --- | --- |
-| `/v3/` | **Ledger** | Say on the left, show on the right: the conversation (prompts, Cedar's prose, its questions, the plan, approvals, and tool calls folded into a "Worked through N steps" line) in a narrow column, and everything a tool produced as cards on a "stage" beside it, grouped by turn, with a rail of the sources the turn read |
-| `/v4/` | **Dossier** | One column; each turn is a brief of plan, work, result and sources |
-| `/v1/` | **Claude style** | Conversations in a sidebar, one thread with tool calls inline |
+What Cedar made is what the reader came for, so on a phone the stage is the page and the
+conversation is a sheet under it. Closed, the sheet is the message box with one line of what
+Cedar last said; its handle opens it over the results. It opens by itself when Cedar needs an
+answer (a plan to agree to, a call to allow) and for a reply that is only words, and closes by
+itself when the latest turn's first result lands, unless the reader opened it.
 
-Ledger and Dossier are one page in two layouts: the same script, styles and translations, with
-each layout's own page shell and placement of a turn's pieces (see [Running it](#running-it)).
-Claude style is a page of its own.
+What only means something to someone reading traces (how long a step took, token counts, a
+turn's number, tool and model ids) shows in expert mode alone (Settings → Advanced settings).
 
-Your choice is saved in this browser (`localStorage`, key `cedar-chat-ui`) and decides where `/`
-goes. Without a saved choice, `/` opens Ledger. Switching keeps the open conversation and
-your access token. Opening `/v1/`, `/v3/` or `/v4/` directly always shows that interface and does
-not change the saved choice.
+The retired interfaces' addresses (`/v1/` "Claude style", `/v2/` "Cedar style", `/v4/` "Dossier")
+redirect to `/v3/`, keeping the `#/c/<id>` of a bookmarked conversation.
 
-"Cedar style" (`/v2/`), the split view Ledger grew out of, is retired: `/v2/` redirects to
-`/v3/`, and a browser that had chosen it gets Ledger.
+### The first start
+
+Cedar can't answer without a model, so a browser that opens a Cedar with none registered gets a
+setup page instead of a message box that can't send (`setup.js`). It asks cedar whether a model
+server already runs on its computer (Ollama, LM Studio and the other presets of
+`model-servers.json`) and offers what it finds with one click; otherwise it offers the desktop
+app's own download, a hosted provider (pick it, paste a key) or the address of a server elsewhere.
+Reasoning levels, image support and the reply limit are worked out as in Settings → Models. It
+ends on three first tasks that need nothing but the sandbox; one click sends one. Someone who may
+not add models (`CHAT_MODELS_ACCESS=admins` without the admin password) is told who can.
+
+Nobody is asked for a language: the page starts in the browser's, or in the one another device
+saved on the server, and Settings → Language changes it.
+
+### Settings
+
+The dialog's pages are grouped by where a person would look, not by subsystem: **What Cedar can
+do** (Tools, Slack, Feedback), **What Cedar knows** (Memory, Records, Contribute; also linked
+beside Agents and Actions), **Your setup** (Models, Phone, Notifications, Language) and, for
+whoever runs the server, **Running Cedar** (Advanced settings, Server). A tool that isn't set up
+says so plainly and has a **Connect** button that opens the key's form in place (after the admin
+password, where keys need it); the tools' function names, the models' addresses and ids, the
+turn limit and the system prompt show in expert mode.
 
 ## Features
 
 Every interface has all of these, except where noted:
 
-- A conversation list (a sidebar in Claude style, a drawer behind the menu button in Ledger)
+- A conversation list (a drawer behind the menu button)
   with new chat, rename (click the title), and delete
 - [Private chats](#private-chats), which are in no list, are not remembered and are deleted when
   you leave them
@@ -72,23 +93,20 @@ Every interface has all of these, except where noted:
   bars, horizontal bars, scatter points, a histogram's bins, or a donut with its slices listed), a
   tooltip that reads every series where you point (a crosshair over lines, the category over bars,
   the nearest point of a scatter, a slice of a pie; arrow keys move it too), and the data as a table
-  folded under it. Very long series are thinned on the card; the saved file has every point. Cedar
-  style puts it on the stage with the file's View and Download buttons, Claude style under the tool
-  call (`chart-view.js` and `chart-view.css`). If the data can't be drawn, the picture is shown.
+  folded under it. Very long series are thinned on the card; the saved file has every point. It goes on the stage with the file's View and Download buttons (`chart-view.js` and `chart-view.css`). If the data can't be drawn, the picture is shown.
   Any other tool can show charts the same way by printing `[chart] {spec}` lines (the spec is
-  `generate_chart`'s input without a path): they are drawn under the call, and in Ledger on
+  `generate_chart`'s input without a path): they are drawn on
   its card with the rest of its output folded under them (see
   [Personal tools in Python](../README.md#personal-tools-in-python)); `tandem_glucose` does this
 - The images the agent produces are shown in the response, once each, after its reply: a chart
   from `generate_chart` that wasn't drawn as a card, a picture `write_file` or `download_file` saved, or one a `bash` command
   or `run_python` script created (from the files the call lists). A file that was rewritten
-  several times is shown as it is when the response ends. Claude style puts them under the reply,
-  Ledger in an images card on the stage after the response's other cards. An image the agent refers to in its text as
+  several times is shown as it is when the response ends. They go in an images card on the stage after the response's other cards. An image the agent refers to in its text as
   `![caption](chart.png)` is shown in place of the reference, and not again below. PNG, JPEG, GIF,
   WebP, BMP, AVIF, and SVG files up to 16 MB are shown; at most 12 per response, loaded as they
   scroll into view. Each has View and Download buttons under it, and a click on the picture opens
   it full size
-- In Ledger, a Markdown or text file the agent writes, or a PDF it makes from Markdown, is shown
+- A Markdown or text file the agent writes, or a PDF it makes from Markdown, is shown
   rendered as a document card on the stage, with Copy and Download, and the stage rests on it when the
   response ends. Searches (each result as a link with its snippet), commands and scripts with their
   output, and the pages and files the agent read are cards folded to one line that open on a click;
@@ -105,8 +123,7 @@ Every interface has all of these, except where noted:
 - A `show_map` tool call (when cedar offers the tool) is drawn as a map: a numbered pin for each
   place on an OpenStreetMap map you can pan and zoom (click it first, so the wheel keeps scrolling
   the conversation), a list of the places with their coordinates under it, and a note for any names
-  cedar could not find. Ledger puts it on the stage as a card, Claude style under the tool
-  call. The list is also what you see if the tiles can't load. If the result isn't a usable map, only
+  cedar could not find. It is a card on the stage. The list is also what you see if the tiles can't load. If the result isn't a usable map, only
   the tool call's raw output is shown
 - A `weather_forecast` tool call is drawn as a weather card, read from the same text report the
   model gets: the place and its local time, the current conditions with a large icon (a moon at
@@ -122,8 +139,7 @@ Every interface has all of these, except where noted:
   is none or it fails to load), the times and servings, the ingredients as a checklist, and the steps
   as a timeline. The steps appear one after another the first time the card is on screen. Tick a
   step's number to mark it done, or use the button under the timeline to finish the current step
-  and move on: the line fills in and the next step is highlighted. Ledger puts it on the stage
-  as a card, Claude style under the tool call
+  and move on: the line fills in and the next step is highlighted. It is a card on the stage
 - A `plan_trip` tool call is drawn as a trip card: the recommended way to go and why, a map of the
   chosen option's route between an A and a B pin (each transit line in its own color, walks dotted),
   a row per option (transit with its line badges, times and transfers; drive; rideshare with its
@@ -137,8 +153,7 @@ Every interface has all of these, except where noted:
   its confidence and summary, every factor with its score bar and the reasoning behind it, what would
   change the view, and key numbers (52-week and day ranges, moving averages, RSI, volatility,
   drawdown, beta). Pick a tile to see another symbol. Below are the returns of every symbol side by
-  side and the news, which can be filtered by symbol; headlines open in a new tab. Ledger puts
-  it on the stage as a card, Claude style under the tool call (`stock-view.js` and
+  side and the news, which can be filtered by symbol; headlines open in a new tab. It is a card on the stage (`stock-view.js` and
   `stock-view.css`; see [Stock news and privacy](#stock-news-and-privacy))
 - A `search_products` tool call (when cedar offers the tool) is drawn as a product card: the
   model's recommendation in a few sentences, then a tile per option with its photo, its badges
@@ -151,8 +166,7 @@ Every interface has all of these, except where noted:
   (the stars, the rating adjusted for how many reviews there are on a bar, the verdict and how much
   to trust it, and a sentence), the description, key features, specs, and the numbered sources
   behind it, then a strip of comparable options with how much more or less each costs. Click one to
-  see it in turn, with a button back to the option it was compared to. Ledger puts it on the
-  stage as a card, Claude style under the tool call (`product-view.js` and `product-view.css`; see
+  see it in turn, with a button back to the option it was compared to. It is a card on the stage (`product-view.js` and `product-view.css`; see
   [Product photos and privacy](#product-photos-and-privacy))
 - A `search_flights` tool call (when cedar has a SerpApi key) is drawn as a flights card: the route,
   the day (one way, round trip with the day back, or the return flight), the passengers and the
@@ -163,15 +177,14 @@ Every interface has all of these, except where noted:
   the stops, and flags for flights that are often delayed, overnight, or emit notably less or more
   CO₂. Click a row to open its segments (flight number, aircraft, legroom) and layovers. After the
   model picks a flight, the card lists where to book it: each seller with its price, fare and bag
-  fees, and whether it is a separate ticket for one way, with a Book on Google Flights button. Cedar
-  style puts it on the stage as a card, Claude style under the tool call (`flight-view.js` and
+  fees, and whether it is a separate ticket for one way, with a Book on Google Flights button. It is a card on the stage (`flight-view.js` and
   `flight-view.css`; see [Flight data and privacy](#flight-data-and-privacy))
 - An `ask_user` tool call, when the agent needs a clarification before it goes on, is drawn as a
   form: each question with its options as radio buttons (pick one) or checkboxes (pick any), and
   always a field for an answer in your own words (for an open question, that field alone). Send
   answer sends what you picked and wrote as your next message, with each question repeated so the
   agent knows which answer is which; you can also just reply in the message box. Once a later
-  message is in, the form is closed. Claude style puts it under the tool call, Ledger in the
+  message is in, the form is closed. It goes in the
   conversation column (`clarify-view.js` and `clarify-view.css`). An [agent](#agents)'s run is
   told nobody is there to answer, so it assumes instead of asking
 - Markdown rendering: headings, lists, tables, quotes, links, and code blocks with a copy button
@@ -217,11 +230,10 @@ CEDAR_API_KEYS=devkey cargo run -p cedar
 CEDAR_API_KEY=devkey cargo run -p cedar-chat
 ```
 
-The UI is plain HTML, CSS, and JavaScript in `static/` (`v1/` for Claude style; `v3/` for the main page:
-`index.html`, `app.js` and `style.css` are what its two layouts share, `ledger.js` and `ledger.css` are
-Ledger's own and `dossier.js` and `dossier.css` Dossier's, each layout registering the same set of
-functions for `app.js` to call; `i18n/` for the translations, `v3.js` being the main page's,
-`ui-pref.js` for the saved choice, `file-viewer.js` for the file preview, `image-view.js` and
+The UI is plain HTML, CSS, and JavaScript in `static/` (`v3/` for the page:
+`index.html`, `app.js` and `style.css`, with `ledger.js` and `ledger.css` for where a turn's pieces
+go; `i18n/` for the translations, `v3.js` being the page's,
+`setup.js` and `setup.css` for the first start, `file-viewer.js` for the file preview, `image-view.js` and
 `image-view.css` for the images the agent produces, `map-view.js` and
 `map-view.css` for the maps, `transit-view.js` and `transit-view.css` for trips, `stock-view.js` and
 `stock-view.css` for stocks, `product-view.js` and `product-view.css` for products, `flight-view.js` and `flight-view.css` for flights, `clarify-view.js` and `clarify-view.css` for clarifying questions, `followup-view.js` and `followup-view.css` for suggested follow-ups,

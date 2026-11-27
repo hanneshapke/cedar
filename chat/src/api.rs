@@ -19,7 +19,7 @@ use std::convert::Infallible;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, FromRequest, FromRequestParts, Path, Query, RawQuery, Request, State};
 use axum::http::header::{self, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
@@ -73,9 +73,9 @@ const ATTACHMENT_TYPES: [&str; 7] = ["image/png", "image/jpeg", "image/gif", "im
 pub const GOOGLE_CALLBACK_PATH: &str = "/api/oauth/google/callback";
 const ADMIN_HEADER: &str = "x-admin-token";
 
-/// `/` only redirects to the UI the browser has chosen (see `ui-pref.js`).
-const LOADER_HTML: &str = include_str!("../static/index.html");
-const UI_PREF_JS: &str = include_str!("../static/ui-pref.js");
+/// Setting Cedar up the first time it is opened (finding or adding a model, then a first task).
+const SETUP_JS: &str = include_str!("../static/setup.js");
+const SETUP_CSS: &str = include_str!("../static/setup.css");
 /// `cedarConfirm`, asking in the page because the macOS app's webview has no `confirm()`; every UI loads it.
 const CONFIRM_JS: &str = include_str!("../static/confirm.js");
 /// The hosted providers and the presets of model servers people run themselves, for Settings'
@@ -151,7 +151,6 @@ const I18N_CATALOGS: &[(&str, &str)] = &[
     ("cards.js", include_str!("../static/i18n/cards.js")),
     ("agents.js", include_str!("../static/i18n/agents.js")),
     ("actions.js", include_str!("../static/i18n/actions.js")),
-    ("v1.js", include_str!("../static/i18n/v1.js")),
     ("v3.js", include_str!("../static/i18n/v3.js")),
 ];
 const ATTACH_JS: &str = include_str!("../static/attach.js");
@@ -184,14 +183,14 @@ const PAIRING_JS: &str = include_str!("../static/pairing.js");
 const SLACK_JS: &str = include_str!("../static/slack.js");
 /// The service worker that shows Web Push messages, served at the root so its scope is the whole site.
 const SW_JS: &str = include_str!("../static/sw.js");
-/// The plan, approval cards, folded reasoning, sources and citations; v3 and v4 load it.
+/// The plan, approval cards, folded reasoning, sources and citations.
 const TRUST_VIEW_JS: &str = include_str!("../static/trust-view.js");
 const TRUST_VIEW_CSS: &str = include_str!("../static/trust-view.css");
 /// Leaflet 1.9.4 (BSD-2-Clause, see `static/vendor/leaflet/LICENSE`), served from here so no
 /// third-party code runs in the page. Only the map tiles come from another server.
 const LEAFLET_JS: &str = include_str!("../static/vendor/leaflet/leaflet.js");
 const LEAFLET_CSS: &str = include_str!("../static/vendor/leaflet/leaflet.css");
-/// The v3 and v4 typefaces (SIL Open Font License 1.1, see `static/fonts/OFL-*.txt`), served from
+/// The page's typefaces (SIL Open Font License 1.1, see `static/fonts/OFL-*.txt`), served from
 /// here so the pages load no fonts from another host. `fonts.css` holds their `@font-face` rules.
 const FONTS_CSS: &str = include_str!("../static/fonts/fonts.css");
 const FONTS: &[(&str, &[u8])] = &[
@@ -219,17 +218,6 @@ const FAVICON_32_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-32.png")
 const FAVICON_16_PNG: &[u8] = include_bytes!("../../docs/assets/favicon-16.png");
 const APPLE_TOUCH_ICON_PNG: &[u8] = include_bytes!("../../docs/assets/apple-touch-icon.png");
 
-/// Small screenshots of each interface, light and dark, for the Interface page of Settings.
-/// Retake them when a design changes visibly.
-const UI_PREVIEWS: &[(&str, &[u8])] = &[
-    ("v1-light.webp", include_bytes!("../static/ui-previews/v1-light.webp")),
-    ("v1-dark.webp", include_bytes!("../static/ui-previews/v1-dark.webp")),
-    ("v3-light.webp", include_bytes!("../static/ui-previews/v3-light.webp")),
-    ("v3-dark.webp", include_bytes!("../static/ui-previews/v3-dark.webp")),
-    ("v4-light.webp", include_bytes!("../static/ui-previews/v4-light.webp")),
-    ("v4-dark.webp", include_bytes!("../static/ui-previews/v4-dark.webp")),
-];
-
 /// One of the front ends, served under its own prefix.
 struct Ui {
     prefix: &'static str,
@@ -238,18 +226,9 @@ struct Ui {
     css: &'static str,
 }
 
-/// "Claude style".
-const V1: Ui = Ui {
-    prefix: "/v1",
-    index: include_str!("../static/v1/index.html"),
-    js: include_str!("../static/v1/app.js"),
-    css: include_str!("../static/v1/style.css"),
-};
-
-/// The main page, in its two layouts: "Ledger" at `/v3/` (talk on the left, results on the right)
-/// and "Dossier" at `/v4/` (one column; each turn is a brief of plan, work, result and sources).
-/// The page picks the layout from the address it was opened at; `app.js` and `style.css` are what
-/// the two share, [`LAYOUT_FILES`] what each brings.
+/// The page: the conversation in a narrow column, and what Cedar produced beside it (on a
+/// phone, the results are the page and the conversation a sheet over them). It lives at `/v3/`,
+/// the address the phone apps and bookmarks know.
 const V3: Ui = Ui {
     prefix: "/v3",
     index: include_str!("../static/v3/index.html"),
@@ -257,13 +236,20 @@ const V3: Ui = Ui {
     css: include_str!("../static/v3/style.css"),
 };
 
-/// Each layout's own script and stylesheet, served next to the main page's.
+/// The layout's own script and stylesheet, served next to the page's.
 const LAYOUT_FILES: &[(&str, &str, &str)] = &[
     ("/v3/ledger.js", JS, include_str!("../static/v3/ledger.js")),
     ("/v3/ledger.css", CSS, include_str!("../static/v3/ledger.css")),
-    ("/v3/dossier.js", JS, include_str!("../static/v3/dossier.js")),
-    ("/v3/dossier.css", CSS, include_str!("../static/v3/dossier.css")),
 ];
+
+/// Send the browser to the page, keeping the query (the outcome of "Connect Google"); the
+/// browser keeps the `#/c/<id>` of a bookmarked conversation itself.
+async fn to_page(RawQuery(query): RawQuery) -> Redirect {
+    match query {
+        Some(q) if !q.is_empty() => Redirect::temporary(&format!("/v3/?{q}")),
+        _ => Redirect::temporary("/v3/"),
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -474,8 +460,9 @@ pub fn router(state: AppState) -> Router {
         .route("/hooks/{hook_id}", post(hooks::receive).layer(DefaultBodyLimit::max(hooks::MAX_BODY_BYTES)));
 
     let pages = Router::new()
-        .route("/", get(|| async { asset(HTML, LOADER_HTML) }))
-        .route("/ui-pref.js", get(|| async { asset(JS, UI_PREF_JS) }))
+        .route("/", get(to_page))
+        .route("/setup.js", get(|| async { asset(JS, SETUP_JS) }))
+        .route("/setup.css", get(|| async { asset(CSS, SETUP_CSS) }))
         .route("/i18n.js", get(|| async { asset(JS, I18N_JS) }))
         .route("/language.js", get(|| async { asset(JS, LANGUAGE_JS) }))
         .route("/language.css", get(|| async { asset(CSS, LANGUAGE_CSS) }))
@@ -558,20 +545,13 @@ pub fn router(state: AppState) -> Router {
     let pages = I18N_CATALOGS.iter().fold(pages, |pages, &(name, js)| {
         pages.route(&format!("/i18n/{name}"), get(move || async move { asset(JS, js) }))
     });
-    let pages = UI_PREVIEWS.iter().fold(pages, |pages, &(name, bytes)| {
-        pages.route(&format!("/ui-previews/{name}"), get(move || async move { asset(WEBP, bytes) }))
-    });
     let pages = LAYOUT_FILES.iter().fold(pages, |pages, &(path, content_type, body)| {
         pages.route(path, get(move || async move { asset(content_type, body) }))
     });
-    with_ui(with_ui(pages, V1), V3)
-        // Dossier is the main page under its own address.
-        .route("/v4", get(|| async { asset(HTML, V3.index) }))
-        .route("/v4/", get(|| async { asset(HTML, V3.index) }))
-        // "Cedar style" is retired: its address opens Ledger, which grew out of it. The browser
-        // keeps the #/c/<id> of a bookmarked conversation across the redirect.
-        .route("/v2", get(|| async { Redirect::temporary("/v3/") }))
-        .route("/v2/", get(|| async { Redirect::temporary("/v3/") }))
+    // There is one interface. The addresses of the retired ones ("Claude style" at /v1/, "Cedar
+    // style" at /v2/, "Dossier" at /v4/) open it.
+    let pages = ["/v1", "/v1/", "/v2", "/v2/", "/v4", "/v4/"].iter().fold(with_ui(pages, V3), |pages, path| pages.route(path, get(to_page)));
+    pages
         .nest("/api", api)
         .fallback(|| async { AppError::NotFound("no such route") })
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
@@ -585,7 +565,6 @@ const CSS: &str = "text/css; charset=utf-8";
 const JSON: &str = "application/json; charset=utf-8";
 const SVG: &str = "image/svg+xml";
 const PNG: &str = "image/png";
-const WEBP: &str = "image/webp";
 const WOFF2: &str = "font/woff2";
 
 /// Serve a front end's page at `/vN` and `/vN/`, and its script and stylesheet next to it.

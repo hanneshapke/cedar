@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **The chat sets itself up.** A Cedar without a model used to open on a message box that couldn't send and a pointer to Settings → Models. It now opens on a setup page: cedar looks for a model server on its own computer (Ollama, LM Studio, vLLM, llama.cpp, SGLang) and offers what it finds with one click; otherwise you let the desktop app download a model, pick a hosted provider and paste its key, or give the address of a server elsewhere. It ends on three first tasks that need nothing from you, and one click runs one. The language is no longer asked for: the chat starts in the browser's.
+- **One interface.** "Dossier" (`/v4/`) and "Claude style" (`/v1/`) are gone, and so is the Interface page of Settings; their addresses open the remaining page at `/v3/`. On a phone the two tabs are gone too: the results are the page, and the conversation is a sheet under them that opens when Cedar needs an answer. Timings, token counts and turn numbers show in expert mode only, the status line is hidden until something has happened, and where the work ran is said once instead of under every turn.
+- **Settings in three places.** The pages are grouped as *What Cedar can do*, *What Cedar knows* and *Your setup*, with *Running Cedar* (Advanced settings, Server) at the end, and *What Cedar knows* is linked beside Agents and Actions. A tool that isn't set up has a **Connect** button that opens its key's form right there. Tool function names, model addresses and ids, the turn limit and the system prompt show in expert mode.
+
 ## 0.12.2
 
 - **The desktop app can stop the model it runs, and *Remove* works on a Mac.** The setup page's *Run a model here with llama.cpp* has a *Stop* button, which ends `llama-server` and frees the memory the model took without deleting anything, and a *Start* button that loads it again. A model that was stopped stays stopped when the app starts. *Remove* did nothing on a Mac: it asked with a browser dialog that the Mac's webview never shows and answers with "no". It now asks on the page, and what goes wrong with any of the three is said there too.

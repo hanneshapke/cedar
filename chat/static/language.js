@@ -1,13 +1,12 @@
 'use strict';
 
-// Picking the language: the first thing a new browser asks, before anything else on the page,
-// and the Language page of Settings. Both list the locales of cedarI18n.LOCALES; picking one saves
-// it in this browser and on the server (scheduled runs and notifications follow it) and reloads
-// the page in it. The first visit preselects the language saved on the server by another device,
-// else the browser's own.
+// The Language page of Settings. It lists the locales of cedarI18n.LOCALES; picking one saves it
+// in this browser and on the server (scheduled runs and notifications follow it) and reloads the
+// page in it.
 //
-// The UIs wait for `cedarLanguage.ready` before they start, so the token prompt and everything
-// else come after the question.
+// Nobody is asked for a language when they first open the page: the browser already says which
+// one its owner reads (i18n.js starts in it, or in the one another device saved on the server),
+// and this page changes it.
 
 const cedarLanguage = (() => {
   const { LOCALES, locale } = cedarI18n;
@@ -46,67 +45,8 @@ const cedarLanguage = (() => {
     return group;
   }
 
-  // -- the first visit -------------------------------------------------------------------------
-
-  /** The language saved on the server, if the page may read it yet (no token prompt here). */
-  async function serverLocale() {
-    try {
-      const headers = {};
-      const token = localStorage.getItem('cedar-chat-token');
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch('/api/settings', { headers });
-      if (!res.ok) return '';
-      return cedarI18n.normalize((await res.json())?.locale);
-    } catch {
-      return '';
-    }
-  }
-
-  function ask() {
-    return new Promise((resolve) => {
-      const dialog = el('dialog', 'lang-dialog');
-      dialog.setAttribute('aria-labelledby', 'lang-dialog-title');
-      const head = el('div', 'lang-dialog-head');
-      // Asked in all three languages, since the page can't know which one yet.
-      const title = el('h2', 'lang-dialog-title', 'Choose your language');
-      title.id = 'lang-dialog-title';
-      head.append(
-        title,
-        el('p', 'lang-dialog-sub', 'Sprache wählen · Choisissez votre langue · Elige tu idioma'),
-        el('p', 'lang-dialog-note', tr('language.onboardingNote')),
-      );
-      let picked = locale;
-      const list = choices(picked, (tag) => {
-        picked = tag;
-        for (const b of list.querySelectorAll('.ui-option')) b.setAttribute('aria-pressed', String(b.dataset.locale === tag));
-      });
-      const go = el('button', 'lang-dialog-go', tr('language.continue'));
-      go.type = 'button';
-      go.addEventListener('click', async () => {
-        go.disabled = true;
-        await cedarI18n.set(picked);
-        dialog.close();
-        dialog.remove();
-        resolve();
-      });
-      // The question must be answered: Escape doesn't skip it.
-      dialog.addEventListener('cancel', (e) => e.preventDefault());
-      dialog.append(head, list, go);
-      document.body.append(dialog);
-      dialog.showModal();
-      // Focus starts on Continue, so the first choice doesn't look picked.
-      go.focus();
-      serverLocale().then((saved) => {
-        const option = saved && list.querySelector(`.ui-option[data-locale="${saved}"]`);
-        if (option && picked === locale) option.click();
-      });
-    });
-  }
-
-  const ready = (async () => {
-    if (document.readyState === 'loading') await new Promise((r) => document.addEventListener('DOMContentLoaded', r, { once: true }));
-    if (!cedarI18n.chosen()) await ask();
-  })();
+  /** Kept for the page's start-up, which once waited here for the first visit's question. */
+  const ready = Promise.resolve();
 
   // -- Settings ----------------------------------------------------------------------------------
 
