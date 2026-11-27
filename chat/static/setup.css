@@ -1,0 +1,41 @@
+/* Setting Cedar up the first time (setup.js): a page over the chat, which can't answer yet.
+   It uses the page's own colours and type (ledger.css). */
+
+:root[data-setup] .app { visibility: hidden; }
+.cedar-setup { position: fixed; inset: 0; z-index: 15; display: flex; flex-direction: column; overflow-y: auto; background: var(--paper); color: var(--ink); }
+.cedar-setup-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; }
+.cedar-setup-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+.cedar-setup-brand img { width: 22px; height: 22px; }
+.cedar-setup-body { display: flex; flex-direction: column; gap: 18px; width: min(560px, 100% - 40px); margin: auto; padding: 24px 0 72px; }
+.cedar-setup-title { margin: 0; font: 500 32px/1.15 var(--serif); letter-spacing: -.01em; text-wrap: balance; outline: none; }
+.cedar-setup-lead { margin: -6px 0 0; font-size: 16px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+.cedar-setup-model { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); font-weight: 500; overflow-wrap: anywhere; }
+.cedar-setup-spinner { width: 22px; height: 22px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: cedar-setup-spin .8s linear infinite; }
+@keyframes cedar-setup-spin { to { transform: rotate(360deg); } }
+
+.cedar-setup-cards { display: flex; flex-direction: column; gap: 10px; }
+.cedar-setup-card { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--sheet); text-align: left; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.cedar-setup-card strong { font-weight: 600; font-size: 15px; color: var(--ink); }
+.cedar-setup-card:hover { border-color: var(--accent); }
+
+.cedar-setup-form { display: flex; flex-direction: column; gap: 14px; }
+.cedar-setup-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.cedar-setup-field input, .cedar-setup-field select { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); font-size: 15px; color: var(--ink); }
+.cedar-setup-field input:focus-visible, .cedar-setup-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cedar-setup-docs { font-size: 13px; }
+.cedar-setup-error { margin: 0; padding: 10px 12px; border: 1px solid var(--error-line); border-radius: 10px; background: var(--error-wash); font-size: 13.5px; color: var(--error); overflow-wrap: anywhere; }
+
+.cedar-setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 4px; }
+.cedar-setup-btn { min-height: 42px; padding: 0 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); font-weight: 500; font-size: 14.5px; color: var(--ink); }
+.cedar-setup-btn:hover { background: var(--wash); }
+.cedar-setup-btn.primary { border-color: var(--ink); background: var(--ink); color: var(--on-ink); }
+.cedar-setup-btn.primary:hover { opacity: .9; }
+.cedar-setup-btn:disabled { opacity: .55; cursor: default; }
+.cedar-setup-link { min-height: 42px; padding: 0 4px; border: 0; background: none; font-size: 14px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.cedar-setup-link:hover { color: var(--ink); }
+
+@media (max-width: 600px) {
+  .cedar-setup-body { margin-top: 12px; }
+  .cedar-setup-title { font-size: 26px; }
+}
+@media (prefers-reduced-motion: reduce) { .cedar-setup-spinner { animation-duration: 2.4s; } }

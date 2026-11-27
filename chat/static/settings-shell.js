@@ -1,16 +1,18 @@
 'use strict';
 
-// The Settings dialog's frame, shared by every UI: a left nav with one entry per page, each
-// showing its current value, one page at a time on the right, and a footer with Save for the
-// pages that have something to save. The pages themselves come from the other modules, which
+// The Settings dialog's frame: a left nav with one entry per page, each showing its current
+// value, one page at a time on the right, and a footer with Save for the pages that have
+// something to save. The nav is in three places a person would look, not one per subsystem:
+// what Cedar can do, what Cedar knows, and this computer; what only the person who runs the
+// server changes sits under a fourth heading at the end. The pages themselves come from the other modules, which
 // register here:
 //
 //   cedarSettingsShell.register({
-//     id, label,            // 'interface' | 'language' | 'tools' | 'model' | 'memory' | 'records' | 'contribute' | 'feedback' | 'notify' | 'iphone' | 'slack' | 'advanced' | 'server', and the nav name
+//     id, label,            // 'tools' | 'slack' | 'feedback' | 'memory' | 'records' | 'contribute' | 'model' | 'iphone' | 'notify' | 'language' | 'advanced' | 'server', and the nav name
 //     title, description,   // the page head
 //     render(sectionEl),    // draw the page; called every time the dialog opens
 //     summary() -> string | {text, kind} | null   the nav's second line (null: none yet, shows "…")
-//     tag() -> string | null                      a small mono tag instead (the Server item)
+//     tag() -> string | null                      a small tag beside the name (the Server item)
 //     actions() -> Node[] | null                  buttons for the page head (the Server page's Lock)
 //     footer: boolean | () => boolean             whether the page saves through the footer
 //     save() -> Promise                           what the footer's Save does
@@ -19,10 +21,17 @@
 // Pages report their state with setDirty(id, count) and setStatus(id, text, kind), and call
 // refresh(id) when their summary changed. A click on #settings-btn opens the dialog on the page
 // last used in this session, or on the one named in the button's data-page (the inbox's "Change
-// in Settings" asks for 'notify', the Google redirect for 'server').
+// in Settings" asks for 'notify', the Google redirect for 'server', the Memory link for 'memory').
 
 const cedarSettingsShell = (() => {
-  const ORDER = ['interface', 'language', 'tools', 'model', 'memory', 'records', 'contribute', 'feedback', 'notify', 'iphone', 'slack', 'advanced', 'server'];
+  const GROUPS = [
+    { label: 'shell.group.does', pages: ['tools', 'slack', 'feedback'] },
+    { label: 'shell.group.knows', pages: ['memory', 'records', 'contribute'] },
+    { label: 'shell.group.here', pages: ['model', 'iphone', 'notify', 'language'] },
+    { label: 'shell.group.expert', pages: ['advanced', 'server'] },
+  ];
+  /** The page the dialog opens on when nothing asks for another. */
+  const HOME = 'tools';
   const PAGE_KEY = 'cedar-chat-settings-page';
 
   const pages = new Map();
@@ -58,7 +67,7 @@ const cedarSettingsShell = (() => {
   }
 
   function rememberPage(id) {
-    try { sessionStorage.setItem(PAGE_KEY, id); } catch { /* then the next open starts at Interface */ }
+    try { sessionStorage.setItem(PAGE_KEY, id); } catch { /* then the next open starts at the first page */ }
   }
 
   // -- the nav -----------------------------------------------------------------------------------
@@ -67,7 +76,9 @@ const cedarSettingsShell = (() => {
     const b = el('button', 'settings-nav-item');
     b.type = 'button';
     b.dataset.page = page.id;
-    b.append(el('span', 'settings-nav-name', page.label), el('span', 'settings-nav-value', '…'));
+    const name = el('span', 'settings-nav-name', page.label);
+    if (page.tag) name.append(el('span', 'settings-nav-tag'));
+    b.append(name, el('span', 'settings-nav-value', '…'));
     b.addEventListener('click', () => go(page.id));
     return b;
   }
@@ -76,17 +87,21 @@ const cedarSettingsShell = (() => {
     if (!navList) return;
     navList.textContent = '';
     navItems = new Map();
-    for (const id of ORDER) {
-      const page = pages.get(id);
-      if (!page) continue;
-      const item = id === 'server' ? dialog.querySelector('#settings-nav-server') : navItem(page);
-      if (!item) continue;
-      if (id === 'server' && !item.dataset.bound) {
-        item.dataset.bound = '1';
-        item.addEventListener('click', () => go('server'));
+    for (const group of GROUPS) {
+      const items = group.pages.map((id) => pages.get(id)).filter(Boolean);
+      if (!items.length) continue;
+      const section = el('div', 'settings-nav-group');
+      section.setAttribute('role', 'group');
+      const heading = el('div', 'settings-nav-heading', tr(group.label));
+      heading.id = `settings-nav-${group.label.split('.').pop()}`;
+      section.setAttribute('aria-labelledby', heading.id);
+      section.append(heading);
+      for (const page of items) {
+        const item = navItem(page);
+        navItems.set(page.id, item);
+        section.append(item);
       }
-      navItems.set(id, item);
-      if (id !== 'server') navList.append(item);
+      navList.append(section);
     }
   }
 
@@ -103,7 +118,7 @@ const cedarSettingsShell = (() => {
         try { s = page.summary ? page.summary() : null; } catch { s = null; }
         const text = s && typeof s === 'object' ? s.text : s;
         const kind = s && typeof s === 'object' ? s.kind || '' : '';
-        value.textContent = text ?? '…';
+        value.textContent = text ?? (page.tag ? '' : '…');
         value.className = `settings-nav-value${kind ? ` ${kind}` : ''}`;
       }
       const tagEl = item.querySelector('.settings-nav-tag');
@@ -130,7 +145,7 @@ const cedarSettingsShell = (() => {
   // -- pages -------------------------------------------------------------------------------------
 
   function go(id) {
-    const page = pages.get(id) || pages.get('interface');
+    const page = pages.get(id) || pages.get(HOME);
     if (!page || !dialog) return;
     current = page.id;
     rememberPage(page.id);
@@ -139,6 +154,8 @@ const cedarSettingsShell = (() => {
       if (pid === page.id) item.setAttribute('aria-current', 'page');
       else item.removeAttribute('aria-current');
     }
+    // On a phone the nav is one row that scrolls sideways: keep the open page's entry in view.
+    navItems.get(page.id)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     if (titleEl) titleEl.textContent = page.title || page.label;
     if (descEl) descEl.textContent = page.description || '';
     renderActions(page);
@@ -205,7 +222,7 @@ const cedarSettingsShell = (() => {
     for (const id of pages.keys()) { dirty.set(id, 0); notes.delete(id); }
     if (!dialog.open) dialog.showModal();
     buildNav();
-    const start = pages.has(pageId) ? pageId : pages.has(lastPage()) ? lastPage() : 'interface';
+    const start = pages.has(pageId) ? pageId : pages.has(lastPage()) ? lastPage() : HOME;
     go(start);
     for (const page of pages.values()) {
       const section = sectionOf(page.id);

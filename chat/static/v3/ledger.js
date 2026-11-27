@@ -1,12 +1,17 @@
 'use strict';
 
-// The "Ledger" layout of cedar-chat's main page (/v3/): say on the left, show on the right. The
-// conversation (prompts, Cedar's prose, its questions, the plan, and tool calls folded into one
-// "Worked through N steps" line per run of steps) is a narrow column; everything a tool produced
-// is a card on the stage beside it, grouped by turn, with a rail of the sources the turn read.
-// On a narrow screen the two panes become tabs.
+// The layout of cedar-chat's page (/v3/): say on the left, show on the right. The conversation
+// (prompts, Cedar's prose, its questions, the plan, and tool calls folded into one "Worked
+// through N steps" line per run of steps) is a narrow column; everything a tool produced is a
+// card on the stage beside it, grouped by turn, with a rail of the sources the turn read.
 //
-// app.js holds everything the layouts share and calls the functions returned here. They use its
+// What Cedar made is what the reader came for, so on a narrow screen the stage is the page and
+// the conversation is a sheet under it: closed, it is the message box with one line of what
+// Cedar last said; opened by its handle, it takes the screen. It opens by itself when Cedar
+// needs an answer (a plan to agree to, a call to allow) and for a reply that is only words; it
+// closes by itself when the first result of the latest turn lands, unless the reader opened it.
+//
+// app.js holds everything else and calls the functions returned here. They use its
 // globals (els, state, h, t, tr, note, fillStep, ...) freely: this file is loaded first, but
 // nothing in it runs until app.js calls it.
 
@@ -46,7 +51,8 @@
     group.dataset.turn = view.turn.id;
     const n = state.order.indexOf(view.turn.id) + 1;
     const head = h('div', 'turn-head');
-    head.append(t('span', 'n', tr('v3.turn', { n })), t('span', 'q', firstLine(view.turn.prompt).slice(0, 160)), t('span', 't', fmtTime(view.turn.created_at)));
+    // The turn's number is for expert mode: the request it answers already names it.
+    head.append(t('span', 'n dbg', tr('v3.turn', { n })), t('span', 'q', firstLine(view.turn.prompt).slice(0, 160)), t('span', 't', fmtTime(view.turn.created_at)));
     head.querySelector('.q').title = view.turn.prompt;
     group.append(head);
     const grid = h('div', 'turn-grid');
@@ -62,6 +68,7 @@
     if (later) els.stageBody.insertBefore(group, later); else els.stageBody.append(group);
     view.group = group;
     els.stageEmpty.hidden = true;
+    els.app.classList.add('has-results');
     renderSources(view);
     return group;
   }
@@ -72,8 +79,17 @@
     ensureGroup(view);
     view.cardsEl.append(card);
     if (follow) els.stage.scrollTop = els.stage.scrollHeight;
-    if (narrow.matches && els.app.dataset.pane !== 'stage') { state.unseen++; updateTabs(); }
+    if (!narrow.matches || els.app.dataset.pane === 'stage') return;
+    // The latest turn's result comes to the front, unless the reader opened the conversation
+    // themselves or Cedar is waiting for them there; then the handle counts what landed.
+    if (isLatest(view) && !sheet.byReader && !waitingOnReader()) setPane('stage');
+    else { state.unseen++; updateTabs(); }
   }
+
+  const isLatest = (view) => state.order[state.order.length - 1] === view.turn.id;
+
+  /** Whether the running turn waits for the reader: its plan to agree to, or a call to allow. */
+  const waitingOnReader = () => Boolean(state.activeTurn && [tr('v3.waitingOk'), tr('v3.waitingPlan')].includes(state.activeTurn.doing));
 
   /** Scroll the stage to a tool's card (opening a folded one) and flash it. */
   function focusCard(tool) {
@@ -208,7 +224,12 @@
       }
       aside.append(list);
     }
-    if (view.done) aside.append(t('div', 'sandbox', cedarTrust.sandbox.text(view.started, view.approvalsGranted)));
+    // Where the work ran is said once, under the first turn, and again only when a turn was
+    // different: the network was on, or the reader allowed something. Expert mode shows all.
+    if (view.done) {
+      const usual = state.order[0] !== view.turn.id && !view.approvalsGranted && (view.started?.sandbox?.network ?? 'none') === (state.views.get(state.order[0])?.started?.sandbox?.network ?? 'none');
+      aside.append(t('div', usual ? 'sandbox dbg' : 'sandbox', cedarTrust.sandbox.text(view.started, view.approvalsGranted)));
+    }
   }
 
   // -- the end of a turn ---------------------------------------------------------------------------
@@ -225,6 +246,8 @@
     view.planEl?.cedarPlan.finish(event.type === 'run.completed');
     settleWork(view);
     renderSources(view);
+    // A reply that is only words is read in the conversation.
+    if (narrow.matches && isLatest(view) && !view.group && els.app.dataset.pane !== 'talk') setPane('talk');
   }
 
   /** Once a watched turn is over, the stage rests on the top of its main result: the document it
@@ -239,7 +262,10 @@
     els.notes.textContent = '';
     els.stageBody.textContent = '';
     els.stageEmpty.hidden = false;
-    updateTabs();
+    els.app.classList.remove('has-results');
+    sheet.byReader = false;
+    sheet.waiting = false;
+    setPane('talk');
   }
 
   // -- chrome --------------------------------------------------------------------------------------
@@ -262,19 +288,48 @@
     els.cost.title = full;
     els.costFull.textContent = full;
     els.runDetails.hidden = !c || !(full || els.when.textContent);
-  }
-
-  // -- the two panes on a narrow screen ------------------------------------------------------------
-
-  function setPane(pane) {
-    els.app.dataset.pane = pane;
-    if (pane === 'stage') state.unseen = 0;
+    // The bar says what Cedar is doing while it works, and that a reply failed. A finished or
+    // stopped reply needs no label: the reply is there.
+    const last = state.views.get(state.order[state.order.length - 1]);
+    els.status.classList.toggle('idle', !state.activeTurn && last?.lastEvent !== 'run.failed');
+    els.app.classList.toggle('no-model', Boolean(state.noModels));
+    if (els.setupResume) els.setupResume.hidden = !state.noModels;
+    // Cedar started waiting for the reader: the conversation comes up.
+    const waiting = waitingOnReader();
+    if (narrow.matches && waiting && !sheet.waiting && els.app.dataset.pane !== 'talk') setPane('talk');
+    sheet.waiting = waiting;
     updateTabs();
   }
 
+  // -- a narrow screen: the results are the page, the conversation a sheet ------------------------
+
+  /** Whether the reader opened the conversation themselves (then results don't take it away),
+   *  and whether Cedar was waiting for them when the chrome was last drawn. */
+  const sheet = { byReader: false, waiting: false };
+
+  /** 'stage': the results, with the sheet closed under them. 'talk': the conversation, open.
+   *  Without results there is only the conversation. */
+  function setPane(pane) {
+    els.app.dataset.pane = pane === 'stage' && els.app.classList.contains('has-results') ? 'stage' : 'talk';
+    if (els.app.dataset.pane === 'stage') { state.unseen = 0; sheet.byReader = false; }
+    else els.notes.scrollTop = els.notes.scrollHeight;
+    updateTabs();
+  }
+
+  /** The handle: closed, the line Cedar last said (or what it is doing) and "Conversation";
+   *  open, "Results" with how many landed meanwhile. */
   function updateTabs() {
-    for (const tab of els.tabs.querySelectorAll('.tab')) tab.setAttribute('aria-selected', String(tab.dataset.pane === els.app.dataset.pane));
-    els.stageBadge.hidden = !state.unseen;
+    const open = els.app.dataset.pane !== 'stage';
+    els.sheetHandle.hidden = !els.app.classList.contains('has-results');
+    els.sheetHandle.setAttribute('aria-expanded', String(open));
+    els.sheetToggle.textContent = tr(open ? 'v3.tab.results' : 'v3.tab.conversation');
+    let line = '';
+    if (!open) {
+      const said = [...els.notes.querySelectorAll('.note.cedar')].pop();
+      line = state.activeTurn ? els.statusText.textContent : firstLine(said?.lastChild?.textContent || '').slice(0, 140);
+    }
+    els.sheetLine.textContent = line;
+    els.stageBadge.hidden = !open || !state.unseen;
     els.stageBadge.textContent = state.unseen > 99 ? '99+' : String(state.unseen);
   }
 
@@ -351,7 +406,9 @@
   /** The welcome screen's rail: the latest conversations, with when they were started. */
   function renderHomeRecents() {
     els.homeRecents.textContent = '';
-    if (!state.conversations.length) { els.homeRecents.append(t('div', 'empty-list', tr('v3.homeEmpty'))); return; }
+    // Nothing to list yet: the rail gives its room back, and its links sit under the examples.
+    els.app.classList.toggle('no-recents', !state.conversations.length);
+    if (!state.conversations.length) return;
     for (const c of state.conversations.slice(0, 6)) {
       const a = h('a', 'home-conv');
       a.href = `#/c/${c.id}`;
@@ -364,7 +421,11 @@
 
   function bindLayout() {
     els.allChats.addEventListener('click', openDrawer);
-    els.tabs.addEventListener('click', (e) => { const tab = e.target.closest('.tab'); if (tab) setPane(tab.dataset.pane); });
+    els.sheetHandle.addEventListener('click', () => {
+      const open = els.app.dataset.pane === 'stage';
+      setPane(open ? 'talk' : 'stage');
+      sheet.byReader = open;
+    });
     bindSplitter();
     updateTabs();
   }

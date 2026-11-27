@@ -2,7 +2,7 @@
 
 // cedar-chat's main page. Plain JavaScript, no build step. Talks only to /api on this origin.
 //
-// One page, two layouts. Both show what lets a reader trust a run they did not watch:
+// The page shows what lets a reader trust a run they did not watch:
 //   - the plan Cedar commits to before it starts (a `plan` event); until the run starts the steps
 //     are editable and "Looks good, start" sends them back (POST /api/turns/{id}/plan);
 //   - a row per tool call, with the call's output as a card;
@@ -14,11 +14,10 @@
 //     from `run.started`.
 // A server that sends none of these events shows none of the blocks. See chat/REDESIGN.md.
 //
-// This file is what the layouts share: the markdown renderer, the API and token helpers, the
-// cards, the event loop and the chrome. Where a turn's pieces go on the page is the layout's
-// business: ledger.js ("Ledger", /v3/: say on the left, show on the right) and dossier.js
-// ("Dossier", /v4/: one column, each turn a brief of Plan, Work, Result and Sources). Each
-// registers the same set of functions in `cedarLayouts`; the ones this file calls are named below.
+// This file holds the markdown renderer, the API and token helpers, the cards, the event loop
+// and the chrome. Where a turn's pieces go on the page is ledger.js's business: say on the left,
+// show on the right, and on a phone the results as the page with the conversation in a sheet.
+// It registers its functions in `cedarLayouts`; the ones this file calls are named below.
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -27,14 +26,14 @@ const els = {
   filesBtn: $('files-btn'), filesDialog: $('files-dialog'), filesList: $('files-list'),
   agentBtn: $('agent-btn'), agentBadge: $('agent-badge'), inboxBtn: $('inbox-btn'),
   chatsBtn: $('chats-btn'), drawer: $('drawer'), drawerClose: $('drawer-close'), backdrop: $('backdrop'), recents: $('recents'),
-  tabs: $('tabs'), stageBadge: $('stage-badge'),
+  sheetHandle: $('sheet-handle'), sheetLine: $('sheet-line'), sheetToggle: $('sheet-toggle'), stageBadge: $('stage-badge'),
+  setupResume: $('setup-resume'),
   cost: $('cost'), costFull: $('cost-full'), runDetails: $('run-details'),
   renameItem: $('rename-item'), examples: $('examples'), homeRecents: $('home-recents'), allChats: $('all-chats'), greeting: $('greeting'),
-  // Ledger's two panes (absent, so null, in Dossier).
+  // The two panes.
   talk: $('talk'), notes: $('notes'), splitter: $('splitter'),
   stage: $('stage'), stageBody: $('stage-body'), stageEmpty: $('stage-empty'),
-  // Dossier's column and its sidebar outline (null in Ledger).
-  scroll: $('scroll'), briefs: $('briefs'), hero: $('hero'), slip: document.querySelector('.slip'), outline: $('outline'), outlineWrap: $('outline-wrap'),
+  hero: $('hero'), slip: document.querySelector('.slip'),
   composer: $('composer'), input: $('input'), send: $('send'), model: $('model'), reasoning: $('reasoning'),
   toast: $('toast'), tokenDialog: $('token-dialog'), tokenForm: $('token-form'),
   tokenInput: $('token-input'), tokenMessage: $('token-message'),
@@ -46,9 +45,8 @@ const TOKEN_KEY = 'cedar-chat-token';
 const DOC_RE = /\.(md|markdown|txt)$/i;
 const NO_MODELS = () => tr('v3.noModels');
 
-// The layout this page was opened with (index.html sets data-ui from the address), and the
-// functions it brings.
-const layout = cedarLayouts[document.documentElement.dataset.ui === 'v4' ? 'dossier' : 'ledger'];
+// The layout, and the functions it brings.
+const layout = cedarLayouts.ledger;
 const {
   startTurn, placeNote, placeCard, focusCard, addStep, stepFilled, documentFilled,
   showPlan, planChanged, placeDecision, renderSources, putClosing, closeTurn, restOnResult,
@@ -136,6 +134,15 @@ async function copyText(text, button) {
 const fmtMs = (ms) => (typeof ms !== 'number' ? '' : ms < 1000 ? `${cedarI18n.number(ms)} ms`
   : `${cedarI18n.number(ms / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`);
 const fmtTime = (iso) => new Date(iso || Date.now()).toLocaleTimeString(cedarI18n.locale, { hour: '2-digit', minute: '2-digit' });
+
+/** A card's meta line: what it says for everyone (`label`), and how long the call took, which
+ *  only shows in expert mode (`.dbg`). */
+function metaEl(label, ms) {
+  const el = t('span', '', label || '');
+  const took = fmtMs(ms);
+  if (took) el.append(t('span', 'dbg', label ? ` · ${took}` : took));
+  return el;
+}
 
 /** Whether a scrolling element is at (or within `slack` of) its end: the reader is following along. */
 const nearEnd = (el, slack = 160) => el.scrollHeight - el.scrollTop - el.clientHeight < slack;
@@ -563,7 +570,7 @@ function fillCharts(tool, card) {
   card.classList.add('widget'); // laid out like the other widget cards
   tool.chartEls ??= charts.map((spec) => cedarChart.element(spec));
   tool.reportEl ??= cedarChart.report(text);
-  const meta = t('span', '', `${tr('v3.count.charts', { count: charts.length })} · ${fmtMs(tool.duration_ms)}`);
+  const meta = metaEl(tr('v3.count.charts', { count: charts.length }), tool.duration_ms);
   card.append(cardHead(TOOLS[tool.name]?.icon || 'chart', toolHtml(tool, true), { meta }));
   const body = h('div', 'card-body');
   body.append(...tool.chartEls, tool.reportEl);
@@ -587,7 +594,7 @@ function fillDocument(tool, card, done) {
     if (view) actions.push(view);
     actions.push(downloadLink(rel, true));
   }
-  const meta = done ? t('span', '', `${fmtMs(tool.duration_ms)} · ${size}`) : spinnerMeta(tr('v3.beingWritten'));
+  const meta = done ? metaEl(size, tool.duration_ms) : spinnerMeta(tr('v3.beingWritten'));
   card.append(cardHead('doc', escapeHtml(name), { meta, actions }));
   const body = h('div', 'card-body');
   if (/\.txt$/i.test(path)) body.append(t('pre', 'plain', content));
@@ -610,7 +617,7 @@ function fillWidget(tool, card, done) {
   if (!spec) {
     // Not a usable result: fall back to the raw output, folded like a trace.
     card.classList.add('trace');
-    card.append(cardHead(iconName, toolHtml(tool, true), { meta: t('span', '', fmtMs(tool.duration_ms)), chevron: true }));
+    card.append(cardHead(iconName, toolHtml(tool, true), { meta: metaEl('', tool.duration_ms), chevron: true }));
     const body = h('div', 'card-body');
     body.append(outputBlock(String(tool.output)));
     card.append(body);
@@ -627,7 +634,7 @@ function fillWidget(tool, card, done) {
     if (view) actions.push(view);
     actions.push(downloadLink(rel));
   }
-  card.append(cardHead(iconName, toolHtml(tool, true), { meta: t('span', '', `${w.count(spec)} · ${fmtMs(tool.duration_ms)}`), actions }));
+  card.append(cardHead(iconName, toolHtml(tool, true), { meta: metaEl(w.count(spec), tool.duration_ms), actions }));
   const body = h('div', 'card-body');
   body.append(tool[key]);
   card.append(body);
@@ -642,7 +649,7 @@ function fillFile(tool, card, done) {
     if (view) actions.push(view);
     actions.push(downloadLink(rel));
   }
-  const meta = done ? t('span', '', `${tr('v3.saved')} · ${fmtMs(tool.duration_ms)}`) : spinnerMeta(tr('v3.saving'));
+  const meta = done ? metaEl(tr('v3.saved'), tool.duration_ms) : spinnerMeta(tr('v3.saving'));
   card.append(cardHead(TOOLS[tool.name].icon, toolHtml(tool, done), { meta, actions }));
 }
 
@@ -656,14 +663,14 @@ function fillTrace(tool, card, done) {
   let meta;
   if (!done) meta = spinnerMeta(tr('v3.running'));
   else if (err) meta = t('span', '', tr('v3.failed'));
-  else meta = t('span', '', fmtMs(tool.duration_ms));
+  else meta = metaEl('', tool.duration_ms);
   let title = toolHtml(tool, done);
 
   switch (tool.name) {
     case 'web_search': {
       const results = done && !err ? parseSearchResults(tool.output) : [];
       if (results.length) {
-        meta = t('span', '', `${tr('v3.count.results', { count: results.length })} · ${fmtMs(tool.duration_ms)}`);
+        meta = metaEl(tr('v3.count.results', { count: results.length }), tool.duration_ms);
         const list = h('div', 'results');
         for (const r of results) {
           const item = h('div', 'result');
@@ -789,7 +796,9 @@ function fillStep(tool) {
   const done = tool.output !== undefined;
   row.className = `step ${!done ? 'running' : tool.is_error ? 'err' : 'done'}`;
   row.querySelector('.what').innerHTML = toolHtml(tool, done);
-  row.querySelector('.ms').textContent = !done ? '…' : tool.is_error ? tr('v3.failed') : fmtMs(tool.duration_ms);
+  const ms = row.querySelector('.ms');
+  ms.textContent = !done ? '…' : tool.is_error ? tr('v3.failed') : fmtMs(tool.duration_ms);
+  ms.classList.toggle('dbg', done && !tool.is_error); // how long a step took is for expert mode
   const where = cardKind(tool) === 'none' ? '' : ` · ${tr('v3.clickToSee')}`;
   row.title = toolText(tool, done) + where;
   stepFilled(tool);
@@ -1069,7 +1078,7 @@ function updateChrome() {
   els.status.className = 'status' + (busy ? ' live' : latest?.lastEvent === 'run.failed' ? ' error' : '');
   const doing = state.activeTurn?.doing || tr('v3.thinking');
   els.statusText.textContent = busy ? tr('v3.status.working', { doing: `${doing[0].toLocaleLowerCase(cedarI18n.locale)}${doing.slice(1)}` })
-    : latest ? (latest.lastEvent === 'run.failed' ? tr('v3.status.failed') : latest.lastEvent === 'run.cancelled' ? tr('v3.status.stopped') : tr('v3.status.done')) : tr('v3.status.idle');
+    : latest?.lastEvent === 'run.failed' ? tr('v3.status.failed') : '';
   els.send.disabled = state.sending || busy || state.noModels || !els.input.value.trim();
   els.input.placeholder = state.noModels ? NO_MODELS()
     : busy ? tr('v3.placeholder.busy') : tr(layout.key(c ? 'placeholder.reply' : 'placeholder.new'));
@@ -1439,12 +1448,33 @@ els.examples.addEventListener('click', (e) => {
   els.input.value = ex.dataset.prompt;
   autosize();
   updateChrome();
+  // An example carries everything it needs, so one click runs it. Where it can't be sent (no
+  // model yet), it waits in the message box.
+  if (els.send.disabled) els.input.focus();
+  else sendMessage();
+});
+// "New private chat" in the conversations drawer.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-private-new]')) return;
+  cedarPrivate.want(true);
+  closeDrawer();
+  if (location.hash && location.hash !== '#/') location.hash = '#/';
   els.input.focus();
 });
 {
   const hour = new Date().getHours();
   els.greeting.textContent = tr(layout.key(hour < 12 ? 'greeting.morning' : hour < 18 ? 'greeting.afternoon' : 'greeting.evening'));
 }
+// "What Cedar knows", beside Agents and Actions, opens Settings on that page.
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('[data-settings-page]');
+  if (!link) return;
+  closeDrawer();
+  const open = $('settings-btn');
+  open.dataset.page = link.dataset.settingsPage;
+  open.click();
+});
+els.setupResume.addEventListener('click', () => cedarSetup.open());
 els.drawerClose.addEventListener('click', closeDrawer);
 els.backdrop.addEventListener('click', closeDrawer);
 $('drawer-new').addEventListener('click', () => { closeDrawer(); if (!state.current) els.input.focus(); });
@@ -1463,7 +1493,6 @@ document.addEventListener('keydown', (e) => {
 narrow.addEventListener('change', narrowChanged);
 
 async function init() {
-  await cedarLanguage.ready; // a new browser is asked for its language before anything else
   cedarImages.init({ fetchFile: fetchWorkspaceFile, open: cedarViewer.open, download: downloadFile });
   cedarViewer.init({ fetchFile: fetchWorkspaceFile, renderMarkdown, download: downloadFile });
   cedarAgents.init({ api, toast, renderMarkdown });
@@ -1496,7 +1525,25 @@ async function init() {
   cedarPairing.init({ api, toast });
   cedarSlack.init({ api, toast, authHeaders });
   if (state.config.auth_required && !memoryToken) await askToken(false);
+  // A browser with no language of its own takes the one another device saved on the server
+  // (and reloads in it); nobody is asked.
+  try { if (cedarI18n.adopt((await api('GET', '/settings'))?.locale)) return; } catch { /* the browser's own language stays */ }
   await loadModels();
+  // Cedar can't answer without a model: before anything else, the page helps find or add one
+  // and ends on a first task (setup.js). It is skipped when cedar could not be asked.
+  cedarSetup.init({
+    toast,
+    config: () => state.config,
+    run: async (prompt) => {
+      await loadModels();
+      if (state.current) return;
+      els.input.value = prompt;
+      autosize();
+      updateChrome();
+      await sendMessage();
+    },
+  });
+  if (state.noModels && cedarModels.loaded()) cedarSetup.open();
   cedarSettings.start();
   cedarAgents.start();
   cedarActions.start();
