@@ -421,6 +421,19 @@ struct TurnTranscript: Identifiable, Hashable, Sendable {
         }
     }
 
+    /// Where each `[n]` in the run's text points: the web sources its tools read, by the number
+    /// the model cites them by.
+    var citations: [Int: URL] {
+        var out: [Int: URL] = [:]
+        for case .tool(let call) in items {
+            for source in call.sources where out[source.n] == nil {
+                guard let url = URL(string: source.url), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { continue }
+                out[source.n] = url
+            }
+        }
+        return out
+    }
+
     /// The calls that suggested a follow-up, in order; each call's id is the suggestion's
     /// `call_id`.
     var followUps: [ToolCall] {

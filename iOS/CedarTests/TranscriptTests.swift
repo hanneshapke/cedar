@@ -236,4 +236,16 @@ final class TranscriptTests: XCTestCase {
         XCTAssertNil(call.card)
         XCTAssertEqual(call.charts.count, 1)
     }
+
+    func testCitationsPointAtTheSourcesTheRunNumbered() {
+        var transcript = TurnTranscript(turn: turn())
+        func source(_ n: Double, _ url: String) -> JSONValue { .object(["n": .number(n), "url": .string(url)]) }
+        transcript.apply(event(1, "tool.call", .object(["id": .string("a"), "name": .string("web_search"), "input": .object([:])])))
+        transcript.apply(event(2, "tool.result", .object(["id": .string("a"), "output": .string(""),
+                                                           "sources": .array([source(1, "https://one.example"), source(2, "https://two.example")])])))
+        transcript.apply(event(3, "tool.call", .object(["id": .string("b"), "name": .string("fetch_url"), "input": .object([:])])))
+        transcript.apply(event(4, "tool.result", .object(["id": .string("b"), "output": .string(""),
+                                                           "sources": .array([source(2, "https://two.example"), source(3, "file:///etc/passwd")])])))
+        XCTAssertEqual(transcript.citations, [1: URL(string: "https://one.example")!, 2: URL(string: "https://two.example")!])
+    }
 }

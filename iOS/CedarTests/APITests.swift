@@ -1048,7 +1048,7 @@ final class APITests: XCTestCase {
         guard case .unreachable(let detail) = ChatClient.unreachable(tls, baseURL: URL(string: "https://spark.ts.net:3000")!) else {
             return XCTFail("expected .unreachable")
         }
-        XCTAssertTrue(detail.contains("Port 3000 may serve plain HTTP"))
+        XCTAssertTrue(detail.contains("Leave off the :3000"))
         XCTAssertEqual(ChatClient.unreachable(tls, baseURL: URL(string: "https://spark.ts.net")!),
                        .unreachable(tls.localizedDescription))
         let offline = URLError(.notConnectedToInternet)

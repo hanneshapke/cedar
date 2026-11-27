@@ -12,12 +12,13 @@ struct TurnView: View {
     var openAgent: (String, String) -> Void = { _, _ in }
 
     var body: some View {
+        let citations = turn.citations
         VStack(alignment: .leading, spacing: 12) {
             UserBubble(text: turn.prompt, attachments: turn.turn.attachments)
             ForEach(turn.items) { item in
                 switch item {
                 case .text(_, let text):
-                    MarkdownView(text: text)
+                    MarkdownView(text: text, sources: citations)
                 case .reasoning(_, let text, let durationMs):
                     ReasoningView(text: text, durationMs: durationMs)
                 case .plan(_, let plan):

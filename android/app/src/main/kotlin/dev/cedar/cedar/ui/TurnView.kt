@@ -115,9 +115,10 @@ import java.time.Instant
 fun TurnView(turn: TurnTranscript, chat: ChatModel, webURL: String?, isLast: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         UserBubble(turn.prompt, turn.turn.attachments)
+        val citations = remember(turn.items) { turn.citations }
         for (item in turn.items) {
             when (item) {
-                is TranscriptItem.Text -> MarkdownView(item.text)
+                is TranscriptItem.Text -> MarkdownView(item.text, citations)
                 is TranscriptItem.Reasoning -> ReasoningView(item.text, item.durationMs)
                 is TranscriptItem.PlanItem -> PlanView(item.plan, canAgree = isLast && turn.isActive) { chat.agree(item.plan, turn) }
                 is TranscriptItem.ApprovalItem -> ApprovalView(item.approval, canDecide = isLast && turn.isActive) { decision ->

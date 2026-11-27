@@ -19,6 +19,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,13 +39,21 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import dev.cedar.core.MarkdownBlock
 
-/** Renders the agent's Markdown: blocks from `MarkdownBlock` (in :core), inline styling here. */
+/** The run's numbered sources, by number, for the `[n]` in the text being drawn. */
+private val LocalCitations = compositionLocalOf<Map<Int, String>> { emptyMap() }
+
+/**
+ * Renders the agent's Markdown: blocks from `MarkdownBlock` (in :core), inline styling here. `[n]`
+ * in the text links to the one of `sources` (the run's numbered sources) it names.
+ */
 @Composable
-fun MarkdownView(text: String) {
+fun MarkdownView(text: String, sources: Map<Int, String> = emptyMap()) {
     val blocks = remember(text) { MarkdownBlock.parse(text) }
-    SelectionContainer {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            blocks.forEach { Block(it) }
+    CompositionLocalProvider(LocalCitations provides sources) {
+        SelectionContainer {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                blocks.forEach { Block(it) }
+            }
         }
     }
 }
@@ -90,25 +100,45 @@ private fun Block(block: MarkdownBlock) {
     }
 }
 
-/** A run of inline Markdown (emphasis, code spans, links), keeping line breaks. */
+/** A run of inline Markdown (emphasis, code spans, links, `[n]` citations), keeping line breaks. */
 @Composable
 private fun InlineText(source: String, modifier: Modifier = Modifier, style: TextStyle = MaterialTheme.typography.bodyLarge) {
     val link = MaterialTheme.colorScheme.primary
     val code = MaterialTheme.colorScheme.surfaceContainerHighest
-    val text = remember(source, link, code) { inline(source, link, code) }
+    val sources = LocalCitations.current
+    val text = remember(source, link, code, sources) { inline(source, link, code, sources) }
     Text(text, modifier, style = style)
 }
 
-/** Parses `**bold**`, `*italic*` / `_italic_`, `` `code` ``, `~~strike~~`, `[text](url)` and bare https links. */
-fun inline(source: String, linkColor: Color, codeBackground: Color): AnnotatedString = buildAnnotatedString {
+/** The index of the `]` that closes the `[` at `open`, or -1. */
+private fun closingBracket(source: String, open: Int): Int {
+    var depth = 0
+    var i = open
+    while (i < source.length) {
+        when (source[i]) {
+            '\\' -> i++
+            '[' -> depth++
+            ']' -> if (--depth == 0) return i
+        }
+        i++
+    }
+    return -1
+}
+
+/**
+ * Parses `**bold**`, `*italic*` / `_italic_`, `` `code` ``, `~~strike~~`, `[text](url)` and bare https
+ * links. `[n]` links to the one of `sources` with that number.
+ */
+fun inline(source: String, linkColor: Color, codeBackground: Color, sources: Map<Int, String> = emptyMap()): AnnotatedString = buildAnnotatedString {
     val linkStyles = TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
+    val citeStyles = TextLinkStyles(SpanStyle(color = linkColor))
     var i = 0
     val n = source.length
     fun emphasis(marker: String, style: SpanStyle): Boolean {
         if (!source.startsWith(marker, i)) return false
         val end = source.indexOf(marker, i + marker.length)
         if (end <= i + marker.length || source[i + marker.length] == ' ') return false
-        withStyle(style) { append(inline(source.substring(i + marker.length, end), linkColor, codeBackground)) }
+        withStyle(style) { append(inline(source.substring(i + marker.length, end), linkColor, codeBackground, sources)) }
         i = end + marker.length
         return true
     }
@@ -135,9 +165,10 @@ fun inline(source: String, linkColor: Color, codeBackground: Color): AnnotatedSt
             c == '*' && emphasis("*", SpanStyle(fontStyle = FontStyle.Italic)) -> {}
             c == '_' && (i == 0 || !source[i - 1].isLetterOrDigit()) && emphasis("_", SpanStyle(fontStyle = FontStyle.Italic)) -> {}
             c == '[' -> {
-                val close = source.indexOf("](", i + 1)
-                val end = if (close > 0) source.indexOf(')', close + 2) else -1
-                if (close > 0 && end > 0) {
+                val close = closingBracket(source, i)
+                val end = if (close > 0 && source.startsWith("(", close + 1)) source.indexOf(')', close + 2) else -1
+                val cited = if (close in (i + 2)..(i + 3) && end < 0) source.substring(i + 1, close).takeIf { it.all(Char::isDigit) }?.toIntOrNull()?.let(sources::get) else null
+                if (end > 0) {
                     val label = source.substring(i + 1, close)
                     val url = source.substring(close + 2, end).trim()
                     if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("mailto:")) {
@@ -146,6 +177,9 @@ fun inline(source: String, linkColor: Color, codeBackground: Color): AnnotatedSt
                         append(inline(label, linkColor, codeBackground))
                     }
                     i = end + 1
+                } else if (cited != null) {
+                    withLink(LinkAnnotation.Url(cited, citeStyles)) { append(source, i, close + 1) }
+                    i = close + 1
                 } else {
                     append(c)
                     i += 1
