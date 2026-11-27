@@ -1078,7 +1078,7 @@ function updateChrome() {
   els.status.className = 'status' + (busy ? ' live' : latest?.lastEvent === 'run.failed' ? ' error' : '');
   const doing = state.activeTurn?.doing || tr('v3.thinking');
   els.statusText.textContent = busy ? tr('v3.status.working', { doing: `${doing[0].toLocaleLowerCase(cedarI18n.locale)}${doing.slice(1)}` })
-    : latest ? (latest.lastEvent === 'run.failed' ? tr('v3.status.failed') : latest.lastEvent === 'run.cancelled' ? tr('v3.status.stopped') : tr('v3.status.done')) : tr('v3.status.idle');
+    : latest?.lastEvent === 'run.failed' ? tr('v3.status.failed') : '';
   els.send.disabled = state.sending || busy || state.noModels || !els.input.value.trim();
   els.input.placeholder = state.noModels ? NO_MODELS()
     : busy ? tr('v3.placeholder.busy') : tr(layout.key(c ? 'placeholder.reply' : 'placeholder.new'));
@@ -1448,6 +1448,17 @@ els.examples.addEventListener('click', (e) => {
   els.input.value = ex.dataset.prompt;
   autosize();
   updateChrome();
+  // An example carries everything it needs, so one click runs it. Where it can't be sent (no
+  // model yet), it waits in the message box.
+  if (els.send.disabled) els.input.focus();
+  else sendMessage();
+});
+// "New private chat" in the conversations drawer.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-private-new]')) return;
+  cedarPrivate.want(true);
+  closeDrawer();
+  if (location.hash && location.hash !== '#/') location.hash = '#/';
   els.input.focus();
 });
 {

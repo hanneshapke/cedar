@@ -288,8 +288,10 @@
     els.cost.title = full;
     els.costFull.textContent = full;
     els.runDetails.hidden = !c || !(full || els.when.textContent);
-    // Nothing has happened yet: no status to show.
-    els.status.classList.toggle('idle', !state.activeTurn && !state.order.length);
+    // The bar says what Cedar is doing while it works, and that a reply failed. A finished or
+    // stopped reply needs no label: the reply is there.
+    const last = state.views.get(state.order[state.order.length - 1]);
+    els.status.classList.toggle('idle', !state.activeTurn && last?.lastEvent !== 'run.failed');
     els.app.classList.toggle('no-model', Boolean(state.noModels));
     if (els.setupResume) els.setupResume.hidden = !state.noModels;
     // Cedar started waiting for the reader: the conversation comes up.

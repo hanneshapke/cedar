@@ -6,6 +6,8 @@
 
 cedarI18n.add({
   en: {
+    'private.offerText': "Not kept, not remembered, and deleted when you leave it.",
+    'private.new': "New private chat",
     'language.title': 'Language',
     'language.description': 'The language of this page and the language Cedar falls back to. Cedar always answers in the language you write in.',
     'language.auto': 'Automatic',
@@ -22,6 +24,8 @@ cedarI18n.add({
     'private.title': "Private chat",
   },
   de: {
+    'private.offerText': "Wird nicht aufbewahrt, nicht gemerkt und gelöscht, sobald du ihn verlässt.",
+    'private.new': "Neuer privater Chat",
     'language.title': 'Sprache',
     'language.description': 'Die Sprache dieser Seite und die Sprache, die Cedar im Zweifel verwendet. Cedar antwortet immer in der Sprache, in der du schreibst.',
     'language.auto': 'Automatisch',
@@ -38,6 +42,8 @@ cedarI18n.add({
     'private.title': "Privater Chat",
   },
   es: {
+    'private.offerText': "No se guarda, no se recuerda y se elimina cuando lo dejas.",
+    'private.new': "Nuevo chat privado",
     'language.title': 'Idioma',
     'language.description': 'El idioma de esta página y el que Cedar usa si no está claro cuál usar. Cedar siempre responde en el idioma en que escribes.',
     'language.auto': 'Automático',
@@ -54,6 +60,8 @@ cedarI18n.add({
     'private.title': "Chat privado",
   },
   fr: {
+    'private.offerText': "Ni conservée, ni mémorisée, et supprimée dès que vous la quittez.",
+    'private.new': "Nouvelle conversation privée",
     'language.title': 'Langue',
     'language.description': 'La langue de cette page et celle que Cedar utilise par défaut. Cedar répond toujours dans la langue dans laquelle vous écrivez.',
     'language.auto': 'Automatique',

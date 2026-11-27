@@ -8,9 +8,11 @@
 //
 // Three pieces:
 //
-//   - A "Private" button in the composer. On the new-chat screen it decides whether the chat
-//     about to start is private; in a private chat it is shown pressed, and can't be changed (a
-//     conversation is private from its first message or not at all).
+//   - Where a private chat is started: the page's own offers (`[data-private-toggle]`, the card
+//     under the message box on the home screen; "New private chat" in the drawer calls want()),
+//     which decide whether the chat about to start is private. The "Private" button in the
+//     composer does that on a page without such an offer; in a private chat it is shown pressed,
+//     and can't be changed (a conversation is private from its first message or not at all).
 //   - A note above the message box that says what private means, with "End chat" once the chat
 //     has started.
 //   - Leaving: when the open conversation changes away from a private one, that one is deleted
@@ -54,9 +56,12 @@ const cedarPrivate = (() => {
     const on = open || (!current && wanted);
     document.body.classList.toggle('cedar-private', on);
     document.body.classList.toggle('cedar-private-open', open);
+    // The page's own offers of a private chat (the home screen's card): on or off with it.
+    for (const offer of document.querySelectorAll('[data-private-toggle]')) offer.setAttribute('aria-pressed', String(on));
     if (!button) return;
-    // Only where it means something: before a chat starts, and in a private one.
-    button.hidden = Boolean(current) && !open;
+    // The composer's button marks a private chat that is open. Before a chat starts it is only
+    // there on a page that offers a private chat nowhere else.
+    button.hidden = !open && (Boolean(current) || Boolean(document.querySelector('[data-private-toggle]')));
     button.disabled = open;
     button.setAttribute('aria-pressed', String(on));
     button.title = open ? tr('private.openTitle') : on ? tr('private.onTitle') : tr('private.offTitle');
@@ -100,6 +105,15 @@ const cedarPrivate = (() => {
     end.addEventListener('click', () => { location.hash = '#/'; });
     note.append(end);
     before.before(note);
+    for (const offer of document.querySelectorAll('[data-private-toggle]')) {
+      offer.addEventListener('click', () => { if (!current) { wanted = !wanted; render(); } });
+    }
+    render();
+  }
+
+  /** Make the chat about to start private (or ordinary again). */
+  function want(on) {
+    wanted = Boolean(on);
     render();
   }
 
@@ -122,5 +136,5 @@ const cedarPrivate = (() => {
     render();
   }
 
-  return { init, setCurrent, wanted: () => wanted && !current };
+  return { init, setCurrent, want, wanted: () => wanted && !current };
 })();

@@ -117,6 +117,21 @@
 .app.empty .slip { grid-area: slip; flex-direction: column; border: 0; padding: 0; }
 .app.empty .composer { border-color: var(--line); box-shadow: 0 1px 2px rgba(40, 30, 10, .05), 0 8px 24px rgba(40, 30, 10, .07); padding: 14px 14px 10px 16px; }
 .app.empty .composer textarea { min-height: 48px; font-size: 16px; }
+.private-offer { display: none; }
+.app.empty .private-offer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; margin-top: 10px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: none; text-align: left; color: var(--ink-2); }
+.private-offer:hover { background: var(--wash); }
+.private-offer svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.private-offer-text { display: flex; flex-direction: column; gap: 1px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.private-offer-text strong { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+.private-offer-switch { position: relative; width: 34px; height: 20px; border-radius: 10px; background: var(--line); transition: background .15s; }
+.private-offer-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--sheet); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: left .15s; }
+.private-offer[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); }
+.private-offer[aria-pressed="true"] svg { color: var(--accent); }
+.private-offer[aria-pressed="true"] .private-offer-switch { background: var(--accent); }
+.private-offer[aria-pressed="true"] .private-offer-switch::after { left: 16px; }
+/* The card says what private means; the note above the message box repeats it once the chat is open. */
+.app.empty .cedar-private-note { display: none; }
+button.drawer-new { width: 100%; border: 0; background: none; font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
 .app.empty .examples { grid-area: examples; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 28px; }
 .example { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); text-align: left; font-size: 13.5px; line-height: 1.4; color: var(--ink); }
 .example:hover { border-color: var(--accent); }

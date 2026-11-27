@@ -57,7 +57,7 @@
           <a class="cedar-ag-badge" id="agent-badge" href="#/agents" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg><span class="lbl" data-i18n="agents.badge">Agent run</span></a>
         </div>
         <!-- Run status: one muted line once something has happened; the token count shows in expert mode, and in More › Run details. -->
-        <span class="status pill" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="status-text" data-i18n="v3.status.idle">Idle</span><span class="cost dbg" id="cost"></span></span>
+        <span class="status pill idle" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="status-text"></span><span class="cost dbg" id="cost"></span></span>
         <button class="ghost" id="stop" type="button" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="lbl" data-i18n="v3.stop">Stop</span>
         </button>
@@ -69,7 +69,7 @@
           <button class="ghost icon" id="agent-btn" type="button" hidden aria-label="Make an agent from this chat" title="Make an agent: run this conversation's task on its own, on a schedule or when something happens" data-i18n-attr="aria-label:agents.make.label; title:agents.make.title">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01M2 13v2M22 13v2"/></svg>
           </button>
-          <button class="ghost icon" id="inbox-btn" type="button" aria-label="Finished responses" title="Finished responses" data-i18n-attr="aria-label:v3.finishedResponses; title:v3.finishedResponses">
+          <button class="ghost icon" id="inbox-btn" type="button" aria-label="Notifications" title="Notifications" data-i18n-attr="aria-label:v3.finishedResponses; title:v3.finishedResponses">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>
           </button>
           <div class="more" data-more>
@@ -126,11 +126,17 @@
               </button>
             </div>
           </form>
+          <!-- A private chat is offered by name on the home screen, not as one more composer button. -->
+          <button class="private-offer" type="button" data-private-toggle aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.5 6.2A9.6 9.6 0 0 1 12 6c5 0 8.5 4 9.5 6a13 13 0 0 1-2.7 3.5M6.4 7.7A13.5 13.5 0 0 0 2.5 12c1 2 4.5 6 9.5 6a9.4 9.4 0 0 0 3.8-.8M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+            <span class="private-offer-text"><strong data-i18n="private.title">Private chat</strong><span data-i18n="private.offerText">Not kept, not remembered, and deleted when you leave it.</span></span>
+            <span class="private-offer-switch" aria-hidden="true"></span>
+          </button>
         </footer>
         <div class="examples" id="examples" aria-label="Example tasks" data-i18n-attr="aria-label:v3.exampleTasks">
-          <button type="button" class="example" data-prompt="Compare the three largest EV battery makers by 2025 market share. Write a short report with sources and show how their stocks did this year." data-i18n-attr="data-prompt:v3.example1.prompt"><span class="kind" data-i18n="v3.example1.kind">Research</span><span data-i18n="v3.example1.text">Compare the three largest EV battery makers and write a sourced report</span></button>
-          <button type="button" class="example" data-prompt="Read the attached PDFs and put every invoice line into one spreadsheet, invoices.xlsx, with a totals sheet." data-i18n-attr="data-prompt:v3.example2.prompt"><span class="kind" data-i18n="v3.example2.kind">Documents</span><span data-i18n="v3.example2.text">Read these PDFs and turn the numbers into one spreadsheet</span></button>
-          <button type="button" class="example" data-prompt="What is the best way from Berlin Hbf to Potsdam tomorrow at 9:00? Show the options on a map." data-i18n-attr="data-prompt:v3.example3.prompt"><span class="kind" data-i18n="v3.example3.kind">Plan a trip</span><span data-i18n="v3.example3.text">Best way from Berlin Hbf to Potsdam tomorrow at 9, with a map</span></button>
+          <button type="button" class="example" data-prompt="" data-i18n-attr="data-prompt:setup.task.savings.prompt"><span class="kind" data-i18n="v3.example1.kind"></span><span data-i18n="setup.task.savings.text"></span></button>
+          <button type="button" class="example" data-prompt="" data-i18n-attr="data-prompt:v3.example2.prompt"><span class="kind" data-i18n="v3.example2.kind"></span><span data-i18n="v3.example2.text"></span></button>
+          <button type="button" class="example" data-prompt="" data-i18n-attr="data-prompt:setup.task.dinners.prompt"><span class="kind" data-i18n="v3.example3.kind"></span><span data-i18n="setup.task.dinners.text"></span></button>
         </div>
         <aside class="home-recents" id="home-recents-wrap" aria-label="Recent conversations" data-i18n-attr="aria-label:v3.recentConversations">
           <div class="home-recents-head"><span class="label" data-i18n="v3.recent">Recent</span><button class="linkish" id="all-chats" type="button" data-i18n="v3.allConversations">All conversations</button></div>
@@ -163,6 +169,9 @@
       <a class="drawer-new" href="#/" id="drawer-new">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="v3.newConversation">New conversation</span>
       </a>
+      <button class="drawer-new" type="button" data-private-new>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.5 6.2A9.6 9.6 0 0 1 12 6c5 0 8.5 4 9.5 6a13 13 0 0 1-2.7 3.5M6.4 7.7A13.5 13.5 0 0 0 2.5 12c1 2 4.5 6 9.5 6a9.4 9.4 0 0 0 3.8-.8M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg><span data-i18n="private.new">New private chat</span>
+      </button>
       <div data-search></div>
       <div class="cedar-star-side" id="starred-section" data-starred data-search-hides hidden>
         <div class="cedar-star-side-head"><span class="label" data-i18n="v3.starred">Starred</span><span class="cedar-star-count"></span></div>
