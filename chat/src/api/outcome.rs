@@ -55,7 +55,9 @@ pub(super) async fn outcome(Scoped(state): Scoped, Path(id): Path<String>) -> Re
     // Nothing of a private conversation is remembered or recorded; its files are its own.
     let memories = if conversation.private { Vec::new() } else { memories_of(&state, turn.run_id).await };
     let records = if conversation.private { Vec::new() } else { records_of(&state, &turn).await };
-    let files = files_of(&state, &turn).await;
+    // The files are this turn's until the next message was sent.
+    let until = turns.iter().filter(|t| t.seq > turn.seq).map(|t| t.created_at).min();
+    let files = files_of(&state, &turn, until).await;
     // Every call the run held, settled ones too: the outcome says what became of them.
     let held = handover::held_with_origin(&state, None, Some(turn.run_id)).await;
     let decisions: Vec<_> = state.store.list_followups(conversation.id).await?.into_iter().filter(|f| f.turn_id == turn.id).collect();
@@ -217,15 +219,17 @@ async fn records_of(state: &AppState, turn: &Turn) -> Vec<Value> {
     rows
 }
 
-/// The workspace files that changed after the turn was sent.
-async fn files_of(state: &AppState, turn: &Turn) -> Vec<Value> {
+/// The workspace files that changed after the turn was sent and, when the conversation went on,
+/// before its next message (`until`): what a later turn wrote is that turn's.
+async fn files_of(state: &AppState, turn: &Turn, until: Option<DateTime<Utc>>) -> Vec<Value> {
     let since = turn.created_at.timestamp_millis() - FILE_SLACK_MS;
+    let until = until.map_or(i64::MAX, |t| t.timestamp_millis());
     match state.cedar.list_files(turn.run_id).await {
         Ok(body) => body["files"]
             .as_array()
             .into_iter()
             .flatten()
-            .filter(|f| f["modified_at"].as_str().and_then(|t| DateTime::parse_from_rfc3339(t).ok()).is_some_and(|t| t.timestamp_millis() >= since))
+            .filter(|f| f["modified_at"].as_str().and_then(|t| DateTime::parse_from_rfc3339(t).ok()).is_some_and(|t| t.timestamp_millis() >= since && t.timestamp_millis() < until))
             .map(|f| json!({ "path": f["path"], "size": f["size"], "modified_at": f["modified_at"] }))
             .collect(),
         // A workspace that is gone (expired, deleted) has nothing to show.

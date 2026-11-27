@@ -85,7 +85,7 @@ async fn follow_once(state: &AppState, turn: &Turn, pending: &Pending, after: &m
             on_event(state, turn, pending, kind, &event["data"]).await;
             if matches!(kind, "run.completed" | "run.failed" | "run.cancelled") {
                 pending.lock().unwrap().clear();
-                remember(state, turn, None, None).await;
+                remember(state, turn, None, None, None).await;
                 return Ok(true);
             }
         }
@@ -96,19 +96,56 @@ async fn follow_once(state: &AppState, turn: &Turn, pending: &Pending, after: &m
 /// Keep what the run waits on in the database, for the timeline: `Some(waiting)` opens the wait
 /// under `key`, `None` resolves it (every wait of the turn, without a key). A failure is logged:
 /// the page and the notifications don't depend on it.
-async fn remember(state: &AppState, turn: &Turn, key: Option<&str>, waiting: Option<&Waiting>) {
+async fn remember(state: &AppState, turn: &Turn, key: Option<&str>, waiting: Option<&Waiting>, detail: Option<&Value>) {
     let result = match waiting {
         Some(waiting) => {
             let (kind, reason) = match waiting {
                 Waiting::Approval(reason) => ("approval", Some(reason.as_str())),
                 Waiting::Plan => ("plan", None),
             };
-            state.store.open_wait(turn.id, key.unwrap_or(kind), kind, reason).await.map(|_| ())
+            state.store.open_wait(turn.id, key.unwrap_or(kind), kind, reason, detail).await.map(|_| ())
         }
         None => state.store.resolve_waits(turn.id, key).await,
     };
     if let Err(e) = result {
         tracing::warn!(turn_id = %turn.id, error = %e, "could not keep what a response waits on");
+    }
+}
+
+/// The same record for a turn another follower reads the events of (Slack's, see `slack`): what
+/// its run waits on, and where it is, so the timeline has them whoever started the turn. `kind`
+/// and `data` are a run event's.
+pub async fn record(state: &AppState, turn: &Turn, kind: &str, data: &Value) {
+    match kind {
+        "approval.required" => {
+            if let Some(id) = data["id"].as_str() {
+                let reason = Waiting::Approval(data["reason"].as_str().unwrap_or_default().to_string());
+                remember(state, turn, Some(&format!("approval:{id}")), Some(&reason), None).await;
+            }
+        }
+        "plan" if data["awaiting"] == true => remember(state, turn, Some("plan"), Some(&Waiting::Plan), plan_steps(data)).await,
+        "approval.resolved" => {
+            if let Some(id) = data["id"].as_str() {
+                remember(state, turn, Some(&format!("approval:{id}")), None, None).await;
+            }
+        }
+        "plan.updated" => remember(state, turn, Some("plan"), None, None).await,
+        "run.completed" | "run.failed" | "run.cancelled" => remember(state, turn, None, None, None).await,
+        "tool.call" => progress(state, turn, data).await,
+        _ => {}
+    }
+}
+
+/// A plan's steps, when the event has any.
+fn plan_steps(data: &Value) -> Option<&Value> {
+    data.get("steps").filter(|s| s.as_array().is_some_and(|a| !a.is_empty()))
+}
+
+/// Count a tool call the run started, with its name as what the response is doing.
+async fn progress(state: &AppState, turn: &Turn, data: &Value) {
+    let Some(name) = data["name"].as_str().filter(|n| !n.is_empty()) else { return };
+    if let Err(e) = state.store.note_progress(turn.id, name).await {
+        tracing::debug!(turn_id = %turn.id, error = %e, "could not keep where a response is");
     }
 }
 
@@ -120,17 +157,21 @@ async fn on_event(state: &AppState, turn: &Turn, pending: &Pending, kind: &str, 
             (format!("approval:{id}"), Waiting::Approval(reason))
         }
         "plan" if data["awaiting"] == true => ("plan".to_string(), Waiting::Plan),
+        "tool.call" => {
+            progress(state, turn, data).await;
+            return;
+        }
         "approval.resolved" => {
             if let Some(id) = data["id"].as_str() {
                 let key = format!("approval:{id}");
                 pending.lock().unwrap().remove(&key);
-                remember(state, turn, Some(&key), None).await;
+                remember(state, turn, Some(&key), None, None).await;
             }
             return;
         }
         "plan.updated" => {
             pending.lock().unwrap().remove("plan");
-            remember(state, turn, Some("plan"), None).await;
+            remember(state, turn, Some("plan"), None, None).await;
             return;
         }
         _ => return,
@@ -139,7 +180,8 @@ async fn on_event(state: &AppState, turn: &Turn, pending: &Pending, kind: &str, 
     if !pending.lock().unwrap().insert(key.clone()) {
         return;
     }
-    remember(state, turn, Some(&key), Some(&waiting)).await;
+    let detail = if matches!(waiting, Waiting::Plan) { plan_steps(data) } else { None };
+    remember(state, turn, Some(&key), Some(&waiting), detail).await;
     let what = match &waiting {
         Waiting::Approval(_) => "approval",
         Waiting::Plan => "plan",

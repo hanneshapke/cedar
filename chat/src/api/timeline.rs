@@ -56,13 +56,20 @@ pub(super) async fn timeline(Scoped(state): Scoped, ApiQuery(query): ApiQuery<Ti
     let in_now: HashSet<Uuid> = now_turns.iter().map(|t| t.turn_id).collect();
     let earlier: Vec<TimelineTurn> = state.store.timeline_between(start, end, MAX_DAY_TURNS).await?.into_iter().filter(|t| !in_now.contains(&t.turn_id)).collect();
     // The outbox waits on the person like a question does: today's, whenever it was held.
-    let mut outbox = if is_today { handover::held_with_origin(&state, Some("pending"), None).await } else { Vec::new() };
+    // A call the tool refused (`failed`) can be approved again, so it still waits on them.
+    let mut outbox = Vec::new();
+    if is_today {
+        outbox = handover::held_with_origin(&state, Some("pending"), None).await;
+        outbox.extend(handover::held_with_origin(&state, Some("failed"), None).await);
+    }
     outbox.sort_by(|a, b| a["created_at"].as_str().cmp(&b["created_at"].as_str()));
     outbox.truncate(MAX_OUTBOX);
     let needs_you = now_turns.iter().filter(|t| !t.waits.is_empty() || t.needs_answer).count() + outbox.len();
 
     let schedules = state.store.list_schedules().await?;
-    let mut ahead: Vec<&Schedule> = Vec::new();
+    // Ahead: today, each agent's next run within the week; on a later day, the run each clock
+    // has on that day, which need not be its very next one.
+    let mut ahead: Vec<(&Schedule, DateTime<Utc>)> = Vec::new();
     let mut watching: Vec<&Schedule> = Vec::new();
     if day >= today {
         let from = start.max(now);
@@ -73,12 +80,21 @@ pub(super) async fn timeline(Scoped(state): Scoped, ApiQuery(query): ApiQuery<Ti
                 if is_today {
                     watching.push(s);
                 }
-            } else if s.next_run_at.timestamp_millis() < NEVER_MS && s.next_run_at >= from && s.next_run_at < until {
-                ahead.push(s);
+                continue;
+            }
+            let next = (s.next_run_at.timestamp_millis() < NEVER_MS).then_some(s.next_run_at);
+            let due = match (&trigger, is_today) {
+                (_, true) => next,
+                // An interval's later runs depend on when the earlier ones happen: its next only.
+                (Some(Trigger::Interval { .. }) | None, false) => next,
+                (Some(t), false) => t.next_after(from - chrono::Duration::milliseconds(1)),
+            };
+            if let Some(at) = due.filter(|at| *at >= from && *at < until) {
+                ahead.push((s, at));
             }
         }
     }
-    ahead.sort_by_key(|s| s.next_run_at);
+    ahead.sort_by_key(|(_, at)| *at);
     ahead.truncate(MAX_AHEAD);
 
     Ok(Json(json!({
@@ -90,9 +106,9 @@ pub(super) async fn timeline(Scoped(state): Scoped, ApiQuery(query): ApiQuery<Ti
         "earlier": earlier.iter().map(turn_view).collect::<Vec<_>>(),
         "now": now_turns.iter().map(turn_view).collect::<Vec<_>>(),
         "outbox": outbox,
-        "ahead": ahead.iter().map(|s| agent_view(s, true)).collect::<Vec<_>>(),
-        "watching": watching.iter().map(|s| agent_view(s, false)).collect::<Vec<_>>(),
-        "standing": schedules.iter().map(|s| agent_view(s, s.enabled)).collect::<Vec<_>>(),
+        "ahead": ahead.iter().map(|(s, at)| agent_view(s, Some(*at))).collect::<Vec<_>>(),
+        "watching": watching.iter().map(|s| agent_view(s, None)).collect::<Vec<_>>(),
+        "standing": schedules.iter().map(|s| agent_view(s, next_run(s))).collect::<Vec<_>>(),
     })))
 }
 
@@ -140,13 +156,24 @@ fn turn_view(t: &TimelineTurn) -> Value {
         "needs_answer": t.needs_answer,
         "agent": t.agent,
         "waits": t.waits,
+        "progress": progress(t),
     })
 }
 
-/// An agent as the river lists it. `due` adds when its next run is.
-fn agent_view(s: &Schedule, due: bool) -> Value {
+/// Where a response still going is, once its run has started a tool call: `{steps, doing}`.
+fn progress(t: &TimelineTurn) -> Option<Value> {
+    let going = matches!(t.status.as_str(), "queued" | "running");
+    (going && t.progress_steps > 0).then(|| json!({ "steps": t.progress_steps, "doing": t.progress_doing }))
+}
+
+/// When an enabled agent runs next, if the clock decides that.
+fn next_run(s: &Schedule) -> Option<DateTime<Utc>> {
+    (s.enabled && s.next_run_at.timestamp_millis() < NEVER_MS).then_some(s.next_run_at)
+}
+
+/// An agent as the river lists it, with the run `next` it is listed for.
+pub(super) fn agent_view(s: &Schedule, next: Option<DateTime<Utc>>) -> Value {
     let trigger = Trigger::of(s).ok();
-    let next = (due && s.next_run_at.timestamp_millis() < NEVER_MS).then_some(s.next_run_at);
     json!({
         "id": s.id,
         "title": s.title,

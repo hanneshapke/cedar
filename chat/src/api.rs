@@ -40,6 +40,7 @@ mod actions;
 mod agents;
 mod asks;
 mod outcome;
+mod search;
 mod timeline;
 mod handover;
 mod slack;
@@ -380,7 +381,9 @@ pub fn router(state: AppState) -> Router {
         .route("/starred", get(list_starred))
         .route("/inbox", get(inbox))
         .route("/timeline", get(timeline::timeline))
+        .route("/search", get(search::search))
         .route("/asks", post(asks::ask).layer(DefaultBodyLimit::max(MAX_MESSAGE_BODY_BYTES)))
+        .route("/asks/draft", post(asks::draft))
         .route("/events", get(notice_events))
         .route("/notifications", get(get_notifications).put(put_notifications))
         .route("/notifications/test", post(test_notification))

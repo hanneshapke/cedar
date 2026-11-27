@@ -273,6 +273,8 @@ pub struct Wait {
     pub kind: String,
     pub key: String,
     pub reason: Option<String>,
+    /// A plan's steps, `[{id, title}]`, as cedar proposed them.
+    pub steps: Option<Value>,
     pub since: DateTime<Utc>,
 }
 
@@ -304,11 +306,14 @@ pub struct TimelineTurn {
     pub agent: Option<TimelineAgent>,
     /// Open waits; only a turn still going has any.
     pub waits: Vec<Wait>,
+    /// How many tool calls the run has started, and the latest one's name, while it is followed.
+    pub progress_steps: i64,
+    pub progress_doing: Option<String>,
 }
 
 /// The columns [`timeline_turn_from_row`] reads, for turns `t` of conversations `c`.
 const TIMELINE_SELECT: &str = "SELECT t.id, t.conversation_id, t.prompt, t.status, t.stop_reason, t.final_text, t.error, \
-    t.created_at, t.finished_at, t.seen, c.title, s.id AS agent_id, s.title AS agent_title, s.trigger_kind, \
+    t.created_at, t.finished_at, t.seen, t.progress_steps, t.progress_doing, c.title, s.id AS agent_id, s.title AS agent_title, s.trigger_kind, \
     (t.status = 'completed' AND t.stop_reason = 'ask_user' \
      AND t.seq = (SELECT MAX(t2.seq) FROM turns t2 WHERE t2.conversation_id = t.conversation_id)) AS needs_answer \
     FROM turns t JOIN conversations c ON c.id = t.conversation_id LEFT JOIN schedules s ON s.id = c.schedule_id";
@@ -336,6 +341,8 @@ fn timeline_turn_from_row(r: &SqliteRow) -> Result<TimelineTurn> {
         needs_answer: r.try_get::<Option<i64>, _>("needs_answer")?.unwrap_or(0) != 0,
         agent,
         waits: Vec::new(),
+        progress_steps: r.try_get("progress_steps")?,
+        progress_doing: r.try_get("progress_doing")?,
     })
 }
 
@@ -1142,20 +1149,47 @@ impl Store {
 
     /// Note that a turn's run waits on the person (see [`Wait`]). `false` when it was already
     /// noted, open or answered: a replayed event changes nothing.
-    pub async fn open_wait(&self, turn_id: Uuid, key: &str, kind: &str, reason: Option<&str>) -> Result<bool> {
+    pub async fn open_wait(&self, turn_id: Uuid, key: &str, kind: &str, reason: Option<&str>, detail: Option<&Value>) -> Result<bool> {
         let res = sqlx::query(
-            "INSERT OR IGNORE INTO waits (turn_id, key, kind, reason, created_at) \
-             SELECT t.id, ?, ?, ?, ? FROM turns t JOIN conversations c ON c.id = t.conversation_id WHERE t.id = ? AND c.user_id = ?",
+            "INSERT OR IGNORE INTO waits (turn_id, key, kind, reason, detail, created_at) \
+             SELECT t.id, ?, ?, ?, ?, ? FROM turns t JOIN conversations c ON c.id = t.conversation_id WHERE t.id = ? AND c.user_id = ?",
         )
         .bind(key)
         .bind(kind)
         .bind(reason)
+        .bind(detail.map(Value::to_string))
         .bind(now_ms())
         .bind(turn_id.to_string())
         .bind(self.user.to_string())
         .execute(&self.pool)
         .await?;
         Ok(res.rows_affected() == 1)
+    }
+
+    /// The run of a turn started another tool call: count it, and keep its name as what the
+    /// response is doing now.
+    pub async fn note_progress(&self, turn_id: Uuid, doing: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE turns SET progress_steps = progress_steps + 1, progress_doing = ? WHERE id = ? \
+             AND conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)",
+        )
+        .bind(doing)
+        .bind(turn_id.to_string())
+        .bind(self.user.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// The agents whose title or prompt has every word of `query`, by title.
+    pub async fn search_schedules(&self, query: &str, limit: u32) -> Result<Vec<Schedule>> {
+        let terms = search_terms(query);
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let all = self.list_schedules().await?;
+        let has = |s: &Schedule, term: &str| s.title.to_lowercase().contains(term) || s.prompt.to_lowercase().contains(term);
+        Ok(all.into_iter().filter(|s| terms.iter().all(|t| has(s, t))).take(limit as usize).collect())
     }
 
     /// A wait was answered. With `key` `None`, every wait of the turn is over (its run ended).
@@ -1214,7 +1248,7 @@ impl Store {
             return Ok(turns);
         }
         let rows = sqlx::query(
-            "SELECT turn_id, key, kind, reason, created_at FROM waits \
+            "SELECT turn_id, key, kind, reason, detail, created_at FROM waits \
              WHERE resolved_at IS NULL AND turn_id IN (SELECT value FROM json_each(?)) ORDER BY created_at, key",
         )
         .bind(serde_json::to_string(&going)?)
@@ -1222,7 +1256,8 @@ impl Store {
         .await?;
         for r in &rows {
             let turn_id = Uuid::parse_str(r.try_get("turn_id")?)?;
-            let wait = Wait { kind: r.try_get("kind")?, key: r.try_get("key")?, reason: r.try_get("reason")?, since: to_dt(r.try_get("created_at")?) };
+            let steps = r.try_get::<Option<String>, _>("detail")?.and_then(|d| serde_json::from_str(&d).ok());
+            let wait = Wait { kind: r.try_get("kind")?, key: r.try_get("key")?, reason: r.try_get("reason")?, steps, since: to_dt(r.try_get("created_at")?) };
             if let Some(turn) = turns.iter_mut().find(|t| t.turn_id == turn_id) {
                 turn.waits.push(wait);
             }

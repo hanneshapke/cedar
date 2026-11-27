@@ -155,7 +155,17 @@ async fn create_run(State(s): State<Shared>, headers: HeaderMap, Json(body): Jso
         }
     }
     let id = Uuid::new_v4();
-    let run = json!({ "id": id, "status": "queued", "prompt": prompt, "model": body["model"], "final_text": null, "error": null });
+    let mut run = json!({ "id": id, "status": "queued", "prompt": prompt, "model": body["model"], "final_text": null, "error": null });
+    // The run that reads an ask's When (`POST /api/asks/draft`) answers at once, as a model would.
+    if prompt.contains("decide when it should run") {
+        let request = prompt.rsplit("Request: ").next().unwrap_or_default();
+        run["status"] = json!("completed");
+        run["final_text"] = json!(if request.contains("every weekday") {
+            "```json\n{\"when\": \"every\", \"trigger\": {\"kind\": \"time\", \"frequency\": \"weekdays\", \"time\": \"07:00\"}, \"task\": \"Brief me\"}\n```"
+        } else {
+            "I could not say."
+        });
+    }
     s.prompts.lock().unwrap().push(prompt);
     s.run_users.lock().unwrap().push(user_of(&headers));
     s.parents.lock().unwrap().push(parent);
@@ -420,6 +430,22 @@ async fn events(State(s): State<Shared>, Path(id): Path<Uuid>, axum::extract::Ra
     let asks = "id: 1\nevent: approval.required\ndata: {\"seq\":1,\"type\":\"approval.required\",\"data\":{\"id\":\"a1\",\"tool\":\"gmail_send_message\",\"rule\":\"email\",\"reason\":\"Send message in your Gmail to a@x.org.\",\"scope\":null}}\n\n";
     if prompt.contains("NEEDS OK") {
         return ([("content-type", "text/event-stream")], asks.to_string());
+    }
+    // A run that made two calls and now waits for its plan to be agreed. Like cedar, it sends
+    // only what comes after `after`, so a reopened stream repeats nothing.
+    if prompt.contains("PLAN FIRST") {
+        let after: i64 = q.as_deref().and_then(|q| q.split('&').find_map(|p| p.strip_prefix("after="))).and_then(|n| n.parse().ok()).unwrap_or(0);
+        let lines = [
+            json!({ "type": "tool.call", "data": { "id": "t1", "name": "web_search", "input": {} } }),
+            json!({ "type": "tool.call", "data": { "id": "t2", "name": "fetch_url", "input": {} } }),
+            json!({ "type": "plan", "data": { "awaiting": true, "steps": [{ "id": "s1", "title": "Check the calendar" }, { "id": "s2", "title": "Compare flights" }] } }),
+        ];
+        let body: String = lines.iter().enumerate().filter(|(i, _)| (*i as i64) + 1 > after).map(|(i, e)| {
+            let mut e = e.clone();
+            e["seq"] = json!(i + 1);
+            format!("id: {}\nevent: {}\ndata: {e}\n\n", i + 1, e["type"].as_str().unwrap())
+        }).collect();
+        return ([("content-type", "text/event-stream")], body);
     }
     // A run that searched, read a page, failed a step and suggested a follow-up.
     if prompt.contains("OUTCOME") {
@@ -5477,6 +5503,7 @@ async fn an_outcome_is_the_answer_and_what_the_ask_left_behind() {
     let (_, out) = h.json(Method::GET, &uri, None).await;
     assert_eq!(out["followup_decisions"][0]["status"], "dismissed");
     assert_eq!(out["later_turns"], 1);
+    assert_eq!(out["files"], json!([]), "what is written after the next message is that message's");
 
     // A workspace that is gone leaves no files, and the outcome still opens; others' turns don't.
     h.cedar.expired.lock().unwrap().push(Uuid::parse_str(&run_id).unwrap());
@@ -5537,4 +5564,114 @@ async fn what_an_agent_holds_for_approval_needs_the_person_on_today() {
     assert_eq!((status, day["outbox"].clone(), day["needs_you"].clone()), (StatusCode::OK, json!([]), json!(0)));
     let (status, out) = h.json(Method::GET, &format!("/api/turns/{turn}/outcome"), None).await;
     assert_eq!((status, out["held"].clone()), (StatusCode::OK, json!([])));
+}
+
+#[tokio::test]
+async fn the_river_shows_a_plan_where_a_response_is_and_what_the_tool_refused() {
+    let h = Harness::new(&[]).await;
+    let uri = "/api/timeline?timezone=UTC";
+    let (_, asked) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "PLAN FIRST, then WAIT" }))).await;
+    let turn_id = asked["turn"]["id"].as_str().unwrap().to_string();
+
+    // The plan's steps come with the wait, and the calls made so far say where the response is.
+    let day = timeline_until(&h, uri, |t| t["now"][0]["waits"][0]["kind"] == "plan" && t["now"][0]["progress"]["steps"] == 2).await;
+    let now = &day["now"][0];
+    assert_eq!(now["state"], "waiting");
+    assert_eq!(now["waits"][0]["steps"], json!([{ "id": "s1", "title": "Check the calendar" }, { "id": "s2", "title": "Compare flights" }]));
+    assert_eq!(now["progress"], json!({ "steps": 2, "doing": "fetch_url" }));
+    // The stream is reopened while the run waits; nothing is counted twice.
+    tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
+    let (_, again) = h.json(Method::GET, uri, None).await;
+    assert_eq!(again["now"][0]["progress"]["steps"], 2);
+    // The go-ahead is the conversation's own.
+    let steps = now["waits"][0]["steps"].clone();
+    let (status, _) = h.json(Method::POST, &format!("/api/turns/{turn_id}/plan"), Some(json!({ "steps": steps }))).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    // A call the tool refused still waits on the person; one already sent doesn't.
+    let mut failed = held_call(&Uuid::new_v4().to_string(), &Uuid::new_v4().to_string());
+    failed["status"] = json!("failed");
+    let mut sent = held_call(&Uuid::new_v4().to_string(), &Uuid::new_v4().to_string());
+    sent["status"] = json!("sent");
+    h.cedar.held.lock().unwrap().extend([failed, sent]);
+    let (_, day) = h.json(Method::GET, uri, None).await;
+    let statuses: Vec<&str> = day["outbox"].as_array().unwrap().iter().map(|c| c["status"].as_str().unwrap()).collect();
+    assert_eq!(statuses, ["failed"]);
+    assert_eq!(day["needs_you"], 2, "the plan and the refused call: {day}");
+}
+
+#[tokio::test]
+async fn a_later_day_lists_the_run_each_clock_has_on_it() {
+    let h = Harness::new(&[]).await;
+    let daily = json!({ "kind": "time", "frequency": "daily", "time": "07:00", "timezone": "UTC" });
+    h.json(Method::POST, "/api/asks", Some(json!({ "content": "Morning brief", "when": "every", "trigger": daily }))).await;
+    h.json(Method::POST, "/api/asks", Some(json!({ "content": "Hourly check", "when": "every", "trigger": { "kind": "interval", "every_minutes": 60 } }))).await;
+    let day = (Utc::now() + Duration::days(10)).format("%Y-%m-%d").to_string();
+    let (status, later) = h.json(Method::GET, &format!("/api/timeline?day={day}&timezone=UTC"), None).await;
+    assert_eq!(status, StatusCode::OK, "{later}");
+    let ahead = later["ahead"].as_array().unwrap();
+    assert_eq!(ahead.len(), 1, "the daily run of that day, not the interval's next: {later}");
+    assert_eq!(ahead[0]["title"], "Morning brief");
+    assert_eq!(ahead[0]["next_run_at"], format!("{day}T07:00:00Z").as_str());
+    assert_eq!((later["now"].clone(), later["outbox"].clone(), later["watching"].clone()), (json!([]), json!([]), json!([])));
+}
+
+#[tokio::test]
+async fn search_finds_conversations_agents_memories_and_record_sets() {
+    let h = Harness::new(&[]).await;
+    let (_, asked) = h.json(Method::POST, "/api/asks", Some(json!({ "content": "Plan a weekend in Lisbon" }))).await;
+    h.json(Method::POST, "/api/asks", Some(json!({ "content": "Something else" }))).await;
+    let daily = json!({ "kind": "time", "frequency": "daily", "time": "07:00", "timezone": "UTC" });
+    h.json(Method::POST, "/api/asks", Some(json!({ "content": "Watch fares to Lisbon", "when": "every", "trigger": daily }))).await;
+    h.json(Method::POST, "/api/asks", Some(json!({ "content": "Morning brief", "when": "every", "trigger": daily }))).await;
+    *h.cedar.memory.lock().unwrap() = Some(vec![
+        json!({ "id": "m1", "text": "Loved Lisbon in spring", "kind": "fact", "run_id": null }),
+        json!({ "id": "m2", "text": "Lives in Zurich", "kind": "fact", "run_id": null }),
+    ]);
+    let set = |name: &str, description: &str| json!({ "set": { "id": Uuid::new_v4(), "name": name, "description": description, "key_fields": [], "health_data": false,
+        "count": 3, "columns": [], "created_at": "2026-01-01T08:00:00Z", "updated_at": "2026-01-01T08:00:00Z" }, "records": [] });
+    *h.cedar.records.lock().unwrap() = Some(vec![set("trips", "Trips, Lisbon included"), set("weight", "Morning weight")]);
+
+    let (status, found) = h.json(Method::GET, "/api/search?q=lisbon", None).await;
+    assert_eq!(status, StatusCode::OK, "{found}");
+    assert_eq!(found["conversations"].as_array().unwrap().len(), 1);
+    assert_eq!(found["conversations"][0]["turn_id"], asked["turn"]["id"]);
+    assert_eq!(found["agents"].as_array().unwrap().len(), 1);
+    assert_eq!(found["agents"][0]["title"], "Watch fares to Lisbon");
+    assert_eq!(found["memories"], json!([{ "id": "m1", "text": "Loved Lisbon in spring", "kind": "fact" }]));
+    assert_eq!(found["records"], json!([{ "name": "trips", "description": "Trips, Lisbon included", "count": 3 }]));
+
+    // Every word counts; nothing is searched for nothing; a cedar without memory or records has none.
+    let (_, none) = h.json(Method::GET, "/api/search?q=lisbon%20zurich", None).await;
+    assert_eq!((none["conversations"].clone(), none["memories"].clone()), (json!([]), json!([])));
+    let (_, empty) = h.json(Method::GET, "/api/search?q=%20", None).await;
+    assert_eq!(empty["agents"], json!([]));
+    *h.cedar.memory.lock().unwrap() = None;
+    *h.cedar.records.lock().unwrap() = None;
+    let (status, found) = h.json(Method::GET, "/api/search?q=lisbon", None).await;
+    assert_eq!((status, found["memories"].clone(), found["records"].clone()), (StatusCode::OK, json!([]), json!([])));
+    assert_eq!(found["agents"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn the_when_of_a_sentence_is_read_and_nothing_is_kept_of_the_reading() {
+    let h = Harness::new(&[]).await;
+    let (status, read) = h.json(Method::POST, "/api/asks/draft", Some(json!({ "content": "Brief me every weekday at 7", "timezone": "Europe/Zurich" }))).await;
+    assert_eq!(status, StatusCode::OK, "{read}");
+    assert_eq!(read["when"], "every");
+    assert_eq!(read["content"], "Brief me");
+    assert_eq!(read["trigger"], json!({ "kind": "time", "frequency": "weekdays", "time": "07:00", "timezone": "Europe/Zurich" }));
+    // One private call with no tools, and its run is deleted.
+    let (_, request) = h.last_run_request();
+    assert_eq!((request["private"].clone(), request["tools"].clone(), request["max_turns"].clone()), (json!(true), json!([]), json!(1)));
+    assert_eq!(h.cedar.deleted.lock().unwrap().len(), 1);
+    let (_, list) = h.json(Method::GET, "/api/conversations", None).await;
+    assert_eq!(list["conversations"], json!([]), "a reading is nobody's conversation");
+    let (_, agents) = h.json(Method::GET, "/api/agents", None).await;
+    assert_eq!(agents["agents"], json!([]), "nothing is made until it is sent");
+
+    // What the model can't place is asked now, as it was written.
+    let (_, read) = h.json(Method::POST, "/api/asks/draft", Some(json!({ "content": "What is the tallest mountain?" }))).await;
+    assert_eq!(read, json!({ "when": "now", "trigger": null, "content": "What is the tallest mountain?" }));
+    assert_eq!(h.json(Method::POST, "/api/asks/draft", Some(json!({ "content": " " }))).await.0, StatusCode::BAD_REQUEST);
 }
