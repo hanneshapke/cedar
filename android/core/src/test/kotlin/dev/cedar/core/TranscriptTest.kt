@@ -302,4 +302,14 @@ class TranscriptTest {
         assertEquals(listOf("call_1"), t.limitations.map { it.first })
         assertEquals(1, t.heldCalls.size)
     }
+
+    @Test
+    fun citationsPointAtTheSourcesTheRunNumbered() {
+        var t = TurnTranscript(turn())
+        t = t.apply(event(1, "tool.call", """{"id":"a","name":"web_search","input":{"query":"cedar"}}"""))
+        t = t.apply(event(2, "tool.result", """{"id":"a","output":"","sources":[{"n":1,"url":"https://one.example","title":"One"},{"n":2,"url":"https://two.example"}]}"""))
+        t = t.apply(event(3, "tool.call", """{"id":"b","name":"fetch_url","input":{"url":"https://two.example"}}"""))
+        t = t.apply(event(4, "tool.result", """{"id":"b","output":"","sources":[{"n":2,"url":"https://two.example","title":"Two"},{"n":3,"url":"file:///etc/passwd"}]}"""))
+        assertEquals(mapOf(1 to "https://one.example", 2 to "https://two.example"), t.citations)
+    }
 }
