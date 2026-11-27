@@ -27,7 +27,7 @@ final class AppModel {
     private(set) var inboxUnread = 0
     private(set) var isRefreshing = false
     var listError: String?
-    var sidebarMode: SidebarMode = .chats
+    var sidebarMode: SidebarMode = .today
     var agentsTab: AgentsTab = .agents
     /// The agents, enabled first, as the server lists them.
     private(set) var agents: [Agent] = []

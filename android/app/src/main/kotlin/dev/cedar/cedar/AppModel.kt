@@ -109,7 +109,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var isRefreshing by mutableStateOf(false)
         private set
     var listError by mutableStateOf<String?>(null)
-    var sidebarMode by mutableStateOf(SidebarMode.CHATS)
+    var sidebarMode by mutableStateOf(SidebarMode.TODAY)
 
     var agentsTab by mutableStateOf(AgentsTab.AGENTS)
 

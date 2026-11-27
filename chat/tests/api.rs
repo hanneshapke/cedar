@@ -1705,9 +1705,11 @@ async fn the_ui_is_served() {
         assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, content_type), "{uri}");
         assert!(body.contains(marker), "{uri} is the expected file");
     }
-    // `/` and the addresses of the retired interfaces ("Claude style" at /v1/, "Cedar style" at
-    // /v2/, "Dossier" at /v4/) open the page; their own files are gone.
-    for uri in ["/", "/v1", "/v1/", "/v2", "/v2/", "/v4", "/v4/"] {
+    // `/` opens Today, the home screen. The addresses of the retired interfaces ("Claude style"
+    // at /v1/, "Cedar style" at /v2/, "Dossier" at /v4/) open the main page; their own files are gone.
+    let (status, headers, _) = fetch(&h, "/").await;
+    assert_eq!((status, headers["location"].to_str().unwrap()), (StatusCode::TEMPORARY_REDIRECT, "/today/"));
+    for uri in ["/v1", "/v1/", "/v2", "/v2/", "/v4", "/v4/"] {
         let (status, headers, _) = fetch(&h, uri).await;
         assert_eq!((status, headers["location"].to_str().unwrap()), (StatusCode::TEMPORARY_REDIRECT, "/v3/"), "{uri}");
     }

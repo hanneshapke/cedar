@@ -1004,6 +1004,8 @@ function start() {
   });
   cedarFollowUp.init({ api, toast });
   listen();
+  // A Cedar with no model yet is set up on the main page, which opens its setup by itself.
+  api('GET', '/models').then((m) => { if (Array.isArray(m?.models) && !m.models.length) location.replace('/v3/'); }).catch(() => {});
   if (!route()) go(null);
 }
 
@@ -1012,7 +1014,8 @@ function start() {
  *  showed something. */
 function route() {
   const hash = location.hash.slice(1);
-  if (hash.startsWith('/agents')) { location.href = `/v3/#${hash}`; return true; }
+  // An address of the main page (a notification's #/c/<id>, #/agents/…, settings) is handed to it.
+  if (hash.startsWith('/') && !/^\/(t|q)\//.test(hash)) { location.replace(`/v3/#${hash}`); return true; }
   const turn = hash.match(/^\/t\/([0-9a-fA-F-]{36})$/);
   if (turn) { $('search').hidden = true; showOutcome(turn[1]); return true; }
   const found = hash.match(/^\/q\/(.+)$/);

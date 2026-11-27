@@ -264,6 +264,16 @@ async fn to_page(RawQuery(query): RawQuery) -> Redirect {
     }
 }
 
+/// The home screen is Today. `/` opens it; with a query (the outcome of "Connect Google", which
+/// Settings on the main page reads) it opens the main page as before. The `#/c/<id>` of a
+/// notification's link stays with the browser, and the Today page hands it to the main page.
+async fn to_home(RawQuery(query): RawQuery) -> Redirect {
+    match query {
+        Some(q) if !q.is_empty() => Redirect::temporary(&format!("/v3/?{q}")),
+        _ => Redirect::temporary("/today/"),
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub cfg: Arc<Config>,
@@ -478,7 +488,7 @@ pub fn router(state: AppState) -> Router {
         .route("/hooks/{hook_id}", post(hooks::receive).layer(DefaultBodyLimit::max(hooks::MAX_BODY_BYTES)));
 
     let pages = Router::new()
-        .route("/", get(to_page))
+        .route("/", get(to_home))
         .route("/setup.js", get(|| async { asset(JS, SETUP_JS) }))
         .route("/setup.css", get(|| async { asset(CSS, SETUP_CSS) }))
         .route("/i18n.js", get(|| async { asset(JS, I18N_JS) }))
