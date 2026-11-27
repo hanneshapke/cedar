@@ -181,12 +181,32 @@ impl OpenShell {
             .json(&strings(&["status", "-o", "json"]), CALL_TIMEOUT)
             .await
             .context("the OpenShell gateway is not reachable")?;
-        let text = status.to_string().to_ascii_lowercase();
-        if text.contains("\"failed\"") || text.contains("unauthenticated") {
-            bail!("the OpenShell gateway did not accept this machine's credentials: {status}");
-        }
-        Ok(())
+        check_status(&status)
     }
+}
+
+/// Judge what `openshell status -o json` printed. It exits 0 even when the CLI has no gateway
+/// registered (`{"status": "not_configured"}`), which every later `openshell` call then fails
+/// with "No active gateway", so the top-level `status` must say `connected` when it is given.
+fn check_status(status: &Value) -> Result<()> {
+    match status["status"].as_str() {
+        None | Some("connected") => {}
+        Some("not_configured") => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "this user's home".into());
+            bail!(
+                "the OpenShell CLI has no gateway registered for the user cedar runs as \
+                 (it reads {home}/.config/openshell); a gateway registered by another user \
+                 doesn't count. Register it with `openshell gateway add` as that user \
+                 (DEPLOYMENT.md, \"OpenShell sandboxes\")"
+            );
+        }
+        Some(other) => bail!("the OpenShell gateway is not connected (status {other:?}): {status}"),
+    }
+    let text = status.to_string().to_ascii_lowercase();
+    if text.contains("\"failed\"") || text.contains("unauthenticated") {
+        bail!("the OpenShell gateway did not accept this machine's credentials: {status}");
+    }
+    Ok(())
 }
 
 /// A policy written to a file for `--policy`, removed when dropped.
@@ -411,6 +431,32 @@ fn iso_seconds(s: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn status_must_be_connected_and_authenticated() {
+        let ok = json!({
+            "authentication": {"provider": "mTLS transport", "status": "authenticated"},
+            "gateway": "openshell",
+            "server": "https://127.0.0.1:17670",
+            "status": "connected",
+            "version": "0.1.10"
+        });
+        assert!(check_status(&ok).is_ok());
+        // What `openshell status -o json` prints, with exit status 0, when no gateway is
+        // registered for the calling user.
+        let err = check_status(&json!({"status": "not_configured"})).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("no gateway registered"),
+            "{err:#}"
+        );
+        assert!(check_status(&json!({"status": "disconnected"})).is_err());
+        let refused = json!({
+            "authentication": {"status": "unauthenticated"},
+            "status": "connected"
+        });
+        assert!(check_status(&refused).is_err());
+    }
 
     #[test]
     fn docker_memory_sizes_become_openshell_quantities() {

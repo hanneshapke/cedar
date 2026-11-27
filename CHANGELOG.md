@@ -8,6 +8,7 @@
 - **A quieter home screen.** The status in the bar shows only while Cedar works, or when a reply failed; the bell is called *Notifications*. The three example tasks are personal (savings, a weekend trip, a week of dinners), carry their own numbers and run with one click. A private chat is offered by name under the message box and as *New private chat* in the conversations drawer, instead of a small button in the composer.
 - **Making an agent starts with two choices.** *On a schedule* and *When something changes* come first; records, webhooks, the phone, mail, the calendar and Drive folders are under *More ways to start it*.
 - **The desktop app's setup page looks like the chat.** Same typefaces (Figtree and Lora, now shipped with the app), colours, buttons and mark, in light and dark.
+- **cedar no longer switches to OpenShell when its user has no gateway.** `openshell status` exits 0 and prints `{"status": "not_configured"}` when the CLI has no gateway registered, which is the case when the gateway was set up for another user (the installer's own user service, say). cedar took that for a working gateway, so *Run sandboxes with OpenShell* could be turned on and every run after it failed with "could not start the sandbox for this run" (`No active gateway` in the log). The check now requires the gateway to be connected, and the message says that the gateway must be registered for the user cedar runs as. DEPLOYMENT.md's troubleshooting table covers the case.
 
 ## 0.12.2
 
