@@ -57,7 +57,18 @@ impl GoogleApi {
     }
 
     pub async fn post(&self, segments: &[&str], body: &Value, timeout: Duration) -> Result<Value> {
-        self.send(Method::POST, segments, &[], Some(body), timeout)
+        self.post_query(segments, &[], body, timeout).await
+    }
+
+    /// POST with query parameters, which is where Calendar takes an insert's options.
+    pub async fn post_query(
+        &self,
+        segments: &[&str],
+        query: &[(&str, String)],
+        body: &Value,
+        timeout: Duration,
+    ) -> Result<Value> {
+        self.send(Method::POST, segments, query, Some(body), timeout)
             .await
     }
 

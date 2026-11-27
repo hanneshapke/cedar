@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Cedar can add events to your Google Calendar.** The new `calendar_create_event` tool adds a timed or all-day event to a calendar, with a description, a place, guests, a Google Meet link and a recurrence rule when asked for; it is among the default `CALENDAR_TOOLS`. An event that is only yours is added right away. One with guests makes Google email them an invitation, so it waits for your OK first (the `email` approval rule), and a run with `hold_writes` keeps every new event in the outbox. Nothing changes or deletes an existing event. "Connect Google" now asks for `calendar.events` too, so connected accounts need a *Reconnect* (Settings → Server says so), and the scope belongs on the OAuth consent screen. `GOOGLE_BACKEND=api` only for the tool itself; with `mcp` the name allows Google's own `create_event`.
+
 ## 0.12.3
 
 - **The chat sets itself up.** A Cedar without a model used to open on a message box that couldn't send and a pointer to Settings → Models. It now opens on a setup page: cedar looks for a model server on its own computer (Ollama, LM Studio, vLLM, llama.cpp, SGLang) and offers what it finds with one click; otherwise you let the desktop app download a model, pick a hosted provider and paste its key, or give the address of a server elsewhere. It ends on three first tasks that need nothing from you, and one click runs one. The language is no longer asked for: the chat starts in the browser's.

@@ -40,6 +40,7 @@ pub const DEFAULT_GOOGLE_SCOPES: &str = "openid email \
     https://www.googleapis.com/auth/gmail.readonly \
     https://www.googleapis.com/auth/gmail.compose \
     https://www.googleapis.com/auth/calendar.readonly \
+    https://www.googleapis.com/auth/calendar.events \
     https://www.googleapis.com/auth/drive.readonly \
     https://www.googleapis.com/auth/drive.file";
 pub const DEFAULT_GMAIL_MCP_URL: &str = "https://gmailmcp.googleapis.com/mcp/v1";
@@ -53,9 +54,10 @@ pub const DEFAULT_SLIDES_API_URL: &str = "https://slides.googleapis.com/v1/prese
 /// deletes, or relabels.
 pub const DEFAULT_GMAIL_TOOLS: &str =
     "search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft";
-/// The Calendar tools offered by default: reading only.
+/// The Calendar tools offered by default: reading, and adding an event. Nothing that changes or
+/// deletes one.
 pub const DEFAULT_CALENDAR_TOOLS: &str =
-    "list_calendars,list_events,get_event,search_events,suggest_time";
+    "list_calendars,list_events,get_event,search_events,suggest_time,create_event";
 /// The Drive tools: finding files and reading Docs, Slides and text files, and saving a file
 /// into the workspace. Nothing here changes anything in Drive.
 pub const DEFAULT_DRIVE_TOOLS: &str = "search_files,get_file,read_document,download_file";

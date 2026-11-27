@@ -912,7 +912,7 @@ impl<'a> ToolView<'a> {
         if how.interactive && how.approvals {
             note.push_str(
                 "Some of your calls wait for the user's OK before they run: sending or changing \
-                 mail, posting to Slack, saving a file from the web, installing packages, \
+                 mail, inviting guests to a calendar event, posting to Slack, saving a file from the web, installing packages, \
                  deleting files, running a community tool. Make each such call complete and \
                  final (the whole message, the real recipient), because what the user approves \
                  is exactly what happens. If they decline, don't try to get the same thing done \

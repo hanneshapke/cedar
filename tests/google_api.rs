@@ -142,6 +142,26 @@ async fn calendar_get(
     Json(body).into_response()
 }
 
+/// `events.insert`: the event comes back as posted, with an ID and a link.
+async fn calendar_post(
+    State(mock): State<Arc<Mock>>,
+    Path(path): Path<String>,
+    RawQuery(query): RawQuery,
+    headers_in: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    mock.record("POST", &format!("/calendar/{path}"), query, &headers_in);
+    if path != "calendars/primary/events" {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    mock.posted.lock().unwrap().push(body.clone());
+    let mut event = body;
+    event["id"] = json!("new-1");
+    event["status"] = json!("confirmed");
+    event["htmlLink"] = json!("https://calendar.google.com/event?eid=new-1");
+    Json(event).into_response()
+}
+
 async fn free_busy(
     State(mock): State<Arc<Mock>>,
     headers_in: HeaderMap,
@@ -290,7 +310,7 @@ async fn start(mock: Mock) -> (String, Arc<Mock>) {
         .route("/gmail/drafts", post(gmail_drafts))
         .route("/gmail/{*path}", get(gmail_get))
         .route("/calendar/freeBusy", post(free_busy))
-        .route("/calendar/{*path}", get(calendar_get))
+        .route("/calendar/{*path}", get(calendar_get).post(calendar_post))
         .route("/drive/{*path}", get(drive_get))
         .route("/sheets/{*path}", get(sheets_get))
         .route("/slides", post(slides_post))
@@ -395,6 +415,7 @@ async fn mail_is_searched_and_a_reply_is_drafted() {
             "calendar_get_event",
             "calendar_search_events",
             "calendar_suggest_time",
+            "calendar_create_event",
         ]
     );
     let system = first["system"].as_str().unwrap();
@@ -545,6 +566,67 @@ async fn calendar_times_are_read_in_the_users_time_zone() {
     assert!(seen[1..]
         .iter()
         .all(|(_, _, _, auth)| auth == "Bearer tok-2"));
+}
+
+#[tokio::test]
+async fn an_event_is_added_to_the_calendar() {
+    let (base, mock) = start(Mock::default()).await;
+    let app = app(
+        vec![
+            Step::Reply(tool_use(
+                "t1",
+                "calendar_create_event",
+                json!({ "summary": "Dentist", "startTime": "2026-10-13T15:00", "location": "Main St 1" }),
+            )),
+            Step::Reply(tool_use(
+                "t2",
+                "calendar_create_event",
+                json!({ "summary": "Offsite", "startTime": "2026-10-20", "endTime": "2026-10-21",
+                        "attendeeEmails": ["bob@example.com"] }),
+            )),
+            Step::Reply(tool_use(
+                "t3",
+                "calendar_create_event",
+                json!({ "summary": "Backwards", "startTime": "2026-10-13T15:00", "endTime": "2026-10-13T14:00" }),
+            )),
+            Step::Reply(text("done")),
+        ],
+        &base,
+        &[("GMAIL", "off")],
+    )
+    .await;
+    run_to_completion(&app).await;
+
+    let made = result_json(&app, 1);
+    assert_eq!(made["event"]["id"], "new-1");
+    assert_eq!(made["event"]["summary"], "Dentist");
+    assert_eq!(made["event"]["start"], "2026-10-13T15:00:00-07:00");
+    assert_eq!(made["event"]["link"], "https://calendar.google.com/event?eid=new-1");
+    assert_eq!(made["note"], "The event is on the calendar.");
+    let invited = result_json(&app, 2);
+    assert_eq!(invited["event"]["allDay"], true);
+    assert!(invited["note"].as_str().unwrap().contains("emailed the guest"), "{invited}");
+
+    // A mistake in the input is the model's to fix: nothing was posted for it.
+    let refused = tool_result(&app, 3);
+    assert_eq!(refused["is_error"], true);
+    assert!(refused["content"].as_str().unwrap().contains("endTime must be after startTime"));
+
+    let posted = mock.posted.lock().unwrap().clone();
+    assert_eq!(posted.len(), 2);
+    assert_eq!(
+        posted[0],
+        json!({ "summary": "Dentist", "location": "Main St 1",
+            "start": { "dateTime": "2026-10-13T15:00:00-07:00", "timeZone": "America/Los_Angeles" },
+            "end": { "dateTime": "2026-10-13T16:00:00-07:00", "timeZone": "America/Los_Angeles" } })
+    );
+    assert_eq!(posted[1]["start"], json!({ "date": "2026-10-20" }));
+    assert_eq!(posted[1]["end"], json!({ "date": "2026-10-22" }));
+    assert_eq!(posted[1]["attendees"], json!([{ "email": "bob@example.com" }]));
+    // Only an event with guests has Google send mail.
+    let inserts = mock.requests("/calendar/calendars/primary/events");
+    assert_eq!(inserts[0].1, "sendUpdates=none");
+    assert_eq!(inserts[1].1, "sendUpdates=all");
 }
 
 #[tokio::test]
@@ -775,7 +857,7 @@ async fn mail_and_calendar_can_be_read_outside_a_run() {
     assert!(body["json"]["events"].is_array(), "{body}");
 
     // Reading one thread, or writing a draft, stays inside runs.
-    for name in ["gmail_get_thread", "gmail_create_draft", "calendar_get_event"] {
+    for name in ["gmail_get_thread", "gmail_create_draft", "calendar_get_event", "calendar_create_event"] {
         let (status, _) = app
             .json(Method::POST, &format!("/v1/tools/{name}/call"), Some(KEY_A), Some(json!({})))
             .await;

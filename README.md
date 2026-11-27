@@ -371,7 +371,7 @@ The rules (`TOOL_APPROVALS`, `on` for all of them, `off` for none, or a comma-se
 
 | Rule | Calls |
 | --- | --- |
-| `email` | Gmail tools that send, draft or change mail |
+| `email` | Gmail tools that send, draft or change mail, and `calendar_create_event` with guests (Google emails them an invitation) |
 | `slack` | `slack_send_message`; asked every time, with the channel and the message's first line |
 | `downloads` | `download_file`; "always" is per host |
 | `installs` | `pip install`, `npm i`, `apt install`, ... in `bash` or `run_python`, when the sandbox has a network; "always" is per package |
@@ -909,9 +909,9 @@ Settings come from environment variables. The important ones:
 | `CEDAR_ADMIN_KEYS` | empty (comma-separated subset of `CEDAR_API_KEYS` that may manage [integrations](#integrations)) |
 | `CEDAR_SERVICE_KEYS` | empty (comma-separated subset of `CEDAR_API_KEYS` that may [act for users](#acting-for-users) with `X-Cedar-User`) |
 | `CEDAR_SECRET_KEY` | empty (64 hex characters, `openssl rand -hex 32`; encrypts integration credentials saved through the API, which can't be saved without it) |
-| `GOOGLE_SCOPES` | `openid email` plus `gmail.readonly`, `gmail.compose`, `calendar.readonly`, `drive.readonly`, `drive.file` (what "Connect Google" asks for; space- or comma-separated full scope URLs) |
+| `GOOGLE_SCOPES` | `openid email` plus `gmail.readonly`, `gmail.compose`, `calendar.readonly`, `calendar.events`, `drive.readonly`, `drive.file` (what "Connect Google" asks for; space- or comma-separated full scope URLs) |
 | `GMAIL_TOOLS` | `search_threads,get_thread,list_labels,list_drafts,get_draft,create_draft` (`*` for every tool the server lists) |
-| `CALENDAR_TOOLS` | `list_calendars,list_events,get_event,search_events,suggest_time` |
+| `CALENDAR_TOOLS` | `list_calendars,list_events,get_event,search_events,suggest_time,create_event` |
 | `GMAIL_MCP_URL` / `CALENDAR_MCP_URL` | `https://gmailmcp.googleapis.com/mcp/v1` / `https://calendarmcp.googleapis.com/mcp/v1` |
 | `DOCKER_BIN` | `docker` (the Docker CLI, as a name on `PATH` or an absolute path; the desktop app sets it) |
 | `CEDAR_EXIT_ON_STDIN_EOF` | `off` (set `1` to shut down when stdin reaches end-of-file: a launcher holding a pipe to cedar then takes it down with itself) |
@@ -1213,25 +1213,34 @@ application* client with `https://developers.google.com/oauthplayground` as an a
 redirect URI. The default tools need `https://www.googleapis.com/auth/gmail.readonly`,
 `https://www.googleapis.com/auth/gmail.compose` (drafts),
 `https://www.googleapis.com/auth/calendar.readonly`,
+`https://www.googleapis.com/auth/calendar.events` (adding events),
 `https://www.googleapis.com/auth/drive.readonly` (Drive, Docs and Sheets) and
 `https://www.googleapis.com/auth/drive.file` (Slides: making files, and changing only the ones
 cedar made).
 
 When a cedar upgrade asks for a scope the connected account didn't grant (0.3.7 added
-`drive.readonly`, and the Slides tools `drive.file`), the tools answer Google's "insufficient scopes" error until the account is
+`drive.readonly`, the Slides tools `drive.file`, and `calendar_create_event` `calendar.events`), the tools answer Google's "insufficient scopes" error until the account is
 connected again; the Server page says which scopes are missing, and *Reconnect* grants them.
 
 cedar trades the refresh token for an access token when it first needs one and again shortly
 before that expires, and asks for a new one once if Google rejects it.
 
 Only the tools `GMAIL_TOOLS` and `CALENDAR_TOOLS` name are offered: by default reading mail,
-listing labels, and reading and writing drafts, and reading calendars and events and finding free
-time. Nothing that sends, forwards, deletes, or changes events is offered; with drafts the agent
-prepares replies for you to send from Gmail.
+listing labels, and reading and writing drafts, and reading calendars and events, finding free
+time, and adding events. Nothing that sends mail, forwards, deletes, or changes an existing event
+is offered; with drafts the agent prepares replies for you to send from Gmail. Take `create_event`
+out of `CALENDAR_TOOLS` for a calendar the agent only reads.
+
+`calendar_create_event` adds a timed or all-day event, with a description, a place, guests, a
+Google Meet link and a recurrence rule if asked for. An event without guests is added right away.
+One with guests makes Google email each an invitation, so in an interactive run it waits for
+your OK under the `email` [approval rule](#plans-and-approvals), and a run with `hold_writes` keeps every
+new event in [the outbox](#the-outbox).
 
 With `GOOGLE_BACKEND=api` the tools cedar implements are `search_threads`, `get_thread`,
 `get_message`, `list_labels`, `list_drafts`, `get_draft`, and `create_draft` for Gmail, and
-`list_calendars`, `list_events`, `get_event`, `search_events`, and `suggest_time` for Calendar.
+`list_calendars`, `list_events`, `get_event`, `search_events`, `suggest_time`, and `create_event`
+for Calendar.
 Allowed names it doesn't implement are logged and skipped. Calendar times without a UTC offset
 are read in the calendar's time zone, and every Calendar result includes the current date and
 time, which the model otherwise doesn't know.

@@ -2,7 +2,9 @@
 //! Google's Calendar MCP server. Like `web_search` they run in the cedar process: the OAuth tokens
 //! stay here, and the sandbox has no network.
 //!
-//! Only reading is implemented; nothing here creates, changes, or answers events.
+//! Reading, and `create_event`, which adds an event; nothing here changes, deletes, or answers
+//! one. An event with guests makes Google email them an invitation, so such a call waits for the
+//! user's OK like mail does (see [`crate::approvals`]).
 //!
 //! Times without a UTC offset are read in the user's calendar time zone (or the `timeZone` the
 //! model passes), and results are given in it, together with the current time: the model has no
@@ -29,6 +31,7 @@ const TOOLS: &[&str] = &[
     "get_event",
     "search_events",
     "suggest_time",
+    "create_event",
 ];
 /// Event descriptions in a list are cut to this many bytes; get_event gives them in full.
 const LIST_DESCRIPTION_MAX: usize = 300;
@@ -126,6 +129,16 @@ impl Tool for CalendarTool {
                  otherwise). Free/busy is only visible for people whose calendars share it; the \
                  result lists anyone whose availability is unknown."
             }
+            "create_event" => {
+                "Add an event to one of the user's Google calendars. Times without a UTC offset \
+                 are in the user's time zone; get today's date from list_calendars or list_events \
+                 first rather than guessing it. Without endTime a timed event lasts an hour. For \
+                 an all-day event give dates (2026-04-30) as startTime and, if it spans several \
+                 days, the last day as endTime. Google emails an invitation to everyone in \
+                 attendeeEmails, so name guests only when the user asked for them. Returns the \
+                 event with its link; it is created once per call, so don't repeat a call that \
+                 succeeded."
+            }
             _ => unreachable!("not a Calendar tool: {}", self.op),
         }
     }
@@ -188,6 +201,21 @@ impl Tool for CalendarTool {
                     "pageSize": { "type": "integer", "minimum": 1, "maximum": 20, "description": "How many windows to return (default 5)." },
                 } },
             }, "required": ["startTime", "endTime"] }),
+            "create_event" => json!({ "type": "object", "properties": {
+                "summary": { "type": "string", "description": "The event's title." },
+                "startTime": time("When it starts; a date alone (2026-04-30) makes an all-day event"),
+                "endTime": time("When it ends (default: an hour after the start); for an all-day event its last day (default: the same day)"),
+                "allDay": { "type": "boolean", "description": "An all-day event; only the dates of startTime and endTime count. Default: true when startTime is a date without a time." },
+                "description": { "type": "string", "description": "Notes for the event." },
+                "location": { "type": "string", "description": "Where it takes place: an address or a place's name." },
+                "attendeeEmails": { "type": "array", "items": { "type": "string" },
+                    "description": "Email addresses of guests. Google sends each an invitation. Leave out for an event that is only the user's." },
+                "addGoogleMeetUrl": { "type": "boolean", "description": "Add a Google Meet video call (default false)." },
+                "recurrence": { "type": "array", "items": { "type": "string" },
+                    "description": "For a repeating event, iCalendar rules, e.g. [\"RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=10\"]." },
+                "calendarId": calendar_id,
+                "timeZone": zone,
+            }, "required": ["summary", "startTime"] }),
             _ => unreachable!("not a Calendar tool: {}", self.op),
         }
     }
@@ -218,6 +246,7 @@ impl Tool for CalendarTool {
                 json!({ "event": render_event(&event, true) })
             }
             "suggest_time" => self.suggest_time(input, zone, t).await?,
+            "create_event" => self.create_event(input, zone, t).await?,
             _ => unreachable!("not a Calendar tool: {}", self.op),
         };
         out["now"] = json!(now
@@ -395,6 +424,117 @@ impl CalendarTool {
             "moreWindows": (found > max_slots).then(|| found - max_slots),
             "unknownAvailability": unknown,
         }))
+    }
+
+    async fn create_event(&self, input: &Value, zone: Tz, t: Duration) -> Result<Value> {
+        let (body, query) = new_event(input, zone)?;
+        let guests = body["attendees"].as_array().map_or(0, Vec::len);
+        let cal = str_arg(input, "calendarId").unwrap_or("primary");
+        let event = self
+            .calendar
+            .api
+            .post_query(&["calendars", cal, "events"], &query, &body, t)
+            .await?;
+        let note = match guests {
+            0 => "The event is on the calendar.".to_string(),
+            1 => "The event is on the calendar, and Google emailed the guest an invitation.".into(),
+            n => format!("The event is on the calendar, and Google emailed the {n} guests an invitation."),
+        };
+        Ok(json!({ "calendarId": cal, "event": render_event(&event, true), "note": note }))
+    }
+}
+
+/// The body and query of the `events.insert` call that create_event's `input` asks for.
+fn new_event(input: &Value, zone: Tz) -> Result<(Value, Vec<(&'static str, String)>)> {
+    let summary = required_str(input, "summary")?;
+    let start = required_str(input, "startTime")?;
+    let end = str_arg(input, "endTime");
+    let all_day = input["allDay"].as_bool().unwrap_or(date_only(start).is_some());
+    let mut body = json!({ "summary": summary });
+    if all_day {
+        let first = day_of(start, zone)?;
+        let last = end.map(|e| day_of(e, zone)).transpose()?.unwrap_or(first);
+        if last < first {
+            bail!("endTime must not be before startTime");
+        }
+        // Google's end date is the day after the last one.
+        let after = last.succ_opt().ok_or_else(|| anyhow!("endTime is out of range"))?;
+        body["start"] = json!({ "date": first.to_string() });
+        body["end"] = json!({ "date": after.to_string() });
+    } else {
+        let from = parse_time(start, zone)?;
+        let to = match end {
+            Some(e) => parse_time(e, zone)?,
+            None => from + chrono::Duration::hours(1),
+        };
+        if to <= from {
+            bail!("endTime must be after startTime");
+        }
+        // The zone goes with the times: a repeating event needs it to keep its hour across
+        // daylight-saving changes.
+        let at = |t: DateTime<Utc>| {
+            json!({ "dateTime": t.with_timezone(&zone).to_rfc3339(), "timeZone": zone.name() })
+        };
+        body["start"] = at(from);
+        body["end"] = at(to);
+    }
+    for key in ["description", "location"] {
+        if let Some(text) = str_arg(input, key) {
+            body[key] = json!(text);
+        }
+    }
+    let guests = str_list(input, "attendeeEmails");
+    for email in &guests {
+        let (name, domain) = email.split_once('@').unwrap_or_default();
+        if name.is_empty() || domain.is_empty() || email.contains(char::is_whitespace) {
+            bail!("attendeeEmails: {email:?} is not an email address");
+        }
+    }
+    if !guests.is_empty() {
+        body["attendees"] = json!(guests.iter().map(|e| json!({ "email": e })).collect::<Vec<_>>());
+    }
+    let rules = str_list_exact(input, "recurrence");
+    for rule in &rules {
+        let known = ["RRULE:", "EXRULE:", "RDATE", "EXDATE"];
+        if !known.iter().any(|p| rule.starts_with(p)) {
+            bail!("recurrence: {rule:?} is not an iCalendar rule; use e.g. RRULE:FREQ=WEEKLY;BYDAY=TU");
+        }
+    }
+    if !rules.is_empty() {
+        body["recurrence"] = json!(rules);
+    }
+    // Guests hear of the event from Google; an event without any tells nobody.
+    let mut query = vec![("sendUpdates", if guests.is_empty() { "none" } else { "all" }.to_string())];
+    if input["addGoogleMeetUrl"].as_bool() == Some(true) {
+        body["conferenceData"] = json!({ "createRequest": {
+            "requestId": uuid::Uuid::new_v4().to_string(),
+            "conferenceSolutionKey": { "type": "hangoutsMeet" },
+        } });
+        query.push(("conferenceDataVersion", "1".into()));
+    }
+    Ok((body, query))
+}
+
+/// The recurrence rules as given: unlike [`str_list`], a single string is one rule, since a
+/// rule contains commas (`BYDAY=MO,WE`).
+fn str_list_exact(input: &Value, key: &str) -> Vec<String> {
+    match &input[key] {
+        Value::String(s) if !s.trim().is_empty() => vec![s.trim().to_string()],
+        Value::Array(_) => str_list(input, key),
+        _ => Vec::new(),
+    }
+}
+
+/// `s` as a date, if it is one without a time.
+fn date_only(s: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+}
+
+/// The day `s` falls on in `zone`: a date as given, a time by its date there.
+fn day_of(s: &str, zone: Tz) -> Result<NaiveDate> {
+    match date_only(s) {
+        Some(day) => Ok(day),
+        None => Ok(parse_time(s, zone)?.with_timezone(&zone).date_naive()),
     }
 }
 
@@ -637,6 +777,76 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn a_new_event_is_written_in_the_zone() {
+        let (body, query) = new_event(
+            &json!({ "summary": "Dentist", "startTime": "2026-10-12T09:00", "location": " Main St 1 " }),
+            LA,
+        )
+        .unwrap();
+        assert_eq!(
+            body,
+            json!({ "summary": "Dentist", "location": "Main St 1",
+                "start": { "dateTime": "2026-10-12T09:00:00-07:00", "timeZone": "America/Los_Angeles" },
+                "end": { "dateTime": "2026-10-12T10:00:00-07:00", "timeZone": "America/Los_Angeles" } })
+        );
+        assert_eq!(query, [("sendUpdates", "none".to_string())]);
+
+        // Guests are invited, a rule keeps its commas, and a Meet link is asked for.
+        let (body, query) = new_event(
+            &json!({ "summary": "Sync", "startTime": "2026-10-12T16:00:00Z", "endTime": "2026-10-12T16:30:00Z",
+                "attendeeEmails": "bo@x.com, cy@x.com", "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=MO,WE",
+                "addGoogleMeetUrl": true }),
+            LA,
+        )
+        .unwrap();
+        assert_eq!(body["start"]["dateTime"], "2026-10-12T09:00:00-07:00");
+        assert_eq!(body["attendees"], json!([{ "email": "bo@x.com" }, { "email": "cy@x.com" }]));
+        assert_eq!(body["recurrence"], json!(["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"]));
+        assert_eq!(body["conferenceData"]["createRequest"]["conferenceSolutionKey"]["type"], "hangoutsMeet");
+        assert_eq!(query[0], ("sendUpdates", "all".to_string()));
+        assert_eq!(query[1], ("conferenceDataVersion", "1".to_string()));
+
+        let bad = |input: Value| new_event(&input, LA).unwrap_err().to_string();
+        assert!(bad(json!({ "startTime": "2026-10-12" })).contains("summary is required"));
+        assert!(bad(json!({ "summary": "x", "startTime": "2026-10-12T09:00", "endTime": "2026-10-12T09:00" }))
+            .contains("after startTime"));
+        assert!(bad(json!({ "summary": "x", "startTime": "2026-10-12T09:00", "attendeeEmails": ["bo"] }))
+            .contains("not an email address"));
+        assert!(bad(json!({ "summary": "x", "startTime": "2026-10-12T09:00", "recurrence": ["weekly"] }))
+            .contains("iCalendar"));
+    }
+
+    #[test]
+    fn all_day_events_end_the_day_after_their_last() {
+        let day = |input: Value| {
+            let (body, _) = new_event(&input, LA).unwrap();
+            (body["start"].clone(), body["end"].clone())
+        };
+        // A date alone is an all-day event.
+        assert_eq!(
+            day(json!({ "summary": "Holiday", "startTime": "2026-12-24" })),
+            (json!({ "date": "2026-12-24" }), json!({ "date": "2026-12-25" }))
+        );
+        assert_eq!(
+            day(json!({ "summary": "Trip", "startTime": "2026-12-30", "endTime": "2027-01-02" })),
+            (json!({ "date": "2026-12-30" }), json!({ "date": "2027-01-03" }))
+        );
+        // With allDay, a time counts by its date in the zone.
+        assert_eq!(
+            day(json!({ "summary": "Fair", "startTime": "2026-10-12T09:00", "allDay": true })),
+            (json!({ "date": "2026-10-12" }), json!({ "date": "2026-10-13" }))
+        );
+        // And a date with allDay false starts at midnight.
+        let (start, _) = day(json!({ "summary": "Launch", "startTime": "2026-10-12", "allDay": false }));
+        assert_eq!(start["dateTime"], "2026-10-12T00:00:00-07:00");
+        assert!(new_event(
+            &json!({ "summary": "x", "startTime": "2026-12-24", "endTime": "2026-12-23" }),
+            LA
+        )
+        .is_err());
     }
 
     #[test]
