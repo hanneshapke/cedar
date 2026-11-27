@@ -55,4 +55,4 @@ members = [".", "chat", "pairing", "llama", "contrib-schema", "contrib"]
 exclude = ["desktop"]
 
 [workspace.package]
-version = "0.12.2"
+version = "0.12.3"
