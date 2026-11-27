@@ -740,6 +740,12 @@ struct AskDraft: Hashable, Sendable {
             when = .now
             return
         }
+        // `Trigger` never fails to decode: what it can't read is `.unknown`, which is no reading
+        // to keep or send. The person picks the When.
+        if case .unknown = trigger {
+            when = .now
+            return
+        }
         when = read
         offTheRecord = false
         switch trigger {
@@ -869,7 +875,8 @@ struct AskReading: Decodable, Hashable, Sendable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         when = try c.decodeIfPresent(String.self, forKey: .when) ?? "now"
-        // A trigger this app can't read is no reading: the person picks the When.
+        // A trigger this app can't read comes out as `.unknown` (see `Trigger.init(from:)`), which
+        // `AskDraft.apply` takes as no reading.
         trigger = try? c.decodeIfPresent(Trigger.self, forKey: .trigger)
         content = try c.decodeIfPresent(String.self, forKey: .content) ?? ""
     }
