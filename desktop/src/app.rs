@@ -3,7 +3,7 @@
 //! another computer set (see remote.rs), only: check that it answers, show it. Everything the setup
 //! page shows comes from [`AppState::status`].
 
-use crate::config::{Config, VERSION};
+use crate::config::{Config, Remote, VERSION};
 use crate::docker::{self, DockerCli};
 use crate::llamaserver::LlamaServer;
 use crate::llamasetup;
@@ -85,6 +85,9 @@ pub enum RemoteStatus {
     /// None set: the servers run on this computer.
     Off,
     Checking,
+    /// Tailscale is being started on this computer, to reach the server (see
+    /// [`connect_tailscale`]).
+    StartingTailscale,
     Connected,
     Failed(String),
 }
@@ -139,6 +142,8 @@ pub struct AppState {
     model: Mutex<ModelStatus>,
     share: Mutex<ShareStatus>,
     remote: Mutex<RemoteStatus>,
+    /// The remote chat didn't answer, and Tailscale here isn't connected and can be started.
+    tailscale_offer: Mutex<bool>,
     /// The tailnet port `tailscale serve` was set up on by this app, to turn off again.
     served_port: Mutex<Option<u16>>,
     /// The `CHAT_PUBLIC_URL` the running chat was started with.
@@ -186,6 +191,9 @@ pub struct Status {
     /// The chat server on another computer this app uses instead of its own, or empty.
     pub remote_server: String,
     pub remote: RemoteStatus,
+    /// The page offers to start Tailscale and connect: the server is on a tailnet, didn't answer,
+    /// and Tailscale on this computer isn't running or is turned off.
+    pub remote_tailscale_offer: bool,
     pub llm_base_url: String,
     pub llm_model: String,
     pub has_api_key: bool,
@@ -229,6 +237,7 @@ impl AppState {
             model: Mutex::new(ModelStatus::Unset),
             share: Mutex::new(ShareStatus::Off),
             remote: Mutex::new(RemoteStatus::Off),
+            tailscale_offer: Mutex::new(false),
             served_port: Mutex::new(None),
             started_public_url: Mutex::new(None),
             update: Mutex::new(UpdateStatus::default()),
@@ -390,8 +399,21 @@ impl AppState {
         *self.model.lock().unwrap() = s;
     }
 
+    /// Whatever was offered about Tailscale goes with the state it was offered in.
     fn set_remote(&self, s: RemoteStatus) {
+        *self.tailscale_offer.lock().unwrap() = false;
         *self.remote.lock().unwrap() = s;
+    }
+
+    /// The remote chat can't be used because of `e`. With it on a tailnet, Tailscale on this
+    /// computer is looked at, for the page to offer starting it.
+    async fn remote_failed(&self, remote: &Remote, e: anyhow::Error) {
+        let offer = match tailscale::find() {
+            Some(cli) if tailscale::on_tailnet(&remote.server) => cli.can_connect().await,
+            _ => false,
+        };
+        self.set_remote(RemoteStatus::Failed(format!("{e:#}")));
+        *self.tailscale_offer.lock().unwrap() = offer;
     }
 
     /// Whether the window can show the chat: this app's servers run, or the remote chat answered.
@@ -482,6 +504,7 @@ impl AppState {
             needs_choice: cfg.asks_choice(),
             remote_server: cfg.remote_server().map(|r| r.server.clone()).unwrap_or_default(),
             remote: self.remote.lock().unwrap().clone(),
+            remote_tailscale_offer: *self.tailscale_offer.lock().unwrap(),
             llm_base_url: cfg.llm_base_url.clone(),
             llm_model: cfg.llm_model.clone(),
             has_api_key: !cfg.llm_api_key.trim().is_empty(),
@@ -598,6 +621,38 @@ pub enum Chosen {
     Llama,
 }
 
+/// The page's "Start Tailscale and connect", while the chat on another computer doesn't answer:
+/// starts Tailscale on this computer (its app, or `tailscale up` when it is turned off), waits
+/// for the server to answer over the tailnet, and goes on as [`bootstrap`] does. What is left for
+/// the user (logging in, a server that is off) is on the page afterwards.
+pub async fn connect_tailscale(app: AppHandle) -> Result<()> {
+    let state = app.state::<AppState>();
+    let remote = state
+        .config()
+        .remote_server()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!(crate::i18n::t("remote.none")))?;
+    let cli = tailscale::find().ok_or_else(|| anyhow::anyhow!(tailscale::MISSING))?;
+    {
+        let _one_at_a_time = state.bootstrap.lock().await;
+        state.set_remote(RemoteStatus::StartingTailscale);
+        if let Err(e) = cli.connect().await {
+            state.remote_failed(&remote, e).await;
+            return Ok(());
+        }
+        // A tailnet that just came up takes a moment to resolve names and find its peers.
+        let began = std::time::Instant::now();
+        while crate::remote::check(&remote).await.is_err() && began.elapsed() < TAILNET_SETTLE {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    }
+    bootstrap(app).await;
+    Ok(())
+}
+
+/// How long a server is asked again after Tailscale was started for it.
+const TAILNET_SETTLE: Duration = Duration::from_secs(20);
+
 /// Marks a setup as started, unless it already runs.
 fn begin(setup: &Mutex<SetupStatus>) -> bool {
     let mut setup = setup.lock().unwrap();
@@ -624,7 +679,7 @@ pub async fn bootstrap(app: AppHandle) {
                     eprintln!("showing the chat: {e:#}");
                 }
             }
-            Err(e) => state.set_remote(RemoteStatus::Failed(format!("{e:#}"))),
+            Err(e) => state.remote_failed(&remote, e).await,
         }
         return;
     }
@@ -913,7 +968,7 @@ pub async fn restart(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Llama, Remote};
+    use crate::config::Llama;
     use cedar_llama::gpu::Gpu;
     use cedar_llama::probe::Machine;
     use cedar_llama::release::{Arch, Os};

@@ -2,7 +2,9 @@
 //! `https://<computer>.<tailnet>.ts.net` to the chat on 127.0.0.1, so only devices on the tailnet
 //! can reach it. What Tailscale must be ready for, and where its CLI is, is shared with the chat's
 //! own Settings page (`cedar_pairing::tailscale`); running the CLI is this app's, and so is
-//! starting a Tailscale that isn't running when the app starts with sharing on.
+//! starting a Tailscale that isn't running when the app starts with sharing on. A chat on another
+//! computer (remote.rs) is reached over the tailnet too: when it doesn't answer and Tailscale
+//! isn't connected here, the setup page offers to start it ([`TailscaleCli::connect`]).
 
 use crate::proc;
 use anyhow::{anyhow, bail, Context, Result};
@@ -92,6 +94,19 @@ fn address(check: &Check, https_port: u16) -> Result<String> {
         .ok_or_else(|| anyhow!("{}", check.detail))
 }
 
+/// Whether this computer is on its tailnet. Reaching another computer there takes no more:
+/// HTTPS Certificates (and this computer's own name) are for serving the chat from here.
+fn connected(state: State) -> bool {
+    matches!(state, State::Ready | State::NoHttps | State::NoMagicDns)
+}
+
+/// Whether `address` is on a tailnet, by its name (`https://spark.tail1234.ts.net`).
+pub fn on_tailnet(address: &str) -> bool {
+    url::Url::parse(address).is_ok_and(|u| {
+        u.host_str().is_some_and(|h| h.to_ascii_lowercase().ends_with(".ts.net"))
+    })
+}
+
 impl TailscaleCli {
     async fn output(&self, args: &[&str], timeout: Duration) -> Result<String> {
         let mut cmd = proc::command(&self.bin);
@@ -154,9 +169,49 @@ impl TailscaleCli {
     async fn url_after(
         &self,
         https_port: u16,
-        mut start_app: impl FnMut() -> bool,
+        start_app: impl FnMut() -> bool,
         patience: Patience,
     ) -> Result<String> {
+        address(&self.check_after(start_app, patience).await?, https_port)
+    }
+
+    /// Whether [`Self::connect`] has something to try: Tailscale doesn't answer and its app is
+    /// there to start, or it is turned off. One that is logged out is the user's to log in.
+    pub async fn can_connect(&self) -> bool {
+        self.can_connect_with(app().is_some_and(|a| a.exists())).await
+    }
+
+    async fn can_connect_with(&self, has_app: bool) -> bool {
+        match self.check().await.map(|c| c.state) {
+            Err(_) => has_app,
+            Ok(state) => state == State::Stopped,
+        }
+    }
+
+    /// Puts this computer on its tailnet, starting Tailscale as [`Self::url_started`] does. An
+    /// error says what is left for the user (logging in, say).
+    pub async fn connect(&self) -> Result<()> {
+        self.connect_after(start_app, PATIENCE).await
+    }
+
+    async fn connect_after(
+        &self,
+        start_app: impl FnMut() -> bool,
+        patience: Patience,
+    ) -> Result<()> {
+        let check = self.check_after(start_app, patience).await?;
+        if !connected(check.state) {
+            bail!("{}", check.detail);
+        }
+        Ok(())
+    }
+
+    /// What Tailscale says once one that wasn't running was started and has settled.
+    async fn check_after(
+        &self,
+        mut start_app: impl FnMut() -> bool,
+        patience: Patience,
+    ) -> Result<Check> {
         let began = Instant::now();
         let mut app_started: Option<Instant> = None;
         let (mut tried_app, mut tried_up) = (false, false);
@@ -185,7 +240,7 @@ impl TailscaleCli {
                 Ok(_) => false,
             };
             if !wait || began.elapsed() >= patience.settle {
-                return address(&check?, https_port);
+                return check;
             }
             tokio::time::sleep(patience.poll).await;
         }
@@ -313,6 +368,53 @@ esac
         assert!(format!("{err:#}").contains("failed to connect"), "{err:#}");
         assert_eq!((starts, calls(&dir, "status")), (1, 1));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn connecting_starts_tailscale_and_needs_no_https() {
+        let (cli, dir) = cli("connect", true);
+        // Not running: worth offering only with an app to start.
+        assert!(cli.can_connect_with(true).await);
+        assert!(!cli.can_connect_with(false).await);
+        cli.connect_after(
+            || {
+                std::fs::write(dir.join("running"), "").unwrap();
+                true
+            },
+            QUICK,
+        )
+        .await
+        .unwrap();
+        assert_eq!(calls(&dir, "up"), 1);
+        // Connected: nothing left to offer.
+        assert!(!cli.can_connect_with(true).await);
+        assert!(connected(State::NoHttps) && connected(State::NoMagicDns));
+        assert!(!connected(State::LoggedOut) && !connected(State::Connecting));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn one_that_is_turned_off_can_be_connected_and_logged_out_cannot() {
+        let (cli, dir) = cli("off", true);
+        std::fs::write(dir.join("running"), "").unwrap();
+        // The first answer is "logged out" (see `cli`), the next "turned off".
+        assert!(!cli.can_connect_with(true).await);
+        assert!(cli.can_connect_with(false).await);
+        let err = {
+            std::fs::remove_file(dir.join("loaded")).unwrap();
+            cli.connect_after(|| panic!("it runs"), QUICK).await.unwrap_err()
+        };
+        assert!(format!("{err:#}").contains("not logged in"), "{err:#}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_tailnet_address_is_told_by_its_name() {
+        assert!(on_tailnet("https://spark-7535.tail71d958.ts.net"));
+        assert!(on_tailnet("https://Spark.T.TS.NET:8443"));
+        assert!(!on_tailnet("https://cedar.example.com"));
+        assert!(!on_tailnet("https://ts.net.example.com"));
+        assert!(!on_tailnet("spark"));
     }
 
     #[tokio::test]

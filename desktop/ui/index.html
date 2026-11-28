@@ -280,6 +280,8 @@
     <p id="remote-text" class="muted"></p>
     <p class="detail" id="remote-detail"></p>
     <div class="row">
+      <!-- Offered while the server doesn't answer and Tailscale here isn't connected (see renderRemote in app.js). -->
+      <button class="primary hidden" id="remote-tailscale" data-i18n="remote.startTailscale">Start Tailscale and connect</button>
       <button class="primary" id="remote-open" data-i18n="services.openChat">Open chat</button>
       <button id="remote-browser" data-i18n="services.openBrowser">Open in browser</button>
       <button id="remote-copy-token" data-i18n="common.copyToken">Copy access token</button>
