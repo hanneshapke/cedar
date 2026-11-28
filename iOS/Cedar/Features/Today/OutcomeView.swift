@@ -46,7 +46,7 @@ struct OutcomeView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.canvas)
+            .background(TodayColors.page)
             .navigationTitle("Today")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -184,7 +184,7 @@ struct OutcomeView: View {
         case .failed: Label("Failed", systemImage: "xmark.octagon").labelStyle(.titleAndIcon).foregroundStyle(.red)
         case .stopped: Label("Stopped", systemImage: "stop.circle").labelStyle(.titleAndIcon)
         case .asking, .waiting:
-            Label("Needs answer", systemImage: "questionmark.bubble").labelStyle(.titleAndIcon).foregroundStyle(Theme.clay)
+            Label("Needs answer", systemImage: "questionmark.bubble").labelStyle(.titleAndIcon).foregroundStyle(TodayColors.needText)
         case .working: Label("Running", systemImage: "circle.dotted").labelStyle(.titleAndIcon)
         }
     }
@@ -321,9 +321,10 @@ struct OutcomeView: View {
                         keepGoing(outcome.conversation.id, text)
                     } label: {
                         Text(verbatim: L10n.string(asking ? "Answer" : "Send"))
+                            .foregroundStyle(TodayColors.primaryInk)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Theme.green)
+                    .tint(TodayColors.primaryFill)
                     // A response still going takes no new message.
                     .disabled(text.isEmpty || outcome.state == .working)
                 }

@@ -14,6 +14,7 @@ struct OutcomeSelection: Identifiable, Hashable {
 /// today's.
 struct TodayRows: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.colorScheme) private var scheme
     @Binding var actionError: String?
     /// Opens an ask's outcome, by its turn's id.
     let showOutcome: (String) -> Void
@@ -29,17 +30,10 @@ struct TodayRows: View {
                     .listRowSeparator(.hidden)
                     .sidebarRow()
             }
-            if app.timeline?.today != false {
-                Button {
-                    ask()
-                } label: {
-                    Label("Ask for Something", systemImage: "square.and.pencil")
-                }
-                .buttonStyle(ProminentButtonStyle())
-                .disabled(!app.settings.isConfigured)
-                .listRowSeparator(.hidden)
-                .sidebarRow()
-            }
+        }
+        // Now and asking are today's (and shown while the day is still being read).
+        if app.timeline?.today != false {
+            nowBlock(app.timeline)
         }
         if let error = app.todayError {
             Section {
@@ -59,38 +53,45 @@ struct TodayRows: View {
         }
     }
 
+    /// The Now block's surfaces for this colour scheme.
+    private var palette: TodayColors.Now { TodayColors.now(scheme) }
+
+    /// Now, as one dark block: its label, the way to ask, and what is going or waits on the
+    /// person. A header row carries the block's top corners and a thin last row its bottom ones,
+    /// so whichever rows are between them, the block is whole.
+    private func nowBlock(_ timeline: Timeline?) -> some View {
+        Section {
+            TodayNowHeader(needsYou: timeline?.needsYou ?? 0)
+                .todayNowRow(.top, palette: palette)
+            Button {
+                ask()
+            } label: {
+                Label("Ask for Something", systemImage: "square.and.pencil")
+            }
+            .buttonStyle(TodayPrimaryButtonStyle(onDark: true))
+            .disabled(!app.settings.isConfigured)
+            .todayNowRow(.middle, palette: palette)
+            ForEach(timeline?.now ?? []) { turn in
+                TodayNowRow(turn: turn, palette: palette, actionError: $actionError)
+                    .todayNowRow(.middle, palette: palette)
+            }
+            ForEach(timeline?.outbox ?? []) { held in
+                heldRow(held)
+                    .todayNowRow(.middle, palette: palette)
+            }
+            Color.clear
+                .frame(height: 4)
+                .accessibilityHidden(true)
+                .todayNowRow(.bottom, palette: palette)
+        }
+    }
+
     @ViewBuilder
     private func river(_ timeline: Timeline) -> some View {
         if timeline.isEmpty {
             empty(today: timeline.today)
                 .listRowSeparator(.hidden)
                 .sidebarRow()
-        }
-        if !timeline.now.isEmpty || !timeline.outbox.isEmpty {
-            Section {
-                ForEach(timeline.now) { turn in
-                    TodayNowRow(turn: turn, actionError: $actionError)
-                        .listRowSeparator(.hidden)
-                        .sidebarRow()
-                }
-                ForEach(timeline.outbox) { held in
-                    heldRow(held)
-                        .listRowSeparator(.hidden)
-                        .sidebarRow()
-                }
-            } header: {
-                HStack {
-                    Text("Now")
-                    Spacer()
-                    if timeline.needsYou > 0 {
-                        Text(verbatim: timeline.needsYou == 1
-                             ? L10n.string("1 thing needs you")
-                             : L10n.format("%lld things need you", timeline.needsYou))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Theme.clay)
-                    }
-                }
-            }
         }
         if !timeline.earlier.isEmpty {
             Section {
@@ -165,6 +166,8 @@ struct TodayRows: View {
 private struct TodayNowRow: View {
     @Environment(AppModel.self) private var app
     let turn: TimelineTurn
+    /// The Now block's surfaces: the row is drawn on them, in the dark scheme.
+    let palette: TodayColors.Now
     @Binding var actionError: String?
     @State private var busy = false
 
@@ -188,8 +191,8 @@ private struct TodayNowRow: View {
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background((needsYou ? Theme.clay : Theme.green).opacity(0.15), in: Capsule())
-                    .foregroundStyle(needsYou ? Theme.clay : Theme.green)
+                    .background(needsYou ? TodayColors.amberSoft : TodayColors.workingSoft, in: Capsule())
+                    .foregroundStyle(needsYou ? TodayColors.amber : TodayColors.lime)
             }
             switch turn.state {
             case .waiting:
@@ -202,9 +205,13 @@ private struct TodayNowRow: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                Button("Answer") { app.open(conversationId: turn.conversationId) }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.clay)
+                Button {
+                    app.open(conversationId: turn.conversationId)
+                } label: {
+                    Text("Answer").foregroundStyle(TodayColors.amberInk)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(TodayColors.amber)
             default:
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
@@ -221,7 +228,7 @@ private struct TodayNowRow: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .surfaceCard(stroke: needsYou ? Theme.clay.opacity(0.6) : Theme.line)
+        .surfaceCard(fill: palette.card, stroke: needsYou ? TodayColors.amber : palette.line)
     }
 
     /// Where it is: what it is doing and how many steps it has taken, once it has taken one.
@@ -264,10 +271,14 @@ private struct TodayNowRow: View {
                 .font(.subheadline)
             }
             HStack(spacing: 8) {
-                Button("Go ahead") { agree(steps) }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.clay)
-                    .disabled(busy)
+                Button {
+                    agree(steps)
+                } label: {
+                    Text("Go ahead").foregroundStyle(TodayColors.amberInk)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(TodayColors.amber)
+                .disabled(busy)
                 Button("Change the Plan") { app.open(conversationId: turn.conversationId) }
                     .buttonStyle(.bordered)
                     .disabled(busy)
@@ -285,10 +296,14 @@ private struct TodayNowRow: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
             HStack(spacing: 8) {
-                Button("Allow") { decide(approvalId, allow: true) }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.clay)
-                    .disabled(busy)
+                Button {
+                    decide(approvalId, allow: true)
+                } label: {
+                    Text("Allow").foregroundStyle(TodayColors.amberInk)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(TodayColors.amber)
+                .disabled(busy)
                 Button("Deny") { decide(approvalId, allow: false) }
                     .buttonStyle(.bordered)
                     .disabled(busy)
@@ -298,9 +313,13 @@ private struct TodayNowRow: View {
             Text("Cedar wrote a plan and waits for your go-ahead.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Button("Review the Plan") { app.open(conversationId: turn.conversationId) }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.clay)
+            Button {
+                app.open(conversationId: turn.conversationId)
+            } label: {
+                Text("Review the Plan").foregroundStyle(TodayColors.amberInk)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(TodayColors.amber)
         }
     }
 
@@ -345,6 +364,35 @@ private struct TodayNowRow: View {
                 await app.refreshToday()
             }
         }
+    }
+}
+
+/// The Now block's first row: the label and its line in lime, and how many things need the person.
+private struct TodayNowHeader: View {
+    let needsYou: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Now")
+                .font(.caption.weight(.bold))
+                .kerning(1.2)
+                .textCase(.uppercase)
+                .foregroundStyle(TodayColors.lime)
+            Rectangle()
+                .fill(TodayColors.lime)
+                .frame(height: 2)
+                .accessibilityHidden(true)
+            if needsYou > 0 {
+                Text(verbatim: needsYou == 1
+                     ? L10n.string("1 thing needs you")
+                     : L10n.format("%lld things need you", needsYou))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TodayColors.amber)
+                    .fixedSize()
+            }
+        }
+        .padding(.top, 6)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

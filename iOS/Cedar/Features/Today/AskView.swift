@@ -69,8 +69,15 @@ struct AskView: View {
                     if busy {
                         ProgressView()
                     } else {
-                        Button(draft.when.sendTitle) { send() }
-                            .disabled(draft.content.isEmpty)
+                        Button {
+                            send()
+                        } label: {
+                            Text(verbatim: draft.when.sendTitle)
+                                .foregroundStyle(TodayColors.primaryInk)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(TodayColors.primaryFill)
+                        .disabled(draft.content.isEmpty)
                     }
                 }
             }

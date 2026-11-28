@@ -535,13 +535,14 @@ private struct SidebarSwitch: View {
                 HStack(spacing: 5) {
                     Text("Today")
                     if needsYou > 0 {
+                        // Today's amber, not the clay of unread: it is what needs the person.
                         Text(verbatim: "\(needsYou)")
                             .font(.caption2.weight(.bold))
                             .monospacedDigit()
-                            .foregroundStyle(.white)
+                            .foregroundStyle(TodayColors.needText)
                             .padding(.horizontal, 5)
                             .frame(minWidth: 17, minHeight: 17)
-                            .background(Theme.clay, in: Capsule())
+                            .background(TodayColors.needSoft, in: Capsule())
                     }
                 }
             }
