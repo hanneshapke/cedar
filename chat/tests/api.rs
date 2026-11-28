@@ -5460,6 +5460,7 @@ async fn an_outcome_is_the_answer_and_what_the_ask_left_behind() {
     assert_eq!(status, StatusCode::OK, "{going}");
     assert_eq!(going["state"], "working");
     assert_eq!(going["steps"], json!([]));
+    assert_eq!(going["waits"], json!([]), "it waits on nothing");
 
     // What cedar keeps for the run: a memory and a record row of its own, and others' that aren't.
     *h.cedar.memory.lock().unwrap() = Some(vec![
@@ -5585,6 +5586,12 @@ async fn the_river_shows_a_plan_where_a_response_is_and_what_the_tool_refused() 
     tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
     let (_, again) = h.json(Method::GET, uri, None).await;
     assert_eq!(again["now"][0]["progress"]["steps"], 2);
+    // The turn's own page says the same: it waits, on this plan, having made these calls.
+    let (_, out) = h.json(Method::GET, &format!("/api/turns/{turn_id}/outcome"), None).await;
+    assert_eq!(out["state"], "waiting", "{out}");
+    assert_eq!(out["waits"][0]["kind"], "plan");
+    assert_eq!(out["waits"][0]["steps"], now["waits"][0]["steps"]);
+    assert_eq!(out["progress"], json!({ "steps": 2, "doing": "fetch_url" }));
     // The go-ahead is the conversation's own.
     let steps = now["waits"][0]["steps"].clone();
     let (status, _) = h.json(Method::POST, &format!("/api/turns/{turn_id}/plan"), Some(json!({ "steps": steps }))).await;

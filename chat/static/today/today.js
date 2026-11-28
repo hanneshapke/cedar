@@ -207,34 +207,7 @@ function nowCard(t) {
   body.append(head);
 
   if (t.state === 'waiting') {
-    for (const wait of t.waits) {
-      if (wait.kind === 'plan') {
-        body.append(el('p', '', tr('today.planWaiting')));
-        const steps = Array.isArray(wait.steps) ? wait.steps.filter((s) => s && typeof s.title === 'string') : [];
-        const actions = el('div', 'actions');
-        if (steps.length) {
-          // The plan as cedar wrote it: the go-ahead agrees to exactly these steps.
-          const list = el('ol', 'plan');
-          for (const step of steps) list.append(el('li', '', step.title));
-          body.append(list);
-          actions.append(
-            button(tr('today.goAhead'), 'go', (e) => busy(e.currentTarget, body, () => api('POST', `/turns/${t.turn_id}/plan`, { steps }))),
-            link(conversationHref(t.conversation_id), '', tr('today.changePlan')),
-          );
-        } else {
-          actions.append(link(conversationHref(t.conversation_id), 'go', tr('today.reviewPlan')));
-        }
-        body.append(actions);
-      } else {
-        const approval = wait.key.replace(/^approval:/, '');
-        body.append(el('p', '', wait.reason || tr('today.approvalWaiting')));
-        const actions = el('div', 'actions');
-        const decide = (decision) => (e) => busy(e.currentTarget, body, () =>
-          api('POST', `/turns/${t.turn_id}/approvals/${encodeURIComponent(approval)}`, { decision }));
-        actions.append(button(tr('today.allow'), 'go', decide('allow')), button(tr('today.deny'), '', decide('deny')));
-        body.append(actions);
-      }
-    }
+    body.append(...waitNodes(t.turn_id, t.conversation_id, t.waits, (node, work) => busy(node, body, work)));
   } else if (t.state === 'asking') {
     if (t.summary) body.append(el('p', '', t.summary));
     const form = el('form', 'answer');
@@ -262,6 +235,44 @@ function nowCard(t) {
   }
   card.append(body);
   return card;
+}
+
+/**
+ * What a run waits on from the person, as controls: a plan with its steps and Go ahead, a risky
+ * call with Allow and Deny. Shared by the river's cards and a turn's own page; `run(node, work)`
+ * does the work with the button disabled and reloads whichever is showing.
+ */
+function waitNodes(turnId, conversationId, waits, run) {
+  const nodes = [];
+  for (const wait of waits || []) {
+    if (wait.kind === 'plan') {
+      nodes.push(el('p', '', tr('today.planWaiting')));
+      const steps = Array.isArray(wait.steps) ? wait.steps.filter((s) => s && typeof s.title === 'string') : [];
+      const actions = el('div', 'actions');
+      if (steps.length) {
+        // The plan as cedar wrote it: the go-ahead agrees to exactly these steps.
+        const list = el('ol', 'plan');
+        for (const step of steps) list.append(el('li', '', step.title));
+        nodes.push(list);
+        actions.append(
+          button(tr('today.goAhead'), 'go', (e) => run(e.currentTarget, () => api('POST', `/turns/${turnId}/plan`, { steps }))),
+          link(conversationHref(conversationId), '', tr('today.changePlan')),
+        );
+      } else {
+        actions.append(link(conversationHref(conversationId), 'go', tr('today.reviewPlan')));
+      }
+      nodes.push(actions);
+    } else {
+      const approval = wait.key.replace(/^approval:/, '');
+      nodes.push(el('p', '', wait.reason || tr('today.approvalWaiting')));
+      const actions = el('div', 'actions');
+      const decide = (decision) => (e) => run(e.currentTarget, () =>
+        api('POST', `/turns/${turnId}/approvals/${encodeURIComponent(approval)}`, { decision }));
+      actions.append(button(tr('today.allow'), 'go', decide('allow')), button(tr('today.deny'), '', decide('deny')));
+      nodes.push(actions);
+    }
+  }
+  return nodes;
 }
 
 /** Where a response still going is: what it is using now and how many steps so far. */
@@ -601,6 +612,15 @@ function part(title, children) {
 
 const outcomeState = { id: null, timer: null };
 
+/** Keep the header's "things need you" right while the river isn't showing. */
+async function refreshNeeds() {
+  try {
+    const d = await api('GET', `/timeline?${new URLSearchParams({ timezone: zone })}`);
+    $('needs').hidden = !d.needs_you;
+    $('needs-text').textContent = tr('today.needs', { count: d.needs_you });
+  } catch { /* the river says so when it is next shown */ }
+}
+
 function hideOutcome() {
   outcomeState.id = null;
   clearTimeout(outcomeState.timer);
@@ -631,7 +651,8 @@ async function showOutcome(id) {
   renderOutcome(o);
   document.title = tr('today.pageTitle', { day: o.conversation.title || o.turn.prompt });
   // A response still going is followed until it ends.
-  if (o.state === 'working') outcomeState.timer = setTimeout(() => showOutcome(id), 3000);
+  if (o.state === 'working' || o.state === 'waiting') outcomeState.timer = setTimeout(() => showOutcome(id), 3000);
+  refreshNeeds();
 }
 
 /** Back to the river of the day the ask was made. */
@@ -653,11 +674,14 @@ function renderOutcome(o) {
     stopped: () => tr('today.outcome.stopped'),
     asking: () => tr('today.pill.asking'),
     working: () => tr('today.working'),
+    waiting: () => tr('today.pill.waiting'),
   }[o.state]();
-  meta.append(el('span', `tag ${o.state === 'failed' ? 'failed' : ''}`, o.agent ? `${when} · ${o.agent.title}` : when));
+  meta.append(el('span', o.state === 'waiting' ? 'pill need' : `tag ${o.state === 'failed' ? 'failed' : ''}`, o.agent ? `${when} · ${o.agent.title}` : when));
   head.append(meta);
   head.append(el('p', 'asked', tr('today.outcome.youAsked', { prompt: t.prompt })));
-  const headline = o.state === 'failed' ? (t.error || tr('today.failed')) : (o.summary || o.conversation.title || t.prompt);
+  // Until there is an answer, the headline says where things stand, not the question again.
+  const pending = { working: tr('today.outcome.workingHead'), waiting: tr('today.outcome.waitingHead') }[o.state];
+  const headline = o.state === 'failed' ? (t.error || tr('today.failed')) : (o.summary || pending || o.conversation.title || t.prompt);
   head.append(el('h1', '', headline));
   if (o.later_turns) {
     const more = link(conversationHref(o.conversation.id), 'tag', tr('today.outcome.continued', { count: o.later_turns }));
@@ -665,9 +689,15 @@ function renderOutcome(o) {
   }
 
   const body = el('div', 'outcome-body');
-  if (o.state === 'working') {
+  if (o.state === 'waiting') {
+    // What it waits on, to be answered here: the plan with Go ahead, a call with Allow and Deny.
+    const card = el('div', 'card-body waiting-here');
+    card.append(...waitNodes(t.id, o.conversation.id, o.waits, (node, work) => busyOutcome(node, work)));
+    body.append(card);
+  }
+  if (o.state === 'working' || o.state === 'waiting') {
     const actions = el('div', 'actions');
-    actions.append(el('span', 'progress', tr('today.working')));
+    actions.append(el('span', 'progress', o.state === 'waiting' && !o.progress ? '' : progressText(o.progress)));
     actions.append(button(tr('today.stop'), '', (e) => busyOutcome(e.currentTarget, () => api('POST', `/turns/${t.id}/cancel`))));
     body.append(actions);
   }
@@ -787,7 +817,7 @@ function renderOutcome(o) {
   input.setAttribute('aria-label', label);
   const send = el('button', 'primary', o.state === 'asking' ? tr('today.answer') : tr('today.send.now'));
   send.type = 'submit';
-  send.disabled = o.state === 'working';
+  send.disabled = o.state === 'working' || o.state === 'waiting';
   form.append(input, send);
   form.addEventListener('submit', (e) => {
     e.preventDefault();

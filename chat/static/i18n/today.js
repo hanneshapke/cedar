@@ -155,6 +155,8 @@ cedarI18n.add({
     'today.tool.map': "Map",
     'today.tool.recipe': "Recipe",
     'today.tool.records': "Your records",
+    'today.outcome.workingHead': "Working on it…",
+    'today.outcome.waitingHead': "Waiting for your go-ahead",
     'today.requestFailed': "The request failed (error {status}).",
   },
   de: {
@@ -308,6 +310,8 @@ cedarI18n.add({
     'today.tool.map': "Karte",
     'today.tool.recipe': "Rezept",
     'today.tool.records': "Deine Daten",
+    'today.outcome.workingHead': "Cedar arbeitet daran…",
+    'today.outcome.waitingHead': "Wartet auf dein Okay",
     'today.requestFailed': "Die Anfrage ist fehlgeschlagen (Fehler {status}).",
   },
   fr: {
@@ -461,6 +465,8 @@ cedarI18n.add({
     'today.tool.map': "Carte",
     'today.tool.recipe': "Recette",
     'today.tool.records': "Vos données",
+    'today.outcome.workingHead': "Cedar y travaille…",
+    'today.outcome.waitingHead': "En attente de votre accord",
     'today.requestFailed': "La requête a échoué (erreur {status}).",
   },
   es: {
@@ -614,6 +620,8 @@ cedarI18n.add({
     'today.tool.map': "Mapa",
     'today.tool.recipe': "Receta",
     'today.tool.records': "Tus registros",
+    'today.outcome.workingHead': "Cedar está en ello…",
+    'today.outcome.waitingHead': "Esperando tu visto bueno",
     'today.requestFailed': "La solicitud falló (error {status}).",
   },
   'es-ES': {

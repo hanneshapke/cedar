@@ -283,3 +283,7 @@ a.tag { text-decoration: underline; }
   .search { flex: 1 1 100%; order: 5; }
   .search input { width: 100%; }
 }
+
+/* A turn's own page while it waits on the person: what it waits on, as in the river. */
+.waiting-here { border-color: var(--need-fill); border-width: 1.5px; }
+.pill.need { margin-left: auto; background: var(--need-soft); color: var(--need); }

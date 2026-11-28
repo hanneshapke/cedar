@@ -1241,6 +1241,17 @@ impl Store {
         self.with_waits(turns).await
     }
 
+    /// One turn as the timeline has it, with what it waits on and where it is: for its outcome.
+    pub async fn timeline_turn(&self, id: Uuid) -> Result<Option<TimelineTurn>> {
+        let row = sqlx::query(&format!("{TIMELINE_SELECT} WHERE c.user_id = ? AND t.id = ?"))
+            .bind(self.user.to_string())
+            .bind(id.to_string())
+            .fetch_optional(&self.pool)
+            .await?;
+        let Some(turn) = row.as_ref().map(timeline_turn_from_row).transpose()? else { return Ok(None) };
+        Ok(self.with_waits(vec![turn]).await?.pop())
+    }
+
     /// Fill in the open waits of the turns that are still going.
     async fn with_waits(&self, mut turns: Vec<TimelineTurn>) -> Result<Vec<TimelineTurn>> {
         let going: Vec<String> = turns.iter().filter(|t| matches!(t.status.as_str(), "queued" | "running")).map(|t| t.turn_id.to_string()).collect();

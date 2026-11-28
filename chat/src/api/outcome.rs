@@ -4,7 +4,9 @@
 //! summary, and what the turn left behind — the files it wrote or changed in the workspace, what
 //! it remembered, the record rows it saved, the follow-ups it suggested, and what it held for the
 //! person's OK in the outbox (an unattended run's mail or changes) — with how it got there
-//! (its steps and the sources it read) folded behind that.
+//! (its steps and the sources it read) folded behind that. While the run still goes, the outcome
+//! says where it is and what it waits on from the person (`state: waiting`, `waits`), so a plan
+//! can be agreed to or a call approved from here.
 //!
 //! Every part is read from what cedar already keeps for the run: its events (steps, sources,
 //! follow-ups), its memories and record rows (each knows the run that saved it) and the
@@ -40,8 +42,15 @@ pub(super) async fn outcome(Scoped(state): Scoped, Path(id): Path<String>) -> Re
     };
     let finished = cedar::is_terminal(&turn.status);
     let asking = turn.status == "completed" && turn.stop_reason.as_deref() == Some("ask_user") && later == 0;
+    // While it goes, the run may be waiting on the person (its plan, a risky call): the outcome
+    // says so and carries the wait, so it can be answered here as in the river.
+    let live = if finished { None } else { state.store.timeline_turn(turn.id).await? };
+    let waits = live.as_ref().map(|t| t.waits.clone()).unwrap_or_default();
+    let progress = live.as_ref().filter(|t| t.progress_steps > 0).map(|t| json!({ "steps": t.progress_steps, "doing": t.progress_doing }));
     let outcome_state = if asking {
         "asking"
+    } else if !waits.is_empty() {
+        "waiting"
     } else {
         match turn.status.as_str() {
             "queued" | "running" => "working",
@@ -69,6 +78,8 @@ pub(super) async fn outcome(Scoped(state): Scoped, Path(id): Path<String>) -> Re
         "state": outcome_state,
         "summary": turn.final_text.as_deref().and_then(timeline::summary),
         "later_turns": later,
+        "waits": waits,
+        "progress": progress,
         "steps": run.steps,
         "sources": run.sources,
         "followups": run.followups,
