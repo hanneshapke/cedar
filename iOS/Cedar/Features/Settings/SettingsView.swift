@@ -215,7 +215,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 6) {
             Label("Tailscale isn't installed", systemImage: "exclamationmark.triangle.fill")
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(Theme.clay)
+                .foregroundStyle(Theme.attention)
             Text("Cedar usually reaches your computer through Tailscale, a private connection between your devices. Install the Tailscale app on this device and sign in with the same account as on your computer.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -251,7 +251,7 @@ struct SettingsView: View {
                 Image(systemName: "xmark.circle.fill")
             }
             .font(.footnote)
-            .foregroundStyle(Theme.clay)
+            .foregroundStyle(Theme.attention)
         }
     }
 
@@ -360,7 +360,7 @@ struct SettingsView: View {
             NavigationLink {
                 ContributeSettingsView()
             } label: {
-                SettingsRow("Contribute Conversations", systemImage: "arrow.up.heart", tint: Theme.clay) {
+                SettingsRow("Contribute Conversations", systemImage: "arrow.up.heart", tint: Theme.attention) {
                     if let settings = app.contributionSettings {
                         Text(settings.enabled ? "On" : "Off")
                     }

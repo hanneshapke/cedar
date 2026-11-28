@@ -405,7 +405,7 @@ private struct ConversationRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             RowIcon(systemImage: conversation.scheduleId != nil ? "clock.arrow.circlepath" : "bubble.left.and.text.bubble.right",
-                    tint: conversation.needsAnswer ? Theme.clay : Theme.green, isActive: isActive)
+                    tint: conversation.needsAnswer ? Theme.attention : Theme.green, isActive: isActive)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(title)
@@ -436,8 +436,8 @@ private struct ConversationRow: View {
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(Theme.clay.opacity(0.15), in: Capsule())
-                            .foregroundStyle(Theme.clay)
+                            .background(Theme.attention.opacity(0.15), in: Capsule())
+                            .foregroundStyle(Theme.attention)
                     } else if conversation.unread {
                         UnreadDot()
                     }
@@ -535,7 +535,7 @@ private struct SidebarSwitch: View {
                 HStack(spacing: 5) {
                     Text("Today")
                     if needsYou > 0 {
-                        // Today's amber, not the clay of unread: it is what needs the person.
+                        // Amber: it is what needs the person.
                         Text(verbatim: "\(needsYou)")
                             .font(.caption2.weight(.bold))
                             .monospacedDigit()
@@ -555,10 +555,10 @@ private struct SidebarSwitch: View {
                         Text(verbatim: "\(agentsUnread)")
                             .font(.caption2.weight(.bold))
                             .monospacedDigit()
-                            .foregroundStyle(.white)
+                            .foregroundStyle(TodayColors.needText)
                             .padding(.horizontal, 5)
                             .frame(minWidth: 17, minHeight: 17)
-                            .background(Theme.clay, in: Capsule())
+                            .background(TodayColors.needSoft, in: Capsule())
                     }
                 }
             }

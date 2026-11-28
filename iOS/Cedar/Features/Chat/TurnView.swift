@@ -127,7 +127,7 @@ private struct StatusFooter: View {
                 }
                 if turn.turn.needsAnswer {
                     Label("Needs your answer", systemImage: "questionmark.bubble")
-                        .foregroundStyle(Theme.clay)
+                        .foregroundStyle(Theme.attention)
                 } else if turn.turn.stopReason == "max_tokens" {
                     Text("Cut short")
                 }
@@ -219,7 +219,7 @@ private struct ApprovalView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(approval.isPending ? "May Cedar do this?" : "Asked: \(approval.reason)", systemImage: "hand.raised")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(approval.isPending ? Theme.clay : Color.primary)
+                .foregroundStyle(approval.isPending ? Theme.attention : Color.primary)
             if approval.isPending {
                 Text(approval.reason)
                     .font(.subheadline)
@@ -245,8 +245,8 @@ private struct ApprovalView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .surfaceCard(fill: approval.isPending ? Theme.clay.opacity(0.08) : Theme.surface,
-                   stroke: Theme.clay.opacity(approval.isPending ? 0.45 : 0.2))
+        .surfaceCard(fill: approval.isPending ? Theme.attention.opacity(0.08) : Theme.surface,
+                   stroke: Theme.attention.opacity(approval.isPending ? 0.45 : 0.2))
     }
 
     private var summary: String {
@@ -286,7 +286,7 @@ struct QuestionsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Cedar asks", systemImage: "questionmark.bubble")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.clay)
+                .foregroundStyle(Theme.attention)
             ForEach(Array(questions.questions.enumerated()), id: \.offset) { index, question in
                 VStack(alignment: .leading, spacing: 8) {
                     if let header = question.header, !header.isEmpty {

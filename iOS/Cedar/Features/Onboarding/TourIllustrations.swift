@@ -216,7 +216,7 @@ private struct ServerPicture: View {
                     .reveal(shown, 2)
                     Wire().padding(.horizontal, 6).padding(.bottom, 22).reveal(shown, 3)
                     VStack(spacing: 8) {
-                        Tile(symbol: "terminal", tint: Theme.clay)
+                        Tile(symbol: "terminal", tint: Theme.attention)
                         Caption(text: "Sealed box")
                     }
                     .reveal(shown, 4)
@@ -311,7 +311,7 @@ private struct CardsPicture: View {
                         HStack(alignment: .bottom, spacing: 7) {
                             ForEach(Array([22, 34, 28, 44, 52].enumerated()), id: \.offset) { i, h in
                                 RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                    .fill(i == 4 ? Theme.clay : Theme.green)
+                                    .fill(i == 4 ? Theme.attention : Theme.green)
                                     .frame(width: 14, height: CGFloat(h))
                             }
                         }
@@ -324,7 +324,7 @@ private struct CardsPicture: View {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 6) {
                                 Image(systemName: "fork.knife")
-                                    .foregroundStyle(Theme.clay)
+                                    .foregroundStyle(Theme.attention)
                                 Text("Recipe")
                                     .font(.system(size: 12, weight: .semibold))
                             }
@@ -348,7 +348,7 @@ private struct CardsPicture: View {
                                 .padding(16)
                             Image(systemName: "mappin.circle.fill")
                                 .font(.system(size: 18))
-                                .foregroundStyle(Theme.clay)
+                                .foregroundStyle(Theme.attention)
                                 .offset(x: 48, y: -16)
                         }
                         .frame(height: 70)
@@ -390,8 +390,8 @@ private struct PlansPicture: View {
                                 .font(.system(size: 10, weight: .semibold))
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
-                                .background(Theme.clay.opacity(0.15), in: Capsule())
-                                .foregroundStyle(Theme.clay)
+                                .background(Theme.attention.opacity(0.15), in: Capsule())
+                                .foregroundStyle(Theme.attention)
                         }
                         .reveal(shown, 0)
                         step("Read the three reports", 1)
@@ -406,10 +406,10 @@ private struct PlansPicture: View {
                                 .background(Theme.green, in: Capsule())
                             Text("Stop")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Theme.clay)
+                                .foregroundStyle(Theme.attention)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
-                                .background(Theme.clay.opacity(0.12), in: Capsule())
+                                .background(Theme.attention.opacity(0.12), in: Capsule())
                         }
                         .padding(.top, 2)
                         .reveal(shown, 4)
@@ -468,9 +468,9 @@ private struct AgentsPicture: View {
                 HStack(spacing: 10) {
                     Image(systemName: "bell.badge.fill")
                         .font(.system(size: 16))
-                        .foregroundStyle(Theme.clay)
+                        .foregroundStyle(Theme.attention)
                         .frame(width: 32, height: 32)
-                        .background(Theme.clay.opacity(0.13), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .background(Theme.attention.opacity(0.13), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Morning briefing is ready")
                             .font(.system(size: 12, weight: .semibold))
@@ -538,9 +538,9 @@ private struct MemoryPicture: View {
                         .foregroundStyle(Theme.green)
                     Image(systemName: "lock.fill")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Theme.onGreen)
+                        .foregroundStyle(Theme.onAttention)
                         .frame(width: 26, height: 26)
-                        .background(Theme.clay, in: Circle())
+                        .background(Theme.attentionFill, in: Circle())
                         .offset(x: 32, y: 30)
                 }
                 .reveal(shown, 0)

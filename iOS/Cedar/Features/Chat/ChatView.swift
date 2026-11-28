@@ -305,7 +305,7 @@ struct UserBubble: View {
                                 .lineLimit(1)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(Color.white.opacity(0.18), in: Capsule())
+                                .background(Theme.onGreen.opacity(0.18), in: Capsule())
                         }
                     }
                 }

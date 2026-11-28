@@ -434,7 +434,7 @@ struct AgentFormView: View {
             if let testError {
                 Label(testError, systemImage: "xmark.circle.fill")
                     .font(.footnote)
-                    .foregroundStyle(Theme.clay)
+                    .foregroundStyle(Theme.attention)
             }
             if let test {
                 if test.ok {
@@ -461,7 +461,7 @@ struct AgentFormView: View {
                 } else {
                     Label(test.error ?? L10n.string("The check failed."), systemImage: "xmark.circle.fill")
                         .font(.footnote)
-                        .foregroundStyle(Theme.clay)
+                        .foregroundStyle(Theme.attention)
                 }
                 if let sample = test.sample, !sample.text.isEmpty {
                     DisclosureGroup("What the Check Returned") {

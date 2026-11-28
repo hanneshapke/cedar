@@ -3,13 +3,13 @@ import UIKit
 
 /// Today's own colours ("Now in the dark"): a neutral page where Earlier and Ahead sit quietly,
 /// and the Now section as one dark-green block with lime, the way the dark theme looks. What
-/// needs the person is amber, never the mark's clay, which reads as a warning next to green.
+/// needs the person is amber (`Theme.attention` elsewhere in the app), never red.
 /// In dark mode the app's dark surfaces stay, with the same lime and amber.
 enum TodayColors {
     // MARK: On the page (light), or the app's dark surfaces
 
     /// The ground behind an outcome.
-    static let page = dynamic(light: 0xF7F7F4, dark: 0x111311)
+    static let page = Theme.canvas
     /// What needs the person, as text on `needSoft`.
     static let needText = dynamic(light: 0x6B4A00, dark: 0xF2C14E)
     static let needSoft = dynamic(light: 0xFFF1CC, dark: 0x3A2F10)
@@ -39,7 +39,7 @@ enum TodayColors {
 
     static func now(_ scheme: ColorScheme) -> Now {
         scheme == .dark
-            ? Now(block: fixed(0x111311), card: fixed(0x1B1E1B), line: fixed(0x2E332E))
+            ? Now(block: fixed(0x0F1411), card: fixed(0x171E1A), line: fixed(0x26302A))
             : Now(block: fixed(0x0F1F17), card: fixed(0x17291F), line: fixed(0x2E4638))
     }
 

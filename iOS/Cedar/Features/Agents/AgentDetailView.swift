@@ -218,7 +218,7 @@ struct AgentDetailView: View {
                 CopyRow(title: "Secret", value: secret)
                 Label("Copy the secret now. It is shown only this once.", systemImage: "exclamationmark.circle")
                     .font(.footnote)
-                    .foregroundStyle(Theme.clay)
+                    .foregroundStyle(Theme.attention)
             } else if let last4 = hook.secretLast4, !last4.isEmpty {
                 LabeledContent("Secret") {
                     Text(verbatim: "••••\(last4)").monospaced()

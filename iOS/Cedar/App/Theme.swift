@@ -1,25 +1,35 @@
 import SwiftUI
 import UIKit
 
-/// cedar's look: the brand's forest green and clay on warm paper (light) or deep charcoal (dark),
-/// the same palette as the mark in docs/assets.
+/// cedar's look: a neutral page with white cards (light) or a green-black one (dark), one green
+/// family (dark green on the page, lime in the dark) and amber for what needs the user. The same
+/// palette as the web's Today page. The mark keeps the brand's own green and clay.
 enum Theme {
     /// The screen behind everything.
-    static let canvas = dynamic(light: 0xF7F5F0, dark: 0x111311)
+    static let canvas = dynamic(light: 0xF7F7F4, dark: 0x0F1411)
     /// Cards, bubbles and the composer's field.
-    static let surface = dynamic(light: 0xFFFFFF, dark: 0x1B1E1B)
+    static let surface = dynamic(light: 0xFFFFFF, dark: 0x171E1A)
     /// A step up from `surface`: code, chips, the sidebar switch.
-    static let raised = dynamic(light: 0xEFECE5, dark: 0x252925)
+    static let raised = dynamic(light: 0xEEF0EB, dark: 0x222B25)
     /// Hairlines around cards and between rows.
-    static let line = dynamic(light: 0xE3DFD6, dark: 0x2E332E)
-    /// The brand green: the asset catalog's accent color, read directly so a `.tint` doesn't change it.
+    static let line = dynamic(light: 0xE2E4DE, dark: 0x26302A)
+    /// The accent: dark green on the page, lime in the dark. The asset catalog's accent color,
+    /// read directly so a `.tint` doesn't change it.
     static let green = Color("AccentColor")
-    /// The mark's clay: what needs the user (answers, approvals) and unread.
-    static let clay = dynamic(light: 0xB5553A, dark: 0xE09A7A)
-    /// Text on the brand green.
-    static let onGreen = Color.white
-    /// The mark's bars.
-    static let markInk = dynamic(light: 0x3A5F4B, dark: 0xF3EDE3)
+    /// What needs the user (answers, approvals) and unread: amber, as text and tints. Never red,
+    /// which is for what failed.
+    static let attention = dynamic(light: 0x6B4A00, dark: 0xF2C14E)
+    /// Amber as a fill, with `onAttention` on it.
+    static let attentionFill = dynamic(light: 0xF2C14E, dark: 0xF2C14E)
+    static let onAttention = dynamic(light: 0x1F1600, dark: 0x1F1600)
+    /// Text on the accent: white on the dark green, dark ink on the lime.
+    static let onGreen = dynamic(light: 0xFFFFFF, dark: 0x0F1411)
+    /// A primary action's fill and the text on it: the dark green with lime, or lime with dark ink.
+    static let primaryFill = dynamic(light: 0x0F1F17, dark: 0xC8F169)
+    static let primaryInk = dynamic(light: 0xC8F169, dark: 0x0F1411)
+    /// The mark's bars, and its dash: the brand's own colours, as in docs/assets.
+    static let markInk = dynamic(light: 0x3A5F4B, dark: 0xEDEFE8)
+    static let markDash = dynamic(light: 0xB5553A, dark: 0xE09A7A)
 
     static let cardRadius: CGFloat = 16
 
@@ -59,7 +69,7 @@ struct CedarMark: View {
             bar(x: 6, y: 16, width: 12, Theme.markInk, s)
             bar(x: 6, y: 26, width: 12, Theme.markInk, s)
             bar(x: 6, y: 36, width: 36, Theme.markInk, s)
-            bar(x: 33, y: 21, width: 9, Theme.clay, s)
+            bar(x: 33, y: 21, width: 9, Theme.markDash, s)
         }
         .frame(width: size, height: size, alignment: .topLeading)
         .accessibilityHidden(true)
@@ -107,17 +117,17 @@ struct CedarBadge: View {
     }
 }
 
-/// A primary action: the brand green, full width.
+/// A primary action, full width: the dark green with lime on the page, lime in the dark.
 struct ProminentButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(Theme.onGreen)
+            .foregroundStyle(Theme.primaryInk)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
-            .background(Theme.green, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Theme.primaryFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.snappy(duration: 0.15), value: configuration.isPressed)
