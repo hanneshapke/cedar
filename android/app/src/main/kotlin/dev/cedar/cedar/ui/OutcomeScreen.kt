@@ -70,9 +70,15 @@ private const val WORKING_REFRESH_MILLIS = 3_000L
  * there (its steps and sources). Keep going sends the next message from here and opens the
  * conversation, where its response streams; a response still going is followed until it ends.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OutcomeScreen(app: AppModel, turnId: String) {
+    // In Today's colours, as the river it was opened from.
+    TodayTheme { OutcomeContent(app, turnId) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OutcomeContent(app: AppModel, turnId: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var outcome by remember { mutableStateOf<Outcome?>(null) }

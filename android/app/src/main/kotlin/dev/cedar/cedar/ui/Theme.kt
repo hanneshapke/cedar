@@ -3,6 +3,13 @@ package dev.cedar.cedar.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.heightIn
@@ -100,6 +107,126 @@ private val Dark = darkColorScheme(
 @Composable
 fun CedarTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
+}
+
+// -- Today's own colours -------------------------------------------------------------------------
+//
+// The Today screens (the river, the ask sheet, an outcome) don't sit on the app's warm paper. Their
+// page is a neutral one, what is now sits in one dark-green block with the lime of the web page's
+// dark theme, and what needs the person is amber, not clay. In dark mode the app's own surfaces
+// stay, with the same lime and amber, so both modes agree. Everything below resolves through
+// MaterialTheme, so the cards the chat shares (a held call, a follow-up) take the colours of
+// wherever they are put: `CedarColors.clay` is the amber here, and `secondaryText` the muted ink.
+
+private val TodayLime = Color(0xFFC8F169)
+private val TodayAmber = Color(0xFFF2C14E)
+private val TodayNight = Color(0xFF0F1F17)
+private val TodayAmberInk = Color(0xFF1F1600)
+
+/** The Today page in light mode: neutral paper, dark-green actions with lime text. */
+private val TodayLight = lightColorScheme(
+    primary = TodayNight,
+    onPrimary = TodayLime,
+    primaryContainer = Color(0xFFE3EBDD),
+    onPrimaryContainer = TodayNight,
+    // On the page, what needs the person is dark amber on a pale one.
+    secondary = Color(0xFF6B4A00),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFFFF1CC),
+    onSecondaryContainer = Color(0xFF6B4A00),
+    background = Color(0xFFF7F7F4),
+    onBackground = Color(0xFF121815),
+    surface = Color(0xFFF7F7F4),
+    onSurface = Color(0xFF121815),
+    surfaceVariant = Color(0xFFECEDE8),
+    onSurfaceVariant = Color(0xFF5B635D),
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color(0xFFF1F2EE),
+    surfaceContainer = Color.White,
+    surfaceContainerHigh = Color(0xFFF1F2EE),
+    surfaceContainerHighest = Color(0xFFECEDE8),
+    outline = Color(0xFFC4C9C2),
+    outlineVariant = Color(0xFFE2E4DE),
+)
+
+/** What is now, in light mode: the dark-green block. */
+private val TodayNow = darkColorScheme(
+    primary = TodayLime,
+    onPrimary = TodayNight,
+    primaryContainer = Color(0xFF22361A),
+    onPrimaryContainer = TodayLime,
+    secondary = TodayAmber,
+    onSecondary = TodayAmberInk,
+    secondaryContainer = Color(0xFF3A2F10),
+    onSecondaryContainer = TodayAmber,
+    background = TodayNight,
+    onBackground = Color(0xFFEDEFE8),
+    surface = TodayNight,
+    onSurface = Color(0xFFEDEFE8),
+    surfaceVariant = Color(0xFF22342A),
+    onSurfaceVariant = Color(0xFF9AA39B),
+    surfaceContainerLowest = Color(0xFF0B1711),
+    surfaceContainerLow = Color(0xFF17291F),
+    surfaceContainer = Color(0xFF17291F),
+    surfaceContainerHigh = Color(0xFF1D3126),
+    surfaceContainerHighest = Color(0xFF22342A),
+    outline = Color(0xFF3F5A4B),
+    outlineVariant = Color(0xFF2E4638),
+)
+
+/** Today in dark mode: the app's dark surfaces, with the same lime and amber. */
+private val TodayDark = Dark.copy(
+    primary = TodayLime,
+    onPrimary = TodayNight,
+    primaryContainer = Color(0xFF22361A),
+    onPrimaryContainer = TodayLime,
+    secondary = TodayAmber,
+    onSecondary = TodayAmberInk,
+    secondaryContainer = Color(0xFF3A2F10),
+    onSecondaryContainer = TodayAmber,
+)
+
+/** The Today screens' colours over the app's, with the text colour that goes with them. */
+@Composable
+fun TodayTheme(content: @Composable () -> Unit) {
+    val scheme = if (isSystemInDarkTheme()) TodayDark else TodayLight
+    MaterialTheme(colorScheme = scheme) {
+        CompositionLocalProvider(LocalContentColor provides scheme.onSurface, content = content)
+    }
+}
+
+/**
+ * The block what is now sits in: dark green in light mode, with everything inside it (the shared
+ * cards too) drawn in the block's own colours; in dark mode a slightly raised surface.
+ */
+@Composable
+fun TodayNowBlock(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val dark = isSystemInDarkTheme()
+    val scheme = if (dark) TodayDark else TodayNow
+    MaterialTheme(colorScheme = scheme) {
+        CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
+            Column(
+                modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(if (dark) scheme.surfaceContainerLow else scheme.background)
+                    .padding(vertical = 10.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+/** A dashed outline, for what hasn't happened yet. */
+fun Modifier.dashedOutline(color: Color, radius: Dp = 16.dp): Modifier = drawBehind {
+    val stroke = 1.dp.toPx()
+    drawRoundRect(
+        color,
+        topLeft = Offset(stroke / 2, stroke / 2),
+        size = Size(size.width - stroke, size.height - stroke),
+        cornerRadius = CornerRadius(radius.toPx()),
+        style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))),
+    )
 }
 
 /** The colours the cards and turns use beyond Material's roles. */

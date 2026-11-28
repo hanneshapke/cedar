@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -48,6 +51,7 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -63,6 +67,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.cedar.cedar.AppModel
 import dev.cedar.cedar.R
 import dev.cedar.core.Agent
@@ -114,7 +119,13 @@ fun TodayRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
     // The day shown: another one has no now, and nothing to ask from.
     val shownDay = app.timelineDay?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: LocalDate.now()
     val isToday = app.timelineDay == null
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+    // What waits on the person, turns and held calls alike, in the order it came.
+    val now: List<Pair<Instant, Any>> = buildList<Pair<Instant, Any>> {
+        day?.now?.forEach { add(it.createdAt to it) }
+        day?.outbox?.forEach { add((it.createdAt ?: Instant.EPOCH) to it) }
+    }.sortedBy { it.first }
+    TodayTheme {
+    LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentPadding = PaddingValues(bottom = 24.dp)) {
         if (!app.timelineUnsupported) {
             item(key = "day") {
                 DayBar(
@@ -124,8 +135,23 @@ fun TodayRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
                 )
             }
         }
-        if (isToday) item(key = "ask") { AskBar(enabled = app.settings.isConfigured && !app.timelineUnsupported) { asking = true } }
         app.timelineError?.let { error -> item(key = "error") { ErrorLine(error) } }
+        if (isToday && day != null && day.needsYou > 0) item(key = "needs") { NeedsYouLine(day.needsYou) }
+        // Now is one block: where to ask, and everything going or waiting on the person.
+        if (isToday) item(key = "now") {
+            TodayNowBlock(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                NowHeader()
+                AskBar(enabled = app.settings.isConfigured && !app.timelineUnsupported) { asking = true }
+                now.forEach { (_, entry) ->
+                    key(if (entry is TimelineTurn) "turn-${entry.turnId}" else "held-${(entry as OutboxItem).id}") {
+                        when (entry) {
+                            is TimelineTurn -> NowCard(app, entry, onAction)
+                            is OutboxItem -> HeldEntry(app, entry)
+                        }
+                    }
+                }
+            }
+        }
         when {
             app.timelineUnsupported -> item(key = "unsupported") {
                 EmptyState(
@@ -135,21 +161,6 @@ fun TodayRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
             }
             day == null -> if (app.timelineError == null) item(key = "loading") { Loading() }
             else -> {
-                if (day.needsYou > 0) item(key = "needs") { NeedsYouLine(day.needsYou) }
-                // What waits on the person, turns and held calls alike, in the order it came.
-                val now: List<Pair<Instant, Any>> = buildList<Pair<Instant, Any>> {
-                    day.now.forEach { add(it.createdAt to it) }
-                    day.outbox.forEach { add((it.createdAt ?: Instant.EPOCH) to it) }
-                }.sortedBy { it.first }
-                if (now.isNotEmpty()) {
-                    item(key = "now-header") { TodayHeader(stringResource(R.string.today_now)) }
-                    items(now, key = { (_, entry) -> if (entry is TimelineTurn) "turn-${entry.turnId}" else "held-${(entry as OutboxItem).id}" }) { (_, entry) ->
-                        when (entry) {
-                            is TimelineTurn -> NowCard(app, entry, onAction)
-                            is OutboxItem -> HeldEntry(app, entry)
-                        }
-                    }
-                }
                 item(key = "earlier-header") { TodayHeader(stringResource(R.string.today_earlier)) }
                 if (day.earlier.isEmpty()) {
                     item(key = "earlier-empty") { QuietLine(stringResource(if (isToday) R.string.today_earlier_empty else R.string.today_day_empty)) }
@@ -166,7 +177,36 @@ fun TodayRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
         }
     }
     if (asking) AskSheet(app, onDismiss = { asking = false })
+    }
 }
+
+/** The line that opens the block of what is now: the time, the word, and a rule, in the lime. */
+@Composable
+private fun NowHeader() {
+    val lime = MaterialTheme.colorScheme.primary
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(shortTime(Instant.now()), style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = lime)
+        Text(
+            stringResource(R.string.today_now).uppercase(Locale.getDefault()),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.5.sp,
+            color = lime,
+        )
+        Box(Modifier.weight(1f).height(2.dp).background(lime))
+    }
+}
+
+/** A button for what needs the person: the amber, filled. */
+@Composable
+private fun needColors() = ButtonDefaults.buttonColors(
+    containerColor = MaterialTheme.colorScheme.secondary,
+    contentColor = MaterialTheme.colorScheme.onSecondary,
+)
 
 /** The day the river shows, with the days around it a tap away, and the way back to today. */
 @Composable
@@ -211,18 +251,18 @@ private fun QuietLine(text: String) {
     )
 }
 
-/** "2 things need you", in the clay of what needs the person. */
+/** "2 things need you", in the amber of what needs the person. */
 @Composable
 private fun NeedsYouLine(count: Int) {
     Text(
         plural(R.plurals.today_needs_you, count, count),
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.SemiBold,
-        color = CedarColors.clay,
+        color = MaterialTheme.colorScheme.onSecondaryContainer,
         modifier = Modifier
             .padding(start = 16.dp, end = 16.dp, top = 6.dp)
             .clip(RoundedCornerShape(50))
-            .background(CedarColors.clay.copy(alpha = 0.15f))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
             .padding(horizontal = 12.dp, vertical = 5.dp),
     )
 }
@@ -293,7 +333,7 @@ private fun NowCard(app: AppModel, turn: TimelineTurn, onAction: (suspend () -> 
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .surfaceCard(stroke = if (state.needsYou) CedarColors.clay.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant)
+            .surfaceCard(stroke = if (state.needsYou) CedarColors.clay else MaterialTheme.colorScheme.outlineVariant)
             .clickable { app.open(turn.conversationId) }
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -318,7 +358,7 @@ private fun NowCard(app: AppModel, turn: TimelineTurn, onAction: (suspend () -> 
                                 }
                             }
                         }
-                        Button(onClick = { decide(true) }, enabled = !deciding) { Text(stringResource(R.string.allow)) }
+                        Button(onClick = { decide(true) }, enabled = !deciding, colors = needColors()) { Text(stringResource(R.string.allow)) }
                         OutlinedButton(onClick = { decide(false) }, enabled = !deciding) { Text(stringResource(R.string.deny)) }
                         if (deciding) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     }
@@ -347,6 +387,7 @@ private fun NowCard(app: AppModel, turn: TimelineTurn, onAction: (suspend () -> 
                                     }
                                 },
                                 enabled = !deciding,
+                                colors = needColors(),
                             ) { Text(stringResource(R.string.today_go_ahead)) }
                             // Its steps are changed in the chat.
                             OutlinedButton(onClick = { app.open(turn.conversationId) }, enabled = !deciding) { Text(stringResource(R.string.today_change_plan)) }
@@ -357,7 +398,7 @@ private fun NowCard(app: AppModel, turn: TimelineTurn, onAction: (suspend () -> 
             }
             TurnState.ASKING -> {
                 turn.line?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis) }
-                Button(onClick = { app.open(turn.conversationId) }) { Text(stringResource(R.string.answer)) }
+                Button(onClick = { app.open(turn.conversationId) }, colors = needColors()) { Text(stringResource(R.string.answer)) }
             }
             else -> Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -460,11 +501,16 @@ private fun AheadRow(agent: Agent, shownDay: LocalDate, onClick: () -> Unit) {
         else -> skeletonDate(next, "EEEjm")
     }
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         TimeColumn(time)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        // Dashed: it hasn't happened yet.
+        Column(
+            Modifier.weight(1f).dashedOutline(MaterialTheme.colorScheme.outline).padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
             Text(agent.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(context.describe(agent.trigger), style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
