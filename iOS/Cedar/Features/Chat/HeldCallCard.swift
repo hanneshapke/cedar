@@ -32,7 +32,7 @@ struct HeldCallCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(L10n.string(item == nil || isOpen ? "Waiting for Your Approval" : "Approval"), systemImage: "tray.and.arrow.up")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isOpen ? Color.orange : Theme.green)
+                .foregroundStyle(isOpen ? Theme.attention : Theme.green)
             if !reason.isEmpty {
                 Text(verbatim: reason)
                     .font(.subheadline)

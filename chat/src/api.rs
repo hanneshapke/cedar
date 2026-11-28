@@ -38,6 +38,10 @@ use uuid::Uuid;
 
 mod actions;
 mod agents;
+mod asks;
+mod outcome;
+mod search;
+mod timeline;
 mod handover;
 mod slack;
 mod users;
@@ -152,6 +156,7 @@ const I18N_CATALOGS: &[(&str, &str)] = &[
     ("agents.js", include_str!("../static/i18n/agents.js")),
     ("actions.js", include_str!("../static/i18n/actions.js")),
     ("v3.js", include_str!("../static/i18n/v3.js")),
+    ("today.js", include_str!("../static/i18n/today.js")),
 ];
 const ATTACH_JS: &str = include_str!("../static/attach.js");
 const ATTACH_CSS: &str = include_str!("../static/attach.css");
@@ -242,12 +247,30 @@ const LAYOUT_FILES: &[(&str, &str, &str)] = &[
     ("/v3/ledger.css", CSS, include_str!("../static/v3/ledger.css")),
 ];
 
+/// The Today page: one day as a river, and the box to ask with a When (`/api/timeline`,
+/// `/api/asks`). An alternative home, at `/today/`; the conversations stay at `/v3/`.
+const TODAY_FILES: &[(&str, &str, &str)] = &[
+    ("/today/", HTML, include_str!("../static/today/index.html")),
+    ("/today/today.js", JS, include_str!("../static/today/today.js")),
+    ("/today/today.css", CSS, include_str!("../static/today/today.css")),
+];
+
 /// Send the browser to the page, keeping the query (the outcome of "Connect Google"); the
 /// browser keeps the `#/c/<id>` of a bookmarked conversation itself.
 async fn to_page(RawQuery(query): RawQuery) -> Redirect {
     match query {
         Some(q) if !q.is_empty() => Redirect::temporary(&format!("/v3/?{q}")),
         _ => Redirect::temporary("/v3/"),
+    }
+}
+
+/// The home screen is Today. `/` opens it; with a query (the outcome of "Connect Google", which
+/// Settings on the main page reads) it opens the main page as before. The `#/c/<id>` of a
+/// notification's link stays with the browser, and the Today page hands it to the main page.
+async fn to_home(RawQuery(query): RawQuery) -> Redirect {
+    match query {
+        Some(q) if !q.is_empty() => Redirect::temporary(&format!("/v3/?{q}")),
+        _ => Redirect::temporary("/today/"),
     }
 }
 
@@ -367,6 +390,10 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/star", put(star_conversation).delete(unstar_conversation))
         .route("/starred", get(list_starred))
         .route("/inbox", get(inbox))
+        .route("/timeline", get(timeline::timeline))
+        .route("/search", get(search::search))
+        .route("/asks", post(asks::ask).layer(DefaultBodyLimit::max(MAX_MESSAGE_BODY_BYTES)))
+        .route("/asks/draft", post(asks::draft))
         .route("/events", get(notice_events))
         .route("/notifications", get(get_notifications).put(put_notifications))
         .route("/notifications/test", post(test_notification))
@@ -381,6 +408,7 @@ pub fn router(state: AppState) -> Router {
         .route("/conversations/{id}/files/{*path}", get(download_file))
         .route("/turns/{id}/events", get(turn_events))
         .route("/turns/{id}/trace", get(turn_trace))
+        .route("/turns/{id}/outcome", get(outcome::outcome))
         .route("/turns/{id}/cancel", post(cancel_turn))
         .route("/turns/{id}/plan", post(approve_plan))
         .route("/turns/{id}/approvals/{approval_id}", post(decide_approval))
@@ -460,7 +488,7 @@ pub fn router(state: AppState) -> Router {
         .route("/hooks/{hook_id}", post(hooks::receive).layer(DefaultBodyLimit::max(hooks::MAX_BODY_BYTES)));
 
     let pages = Router::new()
-        .route("/", get(to_page))
+        .route("/", get(to_home))
         .route("/setup.js", get(|| async { asset(JS, SETUP_JS) }))
         .route("/setup.css", get(|| async { asset(CSS, SETUP_CSS) }))
         .route("/i18n.js", get(|| async { asset(JS, I18N_JS) }))
@@ -548,6 +576,10 @@ pub fn router(state: AppState) -> Router {
     let pages = LAYOUT_FILES.iter().fold(pages, |pages, &(path, content_type, body)| {
         pages.route(path, get(move || async move { asset(content_type, body) }))
     });
+    let pages = TODAY_FILES.iter().fold(pages, |pages, &(path, content_type, body)| {
+        pages.route(path, get(move || async move { asset(content_type, body) }))
+    });
+    let pages = pages.route("/today", get(|| async { Redirect::permanent("/today/") }));
     // There is one interface. The addresses of the retired ones ("Claude style" at /v1/, "Cedar
     // style" at /v2/, "Dossier" at /v4/) open it.
     let pages = ["/v1", "/v1/", "/v2", "/v2/", "/v4", "/v4/"].iter().fold(with_ui(pages, V3), |pages, path| pages.route(path, get(to_page)));

@@ -2,7 +2,7 @@
    every UI. The page draws with the variables each UI defines, like settings.css. */
 
 .cedar-inbox-btn { position: relative; }
-.cedar-inbox-count { position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 10.5px; line-height: 16px; font-weight: 600; text-align: center; pointer-events: none; }
+.cedar-inbox-count { position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: var(--on-accent, #fff); font-size: 10.5px; line-height: 16px; font-weight: 600; text-align: center; pointer-events: none; }
 .cedar-inbox-count[hidden] { display: none; }
 
 .cedar-inbox-dialog { width: min(520px, calc(100vw - 32px)); max-height: min(80vh, 720px); overflow-y: auto; }

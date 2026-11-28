@@ -53,7 +53,7 @@
 .cedar-mgraph-key[aria-pressed="false"] { color: var(--mg-muted); text-decoration: line-through; }
 .cedar-mgraph-key[aria-pressed="false"] svg { opacity: .3; }
 .cedar-mgraph-key:focus-visible,
-.cedar-mgraph-zoom-btn:focus-visible { outline: 2px solid var(--accent, #c96442); outline-offset: 1px; }
+.cedar-mgraph-zoom-btn:focus-visible { outline: 2px solid var(--accent, #1f5a40); outline-offset: 1px; }
 
 /* ---- the picture ---- */
 
@@ -80,7 +80,7 @@
 .cedar-mgraph .mg-shape { fill: var(--mg-k); stroke: var(--mg-surface); stroke-width: 2; }
 .cedar-mgraph .mg-pin { fill: none; stroke: var(--mg-ink); stroke-width: 1.25; }
 .cedar-mgraph .mg-node.inactive .mg-shape { fill: var(--mg-surface); stroke: var(--mg-k); stroke-width: 1.5; }
-.cedar-mgraph .mg-node:focus-visible .mg-hit { stroke: var(--accent, #c96442); stroke-width: 2; }
+.cedar-mgraph .mg-node:focus-visible .mg-hit { stroke: var(--accent, #1f5a40); stroke-width: 2; }
 .cedar-mgraph .mg-node.sel .mg-hit { fill: color-mix(in srgb, var(--mg-k) 22%, transparent); stroke: var(--mg-k); stroke-width: 1.5; }
 
 /* One memory lit: the rest steps back. */

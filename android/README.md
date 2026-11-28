@@ -24,9 +24,27 @@ The same as the iOS app:
   [private chat](../chat/README.md#private-chats), which is in no list, is not remembered, sends
   no notifications and is deleted when you leave it
 - A search field at the top that finds chats and agents' runs by their title and by what was
-  said in them, each shown with the passage that matched.
-- A **Chats | Starred | Agents** switch under it. Starred lists chats and agents' runs,
+  said in them, each shown with the passage that matched, and under them the agents, the things
+  Cedar remembers and the record sets that have the words (`GET /api/search`; conversations only
+  on a server from before it).
+- A **Today | Chats | Starred | Agents** switch under it. Starred lists chats and agents' runs,
   most recently starred first (stars are kept by cedar-chat, so they are the same everywhere)
+- **Today**: the day as a river, as the web's `/today/` page. *Now* holds what is still going or
+  needs you: a risky call is allowed or denied and what an agent's run held for your OK is
+  approved or discarded right there; a plan shows its steps with *Go Ahead* (changing it opens
+  the chat), a question opens its chat, and a response still going says what it is doing and how
+  many steps it has taken, with *Stop*. The arrows move to other days. *Earlier* lists
+  the day's chats and agents' runs with their outcome in a line, and *Ahead* the agents due next
+  and the ones that keep watch. The tab counts what needs you. **Ask for something** takes one
+  sentence and a When: *Now* (a new chat, off the record if you like), *Later* (a date and
+  time), *Every…* (daily, on weekdays or weekly) or *When something changes* (matching mail,
+  before calendar events, or when your phone asks); anything but Now becomes an agent. *Work Out
+  the When* has Cedar read the When out of the sentence and fill it in for you to check. Tapping
+  an earlier ask opens its **outcome**: the answer headed by its gist, the files it wrote or
+  changed, what it remembered (with *Forget*), the record rows it saved, the follow-up it
+  suggested, what it held for approval, and its steps and sources folded under *How Cedar got
+  here*; the next message is typed there and sent, and the chat opens for its response. A server
+  from before Today says so on the tab
 - **Agents**: prompts that run on their own, as on the web. The list groups them by what starts
   them (on a schedule, when something changes, webhooks and your devices, mail, calendar and
   files), each with its trigger in a line, what it is doing (next run, watching and when it last
@@ -273,7 +291,7 @@ agent reads without anyone approving its tool calls.
 
 | Path | Contents |
 | --- | --- |
-| `core/` | Plain Kotlin, no Android: the `/api` types, agents and their triggers (`Agents.kt`: the shapes, what an agent is doing, the form's draft and its checks, what a device hands an agent, follow-up decisions), the event-to-transcript reducer, the cards' parsers, the Markdown block parser, the attachment rules, the connection code, the locales, the SSE parser and the OkHttp client. Builds and tests without the Android SDK |
+| `core/` | Plain Kotlin, no Android: the `/api` types, Today (`Today.kt`: the river, an ask's outcome, and the ask's draft with its When), agents and their triggers (`Agents.kt`: the shapes, what an agent is doing, the form's draft and its checks, what a device hands an agent, follow-up decisions), the event-to-transcript reducer, the cards' parsers, the Markdown block parser, the attachment rules, the connection code, the locales, the SSE parser and the OkHttp client. Builds and tests without the Android SDK |
 | `core/src/test` | Unit tests ported from `iOS/CedarTests`, plus the client against a mock server |
 | `app/…/AppModel.kt`, `ChatModel.kt` | App state (settings, the lists, the inbox count, live notices, open chats) and one conversation's turns, streams and follow-up decisions, as the iOS app's models |
 | `app/…/ShareActivity.kt`, `AgentIntentReceiver.kt` | The share sheet's entry (its screen is `ui/ShareScreen.kt`) and the broadcast other apps send to start an agent |
@@ -296,7 +314,8 @@ apps), `POST /api/agents/{id}/hook/rotate`, `POST /api/agents/test`,
 `GET /api/agents/activity`; for the form, `GET /api/tools`, `GET /api/records`,
 `GET /api/notifications` and `POST /api/conversations/{id}/compact`), follow-ups
 (`PUT /api/turns/{id}/followups/{call_id}`, and `followups` of a conversation), plans and approvals, files, and the
-language (`PUT /api/settings/locale`, and `locale` with each message), and memory
+language (`PUT /api/settings/locale`, and `locale` with each message), Today (`GET /api/timeline`,
+`GET /api/turns/{id}/outcome`, `POST /api/asks`, `POST /api/asks/draft`; a 404 means an older server), and memory
 (`GET /api/memory`, `DELETE /api/memory/{id}`, `DELETE /api/memory`; a 404 means an older server).
 Records come from `GET /api/records`, a set's rows from `GET /api/records/{name}`, and go with
 `DELETE /api/records/{name}` and `DELETE /api/records` (a 404 means an older server).

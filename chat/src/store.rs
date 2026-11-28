@@ -266,6 +266,86 @@ pub struct InboxItem {
     pub finished_at: DateTime<Utc>,
 }
 
+/// What a turn's run waits on from the person while it goes: its plan to be agreed to
+/// (`kind: plan`), or a risky call to be approved (`kind: approval`, keyed `approval:<id>`).
+#[derive(Debug, Clone, Serialize)]
+pub struct Wait {
+    pub kind: String,
+    pub key: String,
+    pub reason: Option<String>,
+    /// A plan's steps, `[{id, title}]`, as cedar proposed them.
+    pub steps: Option<Value>,
+    pub since: DateTime<Utc>,
+}
+
+/// The agent a timeline turn is a run of.
+#[derive(Debug, Clone, Serialize)]
+pub struct TimelineAgent {
+    pub id: Uuid,
+    pub title: String,
+    pub trigger_kind: String,
+}
+
+/// A turn as the timeline (`/api/timeline`) shows it: what was asked, how it went, what it
+/// belongs to, and what it waits on.
+#[derive(Debug, Clone)]
+pub struct TimelineTurn {
+    pub turn_id: Uuid,
+    pub conversation_id: Uuid,
+    pub title: Option<String>,
+    pub prompt: String,
+    pub status: String,
+    pub stop_reason: Option<String>,
+    pub final_text: Option<String>,
+    pub error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub seen: bool,
+    /// The last turn of its conversation ended with a question that is not answered yet.
+    pub needs_answer: bool,
+    pub agent: Option<TimelineAgent>,
+    /// Open waits; only a turn still going has any.
+    pub waits: Vec<Wait>,
+    /// How many tool calls the run has started, and the latest one's name, while it is followed.
+    pub progress_steps: i64,
+    pub progress_doing: Option<String>,
+}
+
+/// The columns [`timeline_turn_from_row`] reads, for turns `t` of conversations `c`.
+const TIMELINE_SELECT: &str = "SELECT t.id, t.conversation_id, t.prompt, t.status, t.stop_reason, t.final_text, t.error, \
+    t.created_at, t.finished_at, t.seen, t.progress_steps, t.progress_doing, c.title, s.id AS agent_id, s.title AS agent_title, s.trigger_kind, \
+    (t.status = 'completed' AND t.stop_reason = 'ask_user' \
+     AND t.seq = (SELECT MAX(t2.seq) FROM turns t2 WHERE t2.conversation_id = t.conversation_id)) AS needs_answer \
+    FROM turns t JOIN conversations c ON c.id = t.conversation_id LEFT JOIN schedules s ON s.id = c.schedule_id";
+
+/// A wait counts while its turn is going: one left open by a restart is over with its run.
+const OPEN_WAIT: &str = "EXISTS (SELECT 1 FROM waits w WHERE w.turn_id = t.id AND w.resolved_at IS NULL) AND t.status IN ('queued', 'running')";
+
+fn timeline_turn_from_row(r: &SqliteRow) -> Result<TimelineTurn> {
+    let agent = match opt_uuid(r, "agent_id")? {
+        Some(id) => Some(TimelineAgent { id, title: r.try_get("agent_title")?, trigger_kind: r.try_get("trigger_kind")? }),
+        None => None,
+    };
+    Ok(TimelineTurn {
+        turn_id: Uuid::parse_str(r.try_get("id")?)?,
+        conversation_id: Uuid::parse_str(r.try_get("conversation_id")?)?,
+        title: r.try_get("title")?,
+        prompt: r.try_get("prompt")?,
+        status: r.try_get("status")?,
+        stop_reason: r.try_get("stop_reason")?,
+        final_text: r.try_get("final_text")?,
+        error: r.try_get("error")?,
+        created_at: to_dt(r.try_get("created_at")?),
+        finished_at: r.try_get::<Option<i64>, _>("finished_at")?.map(to_dt),
+        seen: r.try_get::<i64, _>("seen")? != 0,
+        needs_answer: r.try_get::<Option<i64>, _>("needs_answer")?.unwrap_or(0) != 0,
+        agent,
+        waits: Vec::new(),
+        progress_steps: r.try_get("progress_steps")?,
+        progress_doing: r.try_get("progress_doing")?,
+    })
+}
+
 /// A prompt that runs on its own at a local time of day. `frequency`, `weekday`, `time_of_day`
 /// and `timezone` are kept as the API received them; `schedule::Timing` interprets them.
 #[derive(Debug, Clone, Serialize)]
@@ -1065,6 +1145,135 @@ impl Store {
         .fetch_one(&self.pool)
         .await?;
         Ok(n)
+    }
+
+    /// Note that a turn's run waits on the person (see [`Wait`]). `false` when it was already
+    /// noted, open or answered: a replayed event changes nothing.
+    pub async fn open_wait(&self, turn_id: Uuid, key: &str, kind: &str, reason: Option<&str>, detail: Option<&Value>) -> Result<bool> {
+        let res = sqlx::query(
+            "INSERT OR IGNORE INTO waits (turn_id, key, kind, reason, detail, created_at) \
+             SELECT t.id, ?, ?, ?, ?, ? FROM turns t JOIN conversations c ON c.id = t.conversation_id WHERE t.id = ? AND c.user_id = ?",
+        )
+        .bind(key)
+        .bind(kind)
+        .bind(reason)
+        .bind(detail.map(Value::to_string))
+        .bind(now_ms())
+        .bind(turn_id.to_string())
+        .bind(self.user.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected() == 1)
+    }
+
+    /// The run of a turn started another tool call: count it, and keep its name as what the
+    /// response is doing now.
+    pub async fn note_progress(&self, turn_id: Uuid, doing: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE turns SET progress_steps = progress_steps + 1, progress_doing = ? WHERE id = ? \
+             AND conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)",
+        )
+        .bind(doing)
+        .bind(turn_id.to_string())
+        .bind(self.user.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// The agents whose title or prompt has every word of `query`, by title.
+    pub async fn search_schedules(&self, query: &str, limit: u32) -> Result<Vec<Schedule>> {
+        let terms = search_terms(query);
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let all = self.list_schedules().await?;
+        let has = |s: &Schedule, term: &str| s.title.to_lowercase().contains(term) || s.prompt.to_lowercase().contains(term);
+        Ok(all.into_iter().filter(|s| terms.iter().all(|t| has(s, t))).take(limit as usize).collect())
+    }
+
+    /// A wait was answered. With `key` `None`, every wait of the turn is over (its run ended).
+    pub async fn resolve_waits(&self, turn_id: Uuid, key: Option<&str>) -> Result<()> {
+        sqlx::query(
+            "UPDATE waits SET resolved_at = ? WHERE turn_id = ? AND resolved_at IS NULL AND (? IS NULL OR key = ?) \
+             AND turn_id IN (SELECT t.id FROM turns t JOIN conversations c ON c.id = t.conversation_id WHERE c.user_id = ?)",
+        )
+        .bind(now_ms())
+        .bind(turn_id.to_string())
+        .bind(key)
+        .bind(key)
+        .bind(self.user.to_string())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// The turns sent between `start` and `end`, oldest first, agents' runs included and private
+    /// conversations' left out.
+    pub async fn timeline_between(&self, start: DateTime<Utc>, end: DateTime<Utc>, limit: u32) -> Result<Vec<TimelineTurn>> {
+        let rows = sqlx::query(&format!(
+            "{TIMELINE_SELECT} WHERE c.user_id = ? AND c.private = 0 AND t.created_at >= ? AND t.created_at < ? ORDER BY t.created_at, t.id LIMIT ?"
+        ))
+        .bind(self.user.to_string())
+        .bind(start.timestamp_millis())
+        .bind(end.timestamp_millis())
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        let turns = rows.iter().map(timeline_turn_from_row).collect::<Result<Vec<_>>>()?;
+        self.with_waits(turns).await
+    }
+
+    /// The turns that are "now", whenever they were sent: still going, waiting on the person,
+    /// or ended with a question nobody answered. Oldest first.
+    pub async fn timeline_now(&self, limit: u32) -> Result<Vec<TimelineTurn>> {
+        let rows = sqlx::query(&format!(
+            "{TIMELINE_SELECT} WHERE c.user_id = ? AND c.private = 0 AND (t.status IN ('queued', 'running') OR ({OPEN_WAIT}) \
+             OR (t.status = 'completed' AND t.stop_reason = 'ask_user' \
+                 AND t.seq = (SELECT MAX(t2.seq) FROM turns t2 WHERE t2.conversation_id = t.conversation_id))) \
+             ORDER BY t.created_at, t.id LIMIT ?"
+        ))
+        .bind(self.user.to_string())
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        let turns = rows.iter().map(timeline_turn_from_row).collect::<Result<Vec<_>>>()?;
+        self.with_waits(turns).await
+    }
+
+    /// One turn as the timeline has it, with what it waits on and where it is: for its outcome.
+    pub async fn timeline_turn(&self, id: Uuid) -> Result<Option<TimelineTurn>> {
+        let row = sqlx::query(&format!("{TIMELINE_SELECT} WHERE c.user_id = ? AND t.id = ?"))
+            .bind(self.user.to_string())
+            .bind(id.to_string())
+            .fetch_optional(&self.pool)
+            .await?;
+        let Some(turn) = row.as_ref().map(timeline_turn_from_row).transpose()? else { return Ok(None) };
+        Ok(self.with_waits(vec![turn]).await?.pop())
+    }
+
+    /// Fill in the open waits of the turns that are still going.
+    async fn with_waits(&self, mut turns: Vec<TimelineTurn>) -> Result<Vec<TimelineTurn>> {
+        let going: Vec<String> = turns.iter().filter(|t| matches!(t.status.as_str(), "queued" | "running")).map(|t| t.turn_id.to_string()).collect();
+        if going.is_empty() {
+            return Ok(turns);
+        }
+        let rows = sqlx::query(
+            "SELECT turn_id, key, kind, reason, detail, created_at FROM waits \
+             WHERE resolved_at IS NULL AND turn_id IN (SELECT value FROM json_each(?)) ORDER BY created_at, key",
+        )
+        .bind(serde_json::to_string(&going)?)
+        .fetch_all(&self.pool)
+        .await?;
+        for r in &rows {
+            let turn_id = Uuid::parse_str(r.try_get("turn_id")?)?;
+            let steps = r.try_get::<Option<String>, _>("detail")?.and_then(|d| serde_json::from_str(&d).ok());
+            let wait = Wait { kind: r.try_get("kind")?, key: r.try_get("key")?, reason: r.try_get("reason")?, steps, since: to_dt(r.try_get("created_at")?) };
+            if let Some(turn) = turns.iter_mut().find(|t| t.turn_id == turn_id) {
+                turn.waits.push(wait);
+            }
+        }
+        Ok(turns)
     }
 
     /// Set (or, with `None`, clear) the tools a conversation uses instead of the defaults.

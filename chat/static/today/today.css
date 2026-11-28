@@ -1,0 +1,289 @@
+/* The Today page. Dark: a green-black river. Light ("Now in the dark"): a neutral page on which
+   the Now section is a dark-green block, drawn exactly as in the dark theme, so the present is
+   the lit part of the day. One hue family, green with lime for now, and amber for what needs you
+   (never red: that is for what failed). Fonts are the ones cedar-chat serves itself (/fonts/). */
+
+:root {
+  --bg: #0f1411;
+  --surface: #171e1a;
+  --line: #26302a;
+  --line-strong: #3a4a3f;
+  --text: #edefe8;
+  --text-2: #c9d0c8;
+  --muted: #9aa39b;
+  /* Now: text, lines and focus. */
+  --now: #c8f169;
+  --now-soft: #1f2a16;
+  /* The one filled button of a view. */
+  --primary-bg: #c8f169;
+  --primary-ink: #0f1411;
+  /* Needs you: text on its soft chip, and the fill of its border, dot and go-ahead button. */
+  --need: #f2c14e;
+  --need-soft: #3a2f10;
+  --need-fill: #f2c14e;
+  --need-ink: #1f1600;
+  --bad: #ef8a7a;
+  --sans: 'Figtree', system-ui, sans-serif;
+  --display: 'Instrument Sans', 'Figtree', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f7f7f4;
+    --surface: #ffffff;
+    --line: #e2e4de;
+    --line-strong: #c4c9c2;
+    --text: #121815;
+    --text-2: #37423b;
+    --muted: #5b635d;
+    --now: #1f5a40;
+    --now-soft: #e4efd9;
+    --primary-bg: #0f1f17;
+    --primary-ink: #c8f169;
+    --need: #6b4a00;
+    --need-soft: #fff1cc;
+    --need-fill: #d99a00;
+    --need-ink: #1f1600;
+    --bad: #a3342a;
+    color-scheme: light;
+  }
+
+  /* The Now section is a dark block on the light page, with the dark theme's own colours. */
+  #now {
+    --bg: #0f1f17;
+    --surface: #17291f;
+    --line: #2e4638;
+    --line-strong: #3f5a4b;
+    --text: #edefe8;
+    --text-2: #c9d0c8;
+    --muted: #9aa39b;
+    --now: #c8f169;
+    --now-soft: #22361a;
+    --primary-bg: #c8f169;
+    --primary-ink: #0f1f17;
+    --need: #f2c14e;
+    --need-soft: #3a2f10;
+    --need-fill: #f2c14e;
+    --bad: #ef8a7a;
+    color-scheme: dark;
+    background: var(--bg);
+    color: var(--text);
+    border-radius: 24px;
+    padding: 20px 20px 20px 16px;
+    margin: 0 -16px;
+  }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); }
+a { color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+[hidden] { display: none !important; }
+
+:root { --time-w: 76px; }
+
+.page { max-width: 1240px; margin: 0 auto; padding: 0 16px 64px; }
+
+/* -- header ------------------------------------------------------------------------------- */
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.brand { font: 700 22px/1 var(--display); letter-spacing: -0.02em; text-decoration: none; }
+.day { display: flex; align-items: center; gap: 4px; }
+.day-name { margin: 0 8px; font: 600 17px/1.2 var(--display); }
+.spacer { flex: 1 1 0; }
+.icon, .btn { min-width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: transparent; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; text-decoration: none; }
+.btn { padding: 0 14px; font-size: 14px; }
+.icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.icon:hover, .btn:hover { border-color: var(--line-strong); }
+.linkish { background: none; border: 0; padding: 8px 4px; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 14px; }
+.needs { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 18px; background: var(--need-soft); color: var(--need); font-weight: 600; font-size: 13px; text-decoration: none; }
+.needs .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--need-fill); }
+
+/* -- layout ------------------------------------------------------------------------------- */
+.layout { display: flex; flex-wrap: wrap; gap: 48px; padding-top: 28px; }
+.river { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
+.side { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 32px; }
+.side h2 { margin: 0 0 10px; font: 600 16px/1.3 var(--display); }
+.quiet { color: var(--muted); margin: 0; }
+
+.band { margin: 0 0 6px calc(var(--time-w) + 16px); font: 500 12px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.rows, .cards, .list { list-style: none; margin: 0; padding: 0; }
+
+/* A row of the river: the time, then what it was. */
+.row { display: flex; gap: 16px; }
+.row + .row .what { border-top: 1px solid var(--line); }
+.time { flex: 0 0 var(--time-w); padding-top: 12px; font: 13px/1.5 var(--mono); color: var(--muted); }
+.what { flex: 1 1 0; min-width: 0; padding: 12px 0; display: flex; flex-direction: column; gap: 2px; }
+.what-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.what-title { font-weight: 600; text-decoration: none; }
+a.what-title:hover { text-decoration: underline; }
+.tag { font: 12px/1.4 var(--mono); color: var(--muted); }
+.tag.failed { color: var(--bad); }
+.summary { color: var(--muted); overflow-wrap: anywhere; }
+.ahead .what { border: 1px dashed var(--line-strong); border-radius: 16px; padding: 10px 16px; margin: 4px 0; }
+.ahead .row + .row .what { border-top: 1px dashed var(--line-strong); }
+
+/* -- now ---------------------------------------------------------------------------------- */
+.now-line { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.now-time { flex: 0 0 var(--time-w); font: 500 13px/1 var(--mono); color: var(--now); }
+.now-label { margin: 0; font: 700 13px/1 var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: var(--now); }
+.now-rule { flex: 1 1 0; height: 2px; background: var(--now); }
+
+.ask { margin-left: calc(var(--time-w) + 16px); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.ask textarea { width: 100%; resize: vertical; min-height: 48px; background: transparent; border: 0; outline: none; font-size: 18px; line-height: 1.4; }
+.ask:focus-within { border-color: var(--now); }
+.when { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 0; margin: 0; padding: 0; }
+.when legend { float: left; margin-right: 8px; font: 12px/44px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.when label { position: relative; }
+.when input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.when span { display: inline-flex; align-items: center; height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--line-strong); font-size: 14px; font-weight: 500; }
+.when input:checked + span { background: var(--text); color: var(--bg); border-color: var(--text); }
+.when input:focus-visible + span { outline: 2px solid var(--now); outline-offset: 2px; }
+.when-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.when-detail input, .when-detail select { height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--bg); }
+.when-detail input[type=text] { min-width: 240px; }
+.when-detail input[type=number] { width: 88px; }
+.ask-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.hint { flex: 1 1 220px; margin: 0; color: var(--muted); font-size: 13px; }
+.private { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; cursor: pointer; }
+.private input { width: 18px; height: 18px; accent-color: var(--now); }
+.primary { height: 44px; padding: 0 20px; border-radius: 22px; border: 0; background: var(--primary-bg); color: var(--primary-ink); font-weight: 600; cursor: pointer; }
+.primary:disabled { opacity: 0.6; cursor: default; }
+.error { margin: 0; color: var(--bad); }
+
+.cards { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+.card { display: flex; gap: 16px; }
+.card .time { padding-top: 18px; }
+.card-body { flex: 1 1 0; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.card.waiting .card-body, .card.asking .card-body { border-color: var(--need-fill); }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.card-title { font: 600 18px/1.3 var(--display); text-decoration: none; overflow-wrap: anywhere; }
+a.card-title:hover { text-decoration: underline; }
+.pill { margin-left: auto; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 12px; background: var(--now-soft); color: var(--now); white-space: nowrap; }
+.waiting .pill, .asking .pill { background: var(--need-soft); color: var(--need); }
+.card p { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.actions button, .actions a { height: 44px; padding: 0 18px; border-radius: 22px; border: 1px solid var(--line-strong); background: transparent; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; text-decoration: none; }
+.actions .go { background: var(--need-fill); color: var(--need-ink); border-color: var(--need-fill); font-weight: 600; }
+.answer { display: flex; flex-wrap: wrap; gap: 8px; }
+.answer input { flex: 1 1 220px; min-width: 0; height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line-strong); background: var(--bg); }
+.progress { font: 13px/1.4 var(--mono); color: var(--text-2); }
+
+/* -- side --------------------------------------------------------------------------------- */
+.list li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.list li:last-child { border-bottom: 1px solid var(--line); }
+.list .name { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.list .name a { font-weight: 500; text-decoration: none; }
+.list .name a:hover { text-decoration: underline; }
+.list .state { font-size: 12px; font-weight: 600; color: var(--now); }
+.list .state.off { color: var(--muted); }
+.side .linkish { align-self: flex-start; padding-left: 0; }
+.box { border: 1px solid var(--line); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.box .btn { align-self: flex-start; border-radius: 22px; }
+
+dialog { background: var(--surface); color: var(--text); border: 1px solid var(--line-strong); border-radius: 16px; padding: 20px; }
+dialog form { display: flex; flex-direction: column; gap: 12px; }
+dialog input { height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--bg); width: 100%; }
+
+@media (max-width: 640px) {
+  #now { margin: 0 -8px; padding: 16px 12px; border-radius: 20px; }
+  .band, .ask { margin-left: 0; }
+  :root { --time-w: 64px; }
+  .time, .now-time { font-size: 12px; }
+  .row { gap: 10px; }
+  .card { flex-direction: column; gap: 4px; }
+  .card .time { padding-top: 0; }
+  .when legend { width: 100%; line-height: 1.4; }
+  .when-detail input[type=text] { min-width: 0; width: 100%; }
+}
+
+/* -- one ask's outcome -------------------------------------------------------------------- */
+/* The follow-up card (followup-view.css) draws with these. */
+:root, #now { --sheet: var(--surface); --ink: var(--text); --ink-2: var(--text-2); --accent: var(--now); --warn: var(--need); --warn-line: var(--need-fill); --warn-wash: var(--surface); }
+/* The outbox card (handover-view.css) inside a card of the river, or a part of an outcome. */
+.card-body .cedar-handover, .part .cedar-handover { margin: 0; max-width: none; }
+.card-body .cedar-handover { border: 0; padding: 0; background: none; }
+.cedar-handover button, .cedar-handover .copy-btn, .cedar-handover .primary { min-height: 44px; padding: 0 16px; border-radius: 22px; }
+.cedar-handover input, .cedar-handover textarea { min-height: 44px; }
+
+.outcome { max-width: 720px; margin: 0 auto; padding-top: 20px; display: flex; flex-direction: column; gap: 28px; }
+.outcome-head { display: flex; flex-direction: column; gap: 8px; }
+.outcome-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; text-decoration: none; font-weight: 500; }
+.back::before { content: ''; width: 8px; height: 8px; border-left: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: rotate(45deg); }
+.back:hover span { text-decoration: underline; }
+.outcome-meta .tag { margin-left: auto; }
+.asked { margin: 8px 0 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.outcome h1 { margin: 0; font: 700 30px/1.2 var(--display); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+a.tag { text-decoration: underline; }
+
+.outcome-body { display: flex; flex-direction: column; gap: 16px; }
+.answer-text { color: var(--text-2); line-height: 1.6; overflow-wrap: anywhere; }
+.answer-text > :first-child { margin-top: 0; }
+.answer-text h2, .answer-text h3, .answer-text h4, .answer-text h5, .answer-text h6 { color: var(--text); font: 600 18px/1.3 var(--display); margin: 24px 0 8px; }
+.answer-text p, .answer-text ul, .answer-text ol, .answer-text blockquote, .answer-text pre { margin: 0 0 12px; }
+.answer-text ul, .answer-text ol { padding-left: 22px; }
+.answer-text li + li { margin-top: 4px; }
+.answer-text strong { color: var(--text); }
+.answer-text a { color: var(--now); }
+.answer-text code { font: 0.9em var(--mono); background: var(--surface); padding: 1px 5px; border-radius: 5px; }
+.answer-text pre { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+.answer-text pre code { background: none; padding: 0; }
+.answer-text blockquote { border-left: 2px solid var(--line-strong); padding-left: 14px; color: var(--muted); }
+.answer-text sup { font-size: 0.7em; }
+.table-wrap { overflow-x: auto; margin: 0 0 12px; }
+.answer-text table { border-collapse: collapse; font-size: 14px; }
+.answer-text th, .answer-text td { border-bottom: 1px solid var(--line); padding: 6px 12px 6px 0; text-align: left; vertical-align: top; }
+.answer-text th { color: var(--text); font-weight: 600; }
+
+.part { display: flex; flex-direction: column; gap: 8px; }
+.part h2 { margin: 0; font: 500 12px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.file { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 52px; padding: 8px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); text-align: left; cursor: pointer; }
+.file:hover { border-color: var(--line-strong); }
+.file-name { font-weight: 600; overflow-wrap: anywhere; }
+.file .tag { overflow-wrap: anywhere; }
+.kept { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 4px 0 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.kept > span { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; padding: 8px 0; }
+.part .cedar-followup { margin: 0; max-width: none; }
+.part .cedar-followup-foot .copy-btn, .part .cedar-followup-foot .primary { min-height: 44px; padding: 0 16px; border-radius: 22px; }
+
+.how { border: 1px dashed var(--line-strong); border-radius: 14px; padding: 4px 14px; }
+.how summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--text-2); font-size: 14px; }
+.how ol { margin: 4px 0 12px; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); }
+.how li { overflow-wrap: anywhere; }
+.how code { font: 13px var(--mono); }
+.how li .tag { margin-left: 8px; }
+.how a { color: var(--now); }
+
+.outcome-foot { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+.keep-going { display: flex; gap: 8px; }
+.keep-going input { flex: 1 1 0; min-width: 0; height: 52px; padding: 0 20px; border-radius: 26px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 16px; }
+.keep-going .primary { height: 52px; }
+.outcome-foot .linkish { align-self: flex-start; padding-left: 0; }
+
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px; background: var(--text); color: var(--bg); font-size: 14px; z-index: 10; }
+
+@media (max-width: 640px) {
+  .outcome h1 { font-size: 25px; }
+}
+
+/* -- search, the plan in the river, reading the When -------------------------------------- */
+.search input { height: 44px; width: 220px; max-width: 100%; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line); background: transparent; }
+.search input:focus { border-color: var(--now); outline: none; }
+.hit { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.hit a { text-decoration: none; }
+.hit a:hover { text-decoration: underline; }
+.plan { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 4px; color: var(--text-2); }
+.draft-row { display: flex; }
+.draft-row .linkish { padding-left: 0; min-height: 44px; text-align: left; }
+.record { display: flex; flex-direction: column; gap: 2px; }
+@media (max-width: 640px) {
+  .search { flex: 1 1 100%; order: 5; }
+  .search input { width: 100%; }
+}
+
+/* A turn's own page while it waits on the person: what it waits on, as in the river. */
+.waiting-here { border-color: var(--need-fill); border-width: 1.5px; }
+.pill.need { margin-left: auto; background: var(--need-soft); color: var(--need); }

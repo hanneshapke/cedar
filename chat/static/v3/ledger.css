@@ -5,31 +5,36 @@
    rows; a risky call waits on an approval card; reasoning is a folded disclosure; Cedar's prose
    cites its sources as [n], and the sources sit beside the report on the stage. */
 
+/* The colours are Today's (today/today.css): a neutral page, one hue family (green, with lime on
+   dark), amber for what waits on the person and red only for what failed. */
 :root {
-  --paper: #f7f5f0;
-  --desk: #edeae2;
+  --paper: #f7f7f4;
+  --desk: #eeefe9;
   --sheet: #ffffff;
-  --ink: #1c1b19;
-  --ink-2: #3a3833;
-  --muted: #6b685f;
-  --faint: #a39f94;
-  --line: #e3dfd4;
-  --line-soft: #ece8de;
-  --accent-line: #cfe3d8;
-  --warn: #8a6a1f;
-  --warn-wash: #fdf8ee;
-  --warn-line: #e9d9b8;
-  --wash: #f1eee7;
-  --accent: #1f7a5c;
-  --accent: oklch(50% 0.11 160);
-  --accent-wash: #eef5f1;
+  --ink: #121815;
+  --ink-2: #37423b;
+  --muted: #5b635d;
+  --faint: #9aa39b;
+  --line: #e2e4de;
+  --line-soft: #eceee8;
+  --accent-line: #cfe0d4;
+  --warn: #6b4a00;
+  --warn-wash: #fff6dd;
+  --warn-line: #e8c766;
+  --wash: #eff0eb;
+  --accent: #1f5a40;
+  --accent-wash: #e4efd9;
   --error: #a3352b;
   --error-wash: #fbeceb;
   --error-line: #e9c7c3;
   --on-ink: #ffffff;
-  --slot-line: #c9c4b8;
-  --shadow-card: 0 1px 2px rgba(40, 30, 10, .05), 0 6px 20px rgba(40, 30, 10, .06);
-  --shadow-doc: 0 2px 4px rgba(40, 30, 10, .06), 0 14px 40px rgba(40, 30, 10, .10);
+  /* Text on a fill of the accent, and the one filled button of a view. */
+  --on-accent: #ffffff;
+  --primary-bg: #0f1f17;
+  --primary-ink: #c8f169;
+  --slot-line: #c4c9c2;
+  --shadow-card: 0 1px 2px rgba(15, 31, 23, .05), 0 6px 20px rgba(15, 31, 23, .06);
+  --shadow-doc: 0 2px 4px rgba(15, 31, 23, .06), 0 14px 40px rgba(15, 31, 23, .10);
   --sans: Figtree, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --serif: Lora, "Iowan Old Style", Georgia, serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -39,28 +44,30 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #1d1c1a;
-    --desk: #171615;
-    --sheet: #262522;
-    --ink: #f2f0e8;
-    --ink-2: #d6d3c8;
-    --muted: #a8a59c;
-    --faint: #7f7c74;
-    --line: #3a3834;
-    --line-soft: #2f2e2a;
-    --wash: #2c2b28;
-    --accent: #4fb48c;
-    --accent: oklch(72% 0.11 160);
-    --accent-wash: #1f3029;
-    --accent-line: #2d4a3d;
-    --warn: #e2c27a;
-    --warn-wash: #332b1b;
-    --warn-line: #5a4a24;
+    --paper: #0f1411;
+    --desk: #0b0f0d;
+    --sheet: #171e1a;
+    --ink: #edefe8;
+    --ink-2: #c9d0c8;
+    --muted: #9aa39b;
+    --faint: #6f7a72;
+    --line: #26302a;
+    --line-soft: #1f2823;
+    --wash: #1c2520;
+    --accent: #c8f169;
+    --accent-wash: #1f2a16;
+    --accent-line: #3a4a2a;
+    --warn: #f2c14e;
+    --warn-wash: #3a2f10;
+    --warn-line: #6b5416;
     --error: #f2a097;
     --error-wash: #3b2422;
     --error-line: #6b3a35;
-    --on-ink: #1c1b19;
-    --slot-line: #4a4740;
+    --on-ink: #0f1411;
+    --on-accent: #0f1411;
+    --primary-bg: #c8f169;
+    --primary-ink: #0f1411;
+    --slot-line: #3a4a3f;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
     --shadow-doc: 0 2px 4px rgba(0, 0, 0, .3), 0 14px 40px rgba(0, 0, 0, .4);
     color-scheme: dark;
@@ -182,9 +189,32 @@ button.cedar-ag-nav { border: 0; background: none; font: inherit; text-align: le
 .note .cedar-image-caption { flex-wrap: wrap; padding: 4px 6px 4px 10px; }
 .note .cedar-image-caption bdi { flex-basis: 100%; }
 
+/* In the light theme the message box is the dark-green block Today's Now is: where you ask is
+   the lit part of the page. Its tokens are the dark theme's, so everything in it follows. */
+@media (prefers-color-scheme: light) {
+  .composer {
+    --paper: #0f1f17;
+    --sheet: #0f1f17;
+    --ink: #edefe8;
+    --ink-2: #c9d0c8;
+    --muted: #9aa39b;
+    --faint: #7f8a82;
+    --line: #2e4638;
+    --line-soft: #26392e;
+    --wash: #17291f;
+    --accent: #c8f169;
+    --accent-wash: rgba(200, 241, 105, .22);
+    --on-accent: #0f1f17;
+    --primary-bg: #c8f169;
+    --primary-ink: #0f1f17;
+    --slot-line: #3f5a4b;
+    color: var(--ink);
+    color-scheme: dark;
+  }
+}
 .slip { flex: none; padding: 10px 16px 14px 20px; border-top: 1px solid var(--line); background: var(--paper); }
 .composer { display: flex; flex-direction: column; gap: 6px; padding: 10px 10px 8px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--sheet); transition: border-color .15s, box-shadow .15s; }
-.send { display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--ink); color: var(--on-ink); transition: opacity .15s; }
+.send { display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--primary-bg); color: var(--primary-ink); transition: opacity .15s; }
 .send svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .send:disabled { opacity: .3; cursor: default; }
 
@@ -269,7 +299,7 @@ button.cedar-ag-nav { border: 0; background: none; font: inherit; text-align: le
   .sheet-toggle { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--accent); white-space: nowrap; }
   .app[data-pane="talk"] .sheet-handle { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
   .app[data-pane="talk"] .sheet-grip { display: none; }
-  .sheet-toggle .badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; }
+  .sheet-toggle .badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font-size: 11px; }
   .app.empty .sheet-handle { display: none; }
   .top { gap: 8px; padding: 0 12px; }
   .top .lbl, .brand-name { display: none; }

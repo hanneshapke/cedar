@@ -5,7 +5,7 @@
 .cedar-recipe {
   --rc-line: rgba(128, 128, 128, .28);
   --rc-soft: rgba(128, 128, 128, .08);
-  --rc-accent: var(--accent, #c96442);
+  --rc-accent: var(--accent, #1f5a40);
   --rc-muted: var(--muted, #6f6d66);
   container-type: inline-size;
   margin: 12px 0;

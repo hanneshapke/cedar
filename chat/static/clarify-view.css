@@ -5,7 +5,7 @@
 .cedar-clarify {
   --cq-line: rgba(128, 128, 128, .28);
   --cq-soft: rgba(128, 128, 128, .07);
-  --cq-accent: var(--accent, #c96442);
+  --cq-accent: var(--accent, #1f5a40);
   --cq-muted: var(--muted, #6f6d66);
   margin: 12px 0;
   border: 1px solid var(--cq-line);

@@ -291,7 +291,7 @@ struct RunOutcomeLabel: View {
         case .needsAnswer:
             Label("Needs answer", systemImage: "questionmark.bubble")
                 .labelStyle(.titleAndIcon)
-                .foregroundStyle(Theme.clay)
+                .foregroundStyle(Theme.attention)
         case .failed:
             Label("Failed", systemImage: "xmark.octagon")
                 .labelStyle(.titleAndIcon)
@@ -404,7 +404,7 @@ private struct ActivityRow: View {
         let run = item.run
         HStack(alignment: .center, spacing: 12) {
             RowIcon(systemImage: item.agent?.triggerKind.map { Trigger.systemImage(forKind: $0) } ?? "clock.arrow.circlepath",
-                    tint: run.outcome == .needsAnswer ? Theme.clay : Theme.green,
+                    tint: run.outcome == .needsAnswer ? Theme.attention : Theme.green,
                     isActive: run.isActive)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {

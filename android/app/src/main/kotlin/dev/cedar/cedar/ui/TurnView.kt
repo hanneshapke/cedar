@@ -468,11 +468,11 @@ internal fun HeldCallView(
     val secondary = CedarColors.secondaryText
     val open = item?.isOpen == true
     var expanded by rememberSaveable(item?.id ?: note?.id) { mutableStateOf(true) }
-    Panel(tint = if (open) CedarColors.orange else null) {
+    Panel(tint = if (open) CedarColors.clay else null) {
         PanelTitle(
             Icons.Outlined.BackHand,
             stringResource(if (open || item == null) R.string.held_title else R.string.held_title_settled),
-            color = if (open) CedarColors.orange else MaterialTheme.colorScheme.primary,
+            color = if (open) CedarColors.clay else MaterialTheme.colorScheme.primary,
         )
         val reason = item?.reason?.takeIf { it.isNotEmpty() } ?: note?.reason.orEmpty()
         if (reason.isNotEmpty()) SelectionContainer { Text(reason, style = MaterialTheme.typography.bodyLarge) }
@@ -549,7 +549,7 @@ internal fun HeldCallView(
  * passed can only be dismissed.
  */
 @Composable
-private fun FollowUpView(
+internal fun FollowUpView(
     suggestion: FollowUpSuggestion,
     decision: Followup?,
     deciding: Boolean,
@@ -782,7 +782,7 @@ private fun openCardOnWeb(name: String): Int = when (name) {
  * tool) is shown by its own name with the underscores taken out: `gmail_search` reads "Gmail search".
  */
 @Composable
-private fun toolLabel(name: String): String = when (name) {
+internal fun toolLabel(name: String): String = when (name) {
     "web_search" -> stringResource(R.string.tool_web_search)
     "bash" -> stringResource(R.string.tool_command)
     "run_python" -> stringResource(R.string.tool_code)

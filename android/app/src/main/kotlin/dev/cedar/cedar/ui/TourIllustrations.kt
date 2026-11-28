@@ -492,9 +492,9 @@ private fun MemoryPicture(shown: Boolean) {
                     Box(Modifier.size(84.dp).clip(CircleShape).background(green.copy(alpha = 0.12f)))
                     Icon(Icons.Outlined.Bookmark, null, Modifier.size(40.dp), tint = green)
                     Box(
-                        Modifier.align(Alignment.Center).offset(x = 32.dp, y = 30.dp).size(26.dp).clip(CircleShape).background(CedarColors.clay),
+                        Modifier.align(Alignment.Center).offset(x = 32.dp, y = 30.dp).size(26.dp).clip(CircleShape).background(CedarColors.attentionFill),
                         contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Outlined.Lock, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSecondary) }
+                    ) { Icon(Icons.Outlined.Lock, null, Modifier.size(12.dp), tint = CedarColors.onAttentionFill) }
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

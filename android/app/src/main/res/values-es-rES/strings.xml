@@ -35,4 +35,6 @@
     <string name="tour_your_server">Tu ordenador</string>
     <string name="agent_notify_footnote">Cómo te enteras de que un agente tiene algo para ti. Los métodos se configuran en Configuración → Notificaciones en el chat de tu ordenador.</string>
     <string name="notifications_footnote">Las notificaciones las envía tu Cedar: elige Push de Android en Configuración → Notificaciones en el chat de tu ordenador. Con Google, esa página necesita una clave de Firebase; con ntfy no necesita nada. Una notificación solo dice qué conversación terminó: el texto se obtiene de tu Cedar.</string>
+    <string name="today_unsupported_text">Actualiza Cedar en tu ordenador para ver tu día aquí: lo que hizo, lo que te necesita y lo que viene.</string>
+    <string name="today_watch_device">Cuando mi móvil lo pida</string>
 </resources>

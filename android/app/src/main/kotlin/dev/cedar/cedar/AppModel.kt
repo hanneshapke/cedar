@@ -13,6 +13,8 @@ import dev.cedar.core.Agent
 import dev.cedar.core.AgentBody
 import dev.cedar.core.AgentLimits
 import dev.cedar.core.AgentRun
+import dev.cedar.core.AskDraft
+import dev.cedar.core.AskResult
 import dev.cedar.core.ChatClient
 import dev.cedar.core.ChatException
 import dev.cedar.core.Conversation
@@ -32,6 +34,10 @@ import dev.cedar.core.ModelInfo
 import dev.cedar.core.Notice
 import dev.cedar.core.OutboxItem
 import dev.cedar.core.ServerSettings
+import dev.cedar.core.Timeline
+import dev.cedar.core.AskReading
+import dev.cedar.core.Found
+import dev.cedar.core.PlanStep
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,11 +49,12 @@ import kotlinx.coroutines.isActive
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.util.TimeZone
 import kotlin.math.min
 import kotlin.math.pow
 
 /** What the list shows: the conversations, the starred ones (chats and agents' runs), or the agents and what they did. */
-enum class SidebarMode { CHATS, STARRED, AGENTS }
+enum class SidebarMode { TODAY, CHATS, STARRED, AGENTS }
 
 /** Inside Agents: the agents themselves, or the latest runs of all of them. */
 enum class AgentsTab { AGENTS, ACTIVITY }
@@ -102,7 +109,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var isRefreshing by mutableStateOf(false)
         private set
     var listError by mutableStateOf<String?>(null)
-    var sidebarMode by mutableStateOf(SidebarMode.CHATS)
+    var sidebarMode by mutableStateOf(SidebarMode.TODAY)
 
     var agentsTab by mutableStateOf(AgentsTab.AGENTS)
 
@@ -201,6 +208,13 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
      */
     var searchResults by mutableStateOf<List<Conversation>?>(null)
         private set
+
+    /**
+     * What else has the words, where the server searches everything (`/api/search`): agents, what
+     * Cedar remembers and record sets. `null` on a server from before that, and until the first answer.
+     */
+    var searchFound by mutableStateOf<Found?>(null)
+        private set
     var searchError by mutableStateOf<String?>(null)
 
     /** What is searched for: `searchText` without the space around it. */
@@ -266,6 +280,24 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     var contributions by mutableStateOf<List<Contribution>>(emptyList())
         private set
     var contributionsError by mutableStateOf<String?>(null)
+
+    // Today: the day as a river (the web's /today/ page).
+
+    /** The day's river as last read; `null` until the Today tab was opened. */
+    var timeline by mutableStateOf<Timeline?>(null)
+
+    /** Why the river could not be read. */
+    var timelineError by mutableStateOf<String?>(null)
+
+    /** The server is from before Today (it has no `/api/timeline`). */
+    var timelineUnsupported by mutableStateOf(false)
+
+    /** The day the Today tab shows, `YYYY-MM-DD` on this device's calendar; `null` is today. */
+    var timelineDay by mutableStateOf<String?>(null)
+        private set
+
+    /** The turn whose outcome is open over the list and the chat. */
+    var showingOutcome by mutableStateOf<String?>(null)
 
     /** Conversations the list leaves out (an agent's runs), as their chats loaded them. */
     private val otherConversations = mutableStateMapOf<String, Conversation>()
@@ -639,7 +671,104 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             isRefreshing = false
         }
         if (sidebarMode == SidebarMode.AGENTS || showingAgent != null) refreshAgents()
+        if (sidebarMode == SidebarMode.TODAY) refreshTimeline()
         if (isSearching) search()
+    }
+
+    // Today
+
+    /** Reads today's river. A server from before Today is remembered as such, and says so once. */
+    suspend fun refreshTimeline() {
+        val client = client ?: return
+        try {
+            val wanted = timelineDay
+            val day = client.timeline(day = wanted, timezone = TimeZone.getDefault().id)
+            // The day was changed while this one was read: its answer is the one that counts.
+            if (wanted != timelineDay) return
+            timeline = day
+            // The held calls are the outbox's: a decision made on one settles it everywhere.
+            day.outbox.forEach { heldCalls[it.id] = it }
+            timelineError = null
+            timelineUnsupported = false
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ChatException.Api) {
+            if (e.status == 404) timelineUnsupported = true else timelineError = describe(e)
+        } catch (e: Exception) {
+            timelineError = describe(e)
+        }
+    }
+
+    /** Moves the Today tab to another day (`null`, or today's date, is today) and reads its river. */
+    suspend fun showDay(day: String?) {
+        val today = java.time.LocalDate.now().toString()
+        timelineDay = day?.takeIf { it != today }
+        refreshTimeline()
+    }
+
+    /** The day before (`-1`) or after (`1`) the one the Today tab shows. */
+    suspend fun shiftDay(days: Long) {
+        val shown = timelineDay?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } ?: java.time.LocalDate.now()
+        showDay(shown.plusDays(days).toString())
+    }
+
+    /** Agrees to a plan a response waits on, as it was proposed, then reads the river again. */
+    suspend fun agreePlan(turnId: String, steps: List<PlanStep>) {
+        val client = client ?: throw ChatException.NotConfigured
+        client.answerPlan(turnId, steps)
+        refreshTimeline()
+    }
+
+    /** Stops a response that is still going, then reads the river again. */
+    suspend fun stopTurn(turnId: String) {
+        val client = client ?: throw ChatException.NotConfigured
+        client.cancel(turnId)
+        refreshTimeline()
+    }
+
+    /**
+     * Sends the next message of a conversation from its outcome and opens the chat, where the
+     * response streams. The chat is read first, so the message lands after what was already said.
+     * Says whether the server took it; when not, the chat's own error says why.
+     */
+    suspend fun keepGoing(conversationId: String, text: String): Boolean {
+        val chat = chat(conversationId)
+        chat.reload()
+        val sent = chat.send(text)
+        if (sent) open(conversationId)
+        return sent
+    }
+
+    /** Has the server read the When out of a sentence; nothing is made of it yet. */
+    suspend fun readWhen(content: String): AskReading {
+        val client = client ?: throw ChatException.NotConfigured
+        return client.readWhen(content.trim(), TimeZone.getDefault().id)
+    }
+
+    /** Allows or denies a risky call a response waits on, then reads the river again. */
+    suspend fun decideApproval(turnId: String, approvalId: String, allow: Boolean) {
+        val client = client ?: throw ChatException.NotConfigured
+        client.decideApproval(turnId, approvalId, if (allow) "allow" else "deny")
+        refreshTimeline()
+    }
+
+    /**
+     * Asks with a When. Now opens the new conversation, where the response streams; any other
+     * When made an agent, which the lists take in.
+     */
+    suspend fun ask(content: String, draft: AskDraft): AskResult {
+        val client = client ?: throw ChatException.NotConfigured
+        val result = client.ask(draft.body(content, TimeZone.getDefault().id, locale))
+        result.agent?.let { put(it) }
+        val conversation = result.conversation
+        if (conversation != null) {
+            // A private one is in no list: its chat is how the app knows it.
+            if (conversation.isPrivate) remember(conversation)
+            open(conversation.id)
+        } else {
+            refreshTimeline()
+        }
+        return result
     }
 
     /**
@@ -650,6 +779,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         val query = searchQuery
         if (query.isEmpty()) {
             searchResults = null
+            searchFound = null
             searchError = null
             return
         }
@@ -658,9 +788,17 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
             return
         }
         try {
-            val found = client.search(query)
+            // Everything, where the server searches it; conversations only on one from before that.
+            val everything = try {
+                client.searchEverything(query)
+            } catch (e: ChatException.Api) {
+                if (e.status != 404) throw e
+                null
+            }
+            val found = everything?.conversations ?: client.search(query)
             if (query != searchQuery) return
             searchResults = found
+            searchFound = everything
             searchError = null
         } catch (e: CancellationException) {
             throw e
@@ -918,6 +1056,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
         showingAgent = id
         selection = null
         showingSettings = false
+        showingOutcome = null
         scope.launch {
             if (agent(id) == null) refreshAgents() else loadAgent(id)
         }
@@ -1097,6 +1236,7 @@ class AppModel(private val context: Context, private val store: SettingsStore, v
     fun open(conversationId: String) {
         selection = conversationId
         showingSettings = false
+        showingOutcome = null
         scope.launch { refresh() }
     }
 

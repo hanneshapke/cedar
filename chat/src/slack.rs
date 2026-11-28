@@ -818,6 +818,8 @@ async fn follow_once(state: &AppState, slack: &Slack, turn: &Turn, st: &SlackTur
                 *after = (*after).max(seq);
             }
             let kind = event["type"].as_str().unwrap_or_default();
+            // For the timeline: what the run waits on and where it is, as for a turn sent from the page.
+            crate::attention::record(state, turn, kind, &event["data"]).await;
             if let Err(e) = on_run_event(state, slack, turn, st, t, kind, &event["data"]).await {
                 tracing::warn!(turn_id = %turn.id, event = kind, error = %e, "could not post a run's event to Slack");
             }

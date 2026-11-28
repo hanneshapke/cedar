@@ -449,6 +449,39 @@ struct ChatClient: Sendable {
         return stream(request) { $0.isTerminal }
     }
 
+    // MARK: Today
+
+    /// One day as a river: what Cedar did, is doing and will do, and what needs the person.
+    /// `day` is `YYYY-MM-DD` in `timezone`; without one, today. 404 on a server from before it.
+    func timeline(day: String? = nil, timezone: String = TimeZone.current.identifier) async throws -> Timeline {
+        var query = [URLQueryItem(name: "timezone", value: timezone)]
+        if let day { query.append(URLQueryItem(name: "day", value: day)) }
+        return try await decode(makeRequest("api/timeline", query: query))
+    }
+
+    /// What one ask came to: the answer and what the turn left behind.
+    func outcome(turnId: String) async throws -> AskOutcome {
+        try await decode(makeRequest("api/turns/\(turnId)/outcome"))
+    }
+
+    /// One sentence and a When. Now starts a conversation with it as the first message; later,
+    /// every and watch make an agent of it (409 once there are as many as the server keeps).
+    func ask(_ body: AskBody) async throws -> AskAnswer {
+        try await decode(makeRequest("api/asks", method: "POST", json: body))
+    }
+
+    /// What When a sentence asks for, read by the model. Nothing is made of it: the answer
+    /// fills the ask's sheet, and the person sends it or changes it. It can take a while.
+    func readAsk(content: String, timezone: String = TimeZone.current.identifier) async throws -> AskReading {
+        try await decode(makeRequest("api/asks/draft", method: "POST", json: AskReadingBody(content: content, timezone: timezone)))
+    }
+
+    /// What else has every word of `query`, beside the conversations `search(query:)` finds:
+    /// agents, memories and record sets. 404 on a server from before it.
+    func searchExtras(query: String) async throws -> SearchExtras {
+        try await decode(makeRequest("api/search", query: [URLQueryItem(name: "q", value: query)]))
+    }
+
     // MARK: Inbox and notices
 
     func inbox() async throws -> Inbox {

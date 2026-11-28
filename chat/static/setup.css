@@ -28,7 +28,7 @@
 .cedar-setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 4px; }
 .cedar-setup-btn { min-height: 42px; padding: 0 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); font-weight: 500; font-size: 14.5px; color: var(--ink); }
 .cedar-setup-btn:hover { background: var(--wash); }
-.cedar-setup-btn.primary { border-color: var(--ink); background: var(--ink); color: var(--on-ink); }
+.cedar-setup-btn.primary { border-color: var(--primary-bg, var(--ink)); background: var(--primary-bg, var(--ink)); color: var(--primary-ink, var(--on-ink, #fff)); }
 .cedar-setup-btn.primary:hover { opacity: .9; }
 .cedar-setup-btn:disabled { opacity: .55; cursor: default; }
 .cedar-setup-link { min-height: 42px; padding: 0 4px; border: 0; background: none; font-size: 14px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }

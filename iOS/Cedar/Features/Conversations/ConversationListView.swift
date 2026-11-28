@@ -11,6 +11,9 @@ struct ConversationListView: View {
     /// The agent the form just made: its detail opens once the form is gone.
     @State private var createdAgent: AgentSelection?
     @State private var deletingAgent: Agent?
+    /// The ask whose outcome is up, and whether the sheet to ask with a When is.
+    @State private var showingOutcome: OutcomeSelection?
+    @State private var asking = false
 
     var body: some View {
         @Bindable var app = app
@@ -19,6 +22,11 @@ struct ConversationListView: View {
                 searchRows
             } else {
                 switch app.sidebarMode {
+                case .today:
+                    TodayRows(actionError: $actionError,
+                              showOutcome: { showingOutcome = OutcomeSelection(id: $0) },
+                              showAgent: { showingAgent = AgentSelection(id: $0.id, title: $0.title) },
+                              ask: { asking = true })
                 case .chats: chats
                 case .starred: starredRows
                 case .agents:
@@ -37,7 +45,7 @@ struct ConversationListView: View {
             // A search looks through all three lists, so the switch steps aside for it.
             if !app.isSearching {
                 VStack(spacing: 8) {
-                    SidebarSwitch(mode: $app.sidebarMode, agentsUnread: app.agentsUnread)
+                    SidebarSwitch(mode: $app.sidebarMode, needsYou: app.timeline?.needsYou ?? 0, agentsUnread: app.agentsUnread)
                     if app.sidebarMode == .agents {
                         Picker("Show", selection: $app.agentsTab) {
                             Text("Agents").tag(AgentsTab.agents)
@@ -65,6 +73,8 @@ struct ConversationListView: View {
         }
         .onChange(of: app.sidebarMode) { _, mode in
             switch mode {
+            // The periodic refresh reads the river (see `TodayPresentation`).
+            case .today: break
             case .chats: break
             // Stars set on the web or the desktop app since the last refresh.
             case .starred: Task { await app.refresh() }
@@ -76,7 +86,7 @@ struct ConversationListView: View {
         }
         .overlay {
             if app.isSearching {
-                if app.searchResults?.isEmpty == true && app.searchError == nil {
+                if app.searchResults?.isEmpty == true && app.searchExtras?.isEmpty != false && app.searchError == nil {
                     ContentUnavailableView {
                         Label("No Results", systemImage: "magnifyingglass")
                     } description: {
@@ -87,6 +97,9 @@ struct ConversationListView: View {
                 }
             } else {
                 switch app.sidebarMode {
+                case .today:
+                    // The Today list says so itself, in a row, when it has nothing to show.
+                    EmptyView()
                 case .chats:
                     if app.conversations.isEmpty && !app.isRefreshing {
                         if let error = app.listError {
@@ -165,6 +178,7 @@ struct ConversationListView: View {
         .sheet(item: $showingAgent) { selection in
             AgentDetailView(agentId: selection.id, title: selection.title)
         }
+        .modifier(TodayPresentation(outcome: $showingOutcome, asking: $asking))
         .sheet(item: $agentForm, onDismiss: {
             // A new agent's detail follows its form, as does one that just got a webhook: the
             // secret is shown only there.
@@ -327,6 +341,9 @@ struct ConversationListView: View {
                     }
                 }
         }
+        if let extras = app.searchExtras, !extras.isEmpty {
+            SearchExtrasRows(extras: extras, showAgent: { showingAgent = AgentSelection(id: $0.id, title: $0.title) })
+        }
     }
 
     private func setStarred(_ conversation: Conversation, _ on: Bool) {
@@ -388,7 +405,7 @@ private struct ConversationRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             RowIcon(systemImage: conversation.scheduleId != nil ? "clock.arrow.circlepath" : "bubble.left.and.text.bubble.right",
-                    tint: conversation.needsAnswer ? Theme.clay : Theme.green, isActive: isActive)
+                    tint: conversation.needsAnswer ? Theme.attention : Theme.green, isActive: isActive)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(title)
@@ -419,8 +436,8 @@ private struct ConversationRow: View {
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(Theme.clay.opacity(0.15), in: Capsule())
-                            .foregroundStyle(Theme.clay)
+                            .background(Theme.attention.opacity(0.15), in: Capsule())
+                            .foregroundStyle(Theme.attention)
                     } else if conversation.unread {
                         UnreadDot()
                     }
@@ -504,14 +521,31 @@ struct UnreadDot: View {
     }
 }
 
-/// The sidebar's Chats | Starred | Agents switch.
+/// The sidebar's Today | Chats | Starred | Agents switch.
 private struct SidebarSwitch: View {
     @Binding var mode: SidebarMode
+    /// How many things on Today need the person, once its river was read.
+    let needsYou: Int
     let agentsUnread: Int
     @Namespace private var selection
 
     var body: some View {
         HStack(spacing: 2) {
+            segment(.today) {
+                HStack(spacing: 5) {
+                    Text("Today")
+                    if needsYou > 0 {
+                        // Amber: it is what needs the person.
+                        Text(verbatim: "\(needsYou)")
+                            .font(.caption2.weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(TodayColors.needText)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 17, minHeight: 17)
+                            .background(TodayColors.needSoft, in: Capsule())
+                    }
+                }
+            }
             segment(.chats) { Text("Chats") }
             segment(.starred) { Text("Starred") }
             segment(.agents) {
@@ -521,10 +555,10 @@ private struct SidebarSwitch: View {
                         Text(verbatim: "\(agentsUnread)")
                             .font(.caption2.weight(.bold))
                             .monospacedDigit()
-                            .foregroundStyle(.white)
+                            .foregroundStyle(TodayColors.needText)
                             .padding(.horizontal, 5)
                             .frame(minWidth: 17, minHeight: 17)
-                            .background(Theme.clay, in: Capsule())
+                            .background(TodayColors.needSoft, in: Capsule())
                     }
                 }
             }

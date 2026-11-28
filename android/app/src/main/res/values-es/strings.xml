@@ -1056,4 +1056,107 @@
     <string name="tool_flights">Vuelos</string>
     <string name="tool_question">Pregunta</string>
     <string name="tool_browser">Navegador</string>
+
+    <!-- Today: the day as a river, asking with a When, and what an ask came to (ui/TodayScreen.kt, ui/OutcomeScreen.kt). -->
+    <string name="tab_today">Hoy</string>
+    <string name="today_unsupported_title">Hoy necesita un Cedar más reciente</string>
+    <string name="today_unsupported_text">Actualiza Cedar en tu computadora para ver tu día aquí: lo que hizo, lo que te necesita y lo que viene.</string>
+    <string name="today_now">Ahora</string>
+    <string name="today_earlier">Antes</string>
+    <string name="today_earlier_empty">Nada todavía hoy.</string>
+    <string name="today_ahead">Próximamente</string>
+    <string name="today_ask_placeholder">Pide algo</string>
+    <string name="today_ask_hint">Pide algo. Buscarlo, revisar archivos, escribirlo, vigilarlo.</string>
+    <string name="today_when">Cuándo</string>
+    <string name="today_when_now">Ahora</string>
+    <string name="today_when_later">Más tarde</string>
+    <string name="today_when_every">Cada…</string>
+    <string name="today_when_watch">Cuando algo cambie</string>
+    <string name="today_every_daily">Cada día</string>
+    <string name="today_every_weekdays">Entre semana</string>
+    <string name="today_every_weekly">Cada semana</string>
+    <string name="today_watch_email">Correo que coincida</string>
+    <string name="today_watch_calendar">Antes de los eventos</string>
+    <string name="today_watch_device">Cuando mi celular lo pida</string>
+    <string name="today_watch_query">Búsqueda de Gmail</string>
+    <string name="today_watch_minutes">Minutos antes</string>
+    <string name="today_private">En privado</string>
+    <string name="today_hint_now">Se ejecuta en cuanto lo envías, como una conversación nueva.</string>
+    <string name="today_hint_later">Se ejecuta una vez a la hora que elijas. Hasta entonces espera en Próximamente.</string>
+    <string name="today_hint_every">Se convierte en un pedido permanente. Cada ejecución aparece en Hoy cuando toca.</string>
+    <string name="today_hint_watch">Cedar vigila y se ejecuta cuando eso pase. Hasta entonces espera en Próximamente.</string>
+    <string name="today_hint_private">En privado: este pedido no deja rastro, no se recuerda nada y desaparece cuando lo cierras.</string>
+    <string name="today_send_later">Programar</string>
+    <string name="today_send_every">Hacerlo permanente</string>
+    <string name="today_send_watch">Empezar a vigilar</string>
+    <string name="today_problem_no_text">Di qué debe hacer Cedar.</string>
+    <string name="today_problem_no_time">Elige cuándo debe ejecutarse.</string>
+    <string name="today_problem_time_passed">Esa hora ya pasó. Elige una posterior.</string>
+    <string name="today_problem_no_query">Di qué correo vigilar, como lo buscarías en Gmail.</string>
+    <string name="today_problem_bad_minutes">Los minutos antes deben estar entre 1 y 1440.</string>
+    <string name="today_pill_waiting">Te espera</string>
+    <string name="today_pill_asking">Cedar pregunta</string>
+    <string name="today_pill_working">En curso</string>
+    <string name="today_plan_waiting">Cedar escribió un plan y espera tu visto bueno.</string>
+    <string name="today_review_plan">Ver el plan</string>
+    <string name="today_approval_waiting">Cedar quiere hacer algo que necesita tu aprobación.</string>
+    <string name="today_working">Cedar está en ello</string>
+    <string name="today_failed">no pudo terminar</string>
+    <string name="today_stopped">detenido</string>
+    <string name="today_any_time">en cualquier momento</string>
+    <string name="today_outcome_done_at">terminado a las %1$s</string>
+    <string name="today_outcome_failed_at">no pudo terminar · %1$s</string>
+    <string name="today_outcome_you_asked">Pediste: %1$s</string>
+    <string name="today_outcome_held">Esperando tu aprobación</string>
+    <string name="today_outcome_held_done">De la bandeja de salida</string>
+    <string name="today_outcome_remembered">Recordado</string>
+    <string name="today_outcome_forget">Olvidar</string>
+    <string name="today_outcome_forgotten">Olvidado: %1$s</string>
+    <string name="today_outcome_records">Guardado en tus registros</string>
+    <string name="today_outcome_how">Cómo llegó Cedar aquí</string>
+    <string name="today_outcome_step_failed">falló</string>
+    <string name="today_outcome_keep_going">Seguir desde aquí</string>
+    <string name="today_outcome_open">Abrir toda la conversación</string>
+    <string name="today_prev_day">Día anterior</string>
+    <string name="today_next_day">Día siguiente</string>
+    <string name="today_back_to_today">Hoy</string>
+    <string name="today_day_empty">Nada en este día.</string>
+    <string name="today_go_ahead">Adelante</string>
+    <string name="today_change_plan">Cambiar el plan</string>
+    <string name="today_work_out_when">Deducir el cuándo</string>
+    <string name="today_read_as">Cedar lo entendió así: %1$s. Revísalo y envía.</string>
+    <string name="today_read_now">Cedar no encontró ningún momento, así que se ejecuta ahora.</string>
+    <string name="today_read_kept">Como se entendió: %1$s</string>
+    <string name="today_outcome_your_answer">Tu respuesta</string>
+    <string name="today_outcome_keep_going_hint">Seguir desde aquí</string>
+    <plurals name="today_steps_so_far">
+        <item quantity="one">%d paso hasta ahora</item>
+        <item quantity="many">%d pasos hasta ahora</item>
+        <item quantity="other">%d pasos hasta ahora</item>
+    </plurals>
+    <plurals name="today_needs_you">
+        <item quantity="one">%d cosa te necesita</item>
+        <item quantity="many">%d cosas te necesitan</item>
+        <item quantity="other">%d cosas te necesitan</item>
+    </plurals>
+    <plurals name="today_outcome_continued">
+        <item quantity="one">Continúa en %d mensaje posterior</item>
+        <item quantity="many">Continúa en %d mensajes posteriores</item>
+        <item quantity="other">Continúa en %d mensajes posteriores</item>
+    </plurals>
+    <plurals name="today_outcome_steps">
+        <item quantity="one">%d paso</item>
+        <item quantity="many">%d pasos</item>
+        <item quantity="other">%d pasos</item>
+    </plurals>
+    <plurals name="today_outcome_sources">
+        <item quantity="one">%d fuente</item>
+        <item quantity="many">%d fuentes</item>
+        <item quantity="other">%d fuentes</item>
+    </plurals>
+    <plurals name="today_outcome_steps_failed">
+        <item quantity="one">%d falló</item>
+        <item quantity="many">%d fallaron</item>
+        <item quantity="other">%d fallaron</item>
+    </plurals>
 </resources>

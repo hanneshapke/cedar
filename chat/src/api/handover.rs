@@ -30,7 +30,7 @@ pub(super) struct OutboxQuery {
 /// A held call with where it came from: the conversation its run is in, and the agent whose run
 /// that is. A call of a run this service doesn't know (another client's on the same key) is
 /// shown without.
-async fn with_origin(state: &AppState, mut held: Value) -> Result<Value, AppError> {
+pub(super) async fn with_origin(state: &AppState, mut held: Value) -> Result<Value, AppError> {
     let run_id = held["run_id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
     let turn = match run_id {
         Some(run_id) => state.store.get_turn_by_run(run_id).await?.filter(|(_, user)| *user == state.user()).map(|(turn, _)| turn),
@@ -48,6 +48,30 @@ async fn with_origin(state: &AppState, mut held: Value) -> Result<Value, AppErro
         }
     }
     Ok(held)
+}
+
+/// The calls held for the person's approval with where each came from: those of one run, or
+/// (`run_id` `None`) every one with `status`. For the Today page, which must open even when
+/// cedar can't say (one from before the outbox): a failure is logged and gives none.
+pub(super) async fn held_with_origin(state: &AppState, status: Option<&str>, run_id: Option<Uuid>) -> Vec<Value> {
+    let held = match state.cedar.held(status, run_id).await {
+        Ok(held) => held,
+        Err(e) => {
+            tracing::debug!(error = %e, "could not list the outbox");
+            return Vec::new();
+        }
+    };
+    let mut items = Vec::with_capacity(held.len());
+    for call in held {
+        match with_origin(state, call.clone()).await {
+            Ok(item) => items.push(item),
+            Err(e) => {
+                tracing::debug!(error = %e, "could not say where a held call came from");
+                items.push(call);
+            }
+        }
+    }
+    items
 }
 
 /// `GET /api/outbox`: what waits for the person's approval, newest first.

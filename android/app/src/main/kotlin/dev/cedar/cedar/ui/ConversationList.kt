@@ -8,6 +8,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,7 +83,7 @@ import dev.cedar.core.searchRanges
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** The list: a search field over Chats | Starred | Agents, as iOS/Cedar/Features/Conversations/ConversationListView.swift. */
+/** The list: a search field over Today | Chats | Starred | Agents, as iOS/Cedar/Features/Conversations/ConversationListView.swift. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationListScreen(app: AppModel) {
@@ -105,6 +106,7 @@ fun ConversationListScreen(app: AppModel) {
 
     LaunchedEffect(app.sidebarMode) {
         when (app.sidebarMode) {
+            SidebarMode.TODAY -> app.refreshTimeline()
             SidebarMode.CHATS -> {}
             // Stars set on the web or the desktop app since the last refresh.
             SidebarMode.STARRED -> app.refresh()
@@ -150,14 +152,21 @@ fun ConversationListScreen(app: AppModel) {
             if (!app.isSearching) {
                 SegmentedSwitch(
                     options = listOf(
+                        SidebarMode.TODAY to stringResource(R.string.tab_today),
                         SidebarMode.CHATS to stringResource(R.string.tab_chats),
                         SidebarMode.STARRED to stringResource(R.string.tab_starred),
                         SidebarMode.AGENTS to stringResource(R.string.tab_agents),
                     ),
                     selected = app.sidebarMode,
                     onSelect = { app.sidebarMode = it },
-                    // How many agents' runs wait to be read.
-                    count = { if (it == SidebarMode.AGENTS) app.agentsUnread else 0 },
+                    // How many agents' runs wait to be read, and how many things on Today need the person.
+                    count = {
+                        when (it) {
+                            SidebarMode.AGENTS -> app.agentsUnread
+                            SidebarMode.TODAY -> app.timeline?.needsYou ?: 0
+                            else -> 0
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
                 )
             }
@@ -170,6 +179,7 @@ fun ConversationListScreen(app: AppModel) {
                     SearchRows(app, onAction = ::act)
                 } else {
                     when (app.sidebarMode) {
+                        SidebarMode.TODAY -> TodayRows(app, onAction = ::act)
                         SidebarMode.CHATS -> ChatRows(app, onAction = ::act, onRename = { renaming = it })
                         SidebarMode.STARRED -> StarredRows(app, onAction = ::act)
                         SidebarMode.AGENTS -> AgentRows(app, onAction = ::act)
@@ -330,7 +340,9 @@ private fun SearchField(text: String, onChange: (String) -> Unit, modifier: Modi
 private fun SearchRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
     val context = LocalContext.current
     val results = app.searchResults
-    if (results.isNullOrEmpty() && app.searchError == null) {
+    // What else has the words, where the server searches everything: agents, memories, record sets.
+    val found = app.searchFound
+    if (results.isNullOrEmpty() && (found == null || found.isEmpty) && app.searchError == null) {
         LazyColumn(Modifier.fillMaxSize()) {
             item {
                 if (results != null) {
@@ -369,6 +381,52 @@ private fun SearchRows(app: AppModel, onAction: (suspend () -> Unit) -> Unit) {
                 snippet = conversation.snippet,
                 query = app.searchQuery,
             )
+        }
+        if (found != null) {
+            if (found.agents.isNotEmpty()) {
+                item(key = "found-agents") { FoundHeader(stringResource(R.string.tab_agents)) }
+                items(found.agents, key = { "found-agent-${it.id}" }) { agent ->
+                    FoundRow(agent.title, context.describe(agent.trigger)) { app.openAgent(agent.id) }
+                }
+            }
+            if (found.memories.isNotEmpty()) {
+                item(key = "found-memories") { FoundHeader(stringResource(R.string.memory)) }
+                items(found.memories, key = { "found-memory-${it.id}" }) { memory ->
+                    FoundRow(memory.text, null) { app.showingMemory = true }
+                }
+            }
+            if (found.records.isNotEmpty()) {
+                item(key = "found-records") { FoundHeader(stringResource(R.string.records)) }
+                items(found.records, key = { "found-records-${it.name}" }) { set ->
+                    FoundRow(set.name, set.description.takeIf { it.isNotBlank() }) { app.showingRecords = true }
+                }
+            }
+        }
+    }
+}
+
+/** What kind of thing the rows under it are, among a search's results. */
+@Composable
+private fun FoundHeader(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = CedarColors.secondaryText,
+        modifier = Modifier.padding(start = 24.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
+    )
+}
+
+/** Something a search found that isn't a conversation: an agent, a memory, a record set. */
+@Composable
+private fun FoundRow(title: String, detail: String?, onClick: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (detail != null) {
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = CedarColors.secondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -598,10 +656,10 @@ fun <T> SegmentedSwitch(
                         "$waiting",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondary,
+                        color = CedarColors.onAttentionFill,
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(CedarColors.clay)
+                            .background(CedarColors.attentionFill)
                             .padding(horizontal = 6.dp, vertical = 1.dp),
                     )
                 }

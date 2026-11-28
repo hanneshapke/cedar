@@ -58,6 +58,10 @@ fun RootScreen(app: AppModel, onAllowNotifications: () -> Unit) {
         } else if (app.showingContribute) {
             BackHandler { app.showingContribute = false }
             ContributeSettingsScreen(app)
+        } else if (app.showingOutcome != null) {
+            // What one ask came to, over the list and the chat; Back returns to where it was opened.
+            BackHandler { app.showingOutcome = null }
+            app.showingOutcome?.let { turnId -> key(turnId) { OutcomeScreen(app, turnId) } }
         } else if (app.agentForm != null) {
             // Over the list and the chat, like Settings; it asks before dropping what was typed.
             app.agentForm?.let { request -> key(request) { AgentFormScreen(app, request) } }

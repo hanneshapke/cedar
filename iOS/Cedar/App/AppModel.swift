@@ -2,10 +2,10 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// What the sidebar lists: the conversations, the starred ones (chats and agents' runs), or the
-/// agents and what they did.
+/// What the sidebar lists: today as a river (what Cedar did, is doing and will do), the
+/// conversations, the starred ones (chats and agents' runs), or the agents and what they did.
 enum SidebarMode: Hashable {
-    case chats, starred, agents
+    case today, chats, starred, agents
 }
 
 /// What the sidebar's Agents list shows: the agents, or the latest runs of all of them.
@@ -27,7 +27,7 @@ final class AppModel {
     private(set) var inboxUnread = 0
     private(set) var isRefreshing = false
     var listError: String?
-    var sidebarMode: SidebarMode = .chats
+    var sidebarMode: SidebarMode = .today
     var agentsTab: AgentsTab = .agents
     /// The agents, enabled first, as the server lists them.
     private(set) var agents: [Agent] = []
@@ -49,6 +49,15 @@ final class AppModel {
     private(set) var agentsUnread = 0
     private(set) var agentsLoaded = false
     var agentError: String?
+    /// Today as a river (`/api/timeline`), once loaded: what Cedar did, what is going or waits
+    /// on the person, and the agents due next.
+    private(set) var timeline: Timeline?
+    var todayError: String?
+    /// The day the river shows (`YYYY-MM-DD`); `nil` is today.
+    private(set) var todayDay: String?
+    /// What else a search found beside conversations (agents, memories, record sets); `nil`
+    /// while nothing is searched, or on a server from before `/api/search`.
+    private(set) var searchExtras: SearchExtras?
     /// A webhook agent's secret, which the server tells once: when the agent is made or the
     /// secret replaced. Kept until the agent's detail has shown it.
     private(set) var agentSecrets: [String: String] = [:]
@@ -165,6 +174,10 @@ final class AppModel {
             agentsUnread = 0
             agentsLoaded = false
             agentError = nil
+            timeline = nil
+            todayError = nil
+            todayDay = nil
+            searchExtras = nil
             agentSecrets = [:]
             agentsTab = .agents
             activity = []
@@ -444,6 +457,8 @@ final class AppModel {
             listError = error.localizedDescription
         }
         if sidebarMode == .agents { await refreshAgentsList() }
+        // Whatever the list shows: the switch counts what needs the person on Today.
+        await refreshToday()
         if isSearching { await search() }
     }
 
@@ -453,6 +468,7 @@ final class AppModel {
         let query = searchQuery
         guard !query.isEmpty else {
             searchResults = nil
+            searchExtras = nil
             searchError = nil
             return
         }
@@ -462,8 +478,12 @@ final class AppModel {
         }
         do {
             let found = try await client.search(query: query)
+            // What else has the words; a server from before it, or one that fails, has none.
+            // Both are shown together, so "nothing found" isn't said before the rest is in.
+            let extras = try? await client.searchExtras(query: query)
             guard query == searchQuery else { return }
             searchResults = found
+            searchExtras = extras
             searchError = nil
         } catch is CancellationError {
         } catch let error as URLError where error.code == .cancelled {
@@ -605,6 +625,133 @@ final class AppModel {
             updated.snippet = found.snippet
             searchResults?[index] = updated
         }
+    }
+
+    // MARK: Today
+
+    /// Reads today's river. What it lists as held for approval is kept for the cards to show.
+    func refreshToday() async {
+        guard let client else {
+            todayError = ChatError.notConfigured.errorDescription
+            return
+        }
+        do {
+            let day = todayDay
+            let fresh = try await client.timeline(day: day)
+            // Another day was picked while this one was read.
+            guard day == todayDay else { return }
+            timeline = fresh
+            todayError = nil
+            // A day that turned out to be today is today: it then follows the date.
+            if fresh.today { todayDay = nil }
+            for held in fresh.outbox { heldCalls[held.item.id] = held.item }
+        } catch is CancellationError {
+        } catch let error as URLError where error.code == .cancelled {
+        } catch let error as ChatError where error.status == 404 {
+            todayError = L10n.string("This Cedar is from before Today. Update Cedar on your computer to use it.")
+        } catch {
+            todayError = error.localizedDescription
+        }
+    }
+
+    /// Moves the river `offset` days from the day it shows, and reads that day.
+    func moveToday(by offset: Int) async {
+        guard let shown = timeline?.day, let day = Timeline.day(shown, offsetBy: offset) else { return }
+        todayDay = day
+        await refreshToday()
+    }
+
+    /// Back to today's river.
+    func backToToday() async {
+        todayDay = nil
+        await refreshToday()
+    }
+
+    /// Agrees to a plan a response waits on, as cedar proposed it, then reads the river again.
+    func agreePlan(turnId: String, steps: [PlanStep]) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        try await client.answerPlan(turnId: turnId, steps: steps)
+        await refreshToday()
+    }
+
+    /// What When a sentence asks for, read by Cedar, for the ask's sheet to fill in.
+    func readAsk(_ text: String) async throws -> AskReading {
+        guard let client else { throw ChatError.notConfigured }
+        return try await client.readAsk(content: text)
+    }
+
+    /// Sends `text` as the conversation's next message and opens the conversation, where the
+    /// reply streams. Throws what the chat says when the server didn't take it.
+    func keepGoing(conversationId: String, text: String) async throws {
+        let model = chat(for: conversationId)
+        guard await model.send(text: text) else {
+            throw TodayError(message: model.errorMessage ?? L10n.string("Cedar is still answering in this conversation."))
+        }
+        open(conversationId: conversationId)
+    }
+
+    /// Allows or denies a risky call a response waits on, then reads the river again.
+    func decideApproval(turnId: String, approvalId: String, allow: Bool) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        try await client.decideApproval(turnId: turnId, approvalId: approvalId, decision: allow ? "allow" : "deny")
+        await refreshToday()
+    }
+
+    /// Sends an ask. One that runs now opens as its conversation; one that became an agent joins
+    /// the agents and shows under Ahead.
+    @discardableResult
+    func ask(_ draft: AskDraft) async throws -> AskAnswer {
+        guard let client else { throw ChatError.notConfigured }
+        let body = draft.body(
+            locale: LanguageStore.shared.effectiveTag,
+            // While the server picks the model, a pick saved earlier is not sent.
+            model: settings.model.isEmpty || !modelSelection ? nil : settings.model,
+            reasoning: settings.reasoning.isEmpty || !modelSelection ? nil : settings.reasoning,
+            plan: settings.plan.isEmpty ? nil : settings.plan,
+            checkMinutes: agentLimits.checkMinutes)
+        let answer = try await client.ask(body)
+        if let agent = answer.agent { take(agent) }
+        if let conversation = answer.conversation {
+            // A private chat is in no list: its chat needs to know it before it loads.
+            if conversation.isPrivate { remember(conversation) }
+            open(conversationId: conversation.id)
+        } else {
+            await refreshToday()
+        }
+        return answer
+    }
+
+    /// What one ask came to, for its page.
+    func outcome(turnId: String) async throws -> AskOutcome {
+        guard let client else { throw ChatError.notConfigured }
+        return try await client.outcome(turnId: turnId)
+    }
+
+    /// Forgets one memory an outcome lists; it applies from the next message on.
+    func forgetMemory(id: String) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        do {
+            try await client.deleteMemory(id: id)
+        } catch let error as ChatError where error.status == 404 {
+            // Already gone (another device).
+        }
+        memoryItems.removeAll { $0.id == id }
+    }
+
+    /// Sets up or dismisses a follow-up an outcome shows; answers the decision that stands.
+    func decideFollowUp(turnId: String, callId: String, _ followUp: FollowUp, accept: Bool) async throws -> FollowUpDecision {
+        guard let client else { throw ChatError.notConfigured }
+        let body = accept ? FollowUpBody.accept(followUp) : FollowUpBody.dismiss
+        let answer = try await client.decideFollowup(turnId: turnId, callId: callId, body)
+        if let agent = answer.agent { take(agent) }
+        return answer.followup
+    }
+
+    /// Stops a response that is still going.
+    func stop(turnId: String) async throws {
+        guard let client else { throw ChatError.notConfigured }
+        try await client.cancel(turnId: turnId)
+        await refreshToday()
     }
 
     // MARK: Agents
