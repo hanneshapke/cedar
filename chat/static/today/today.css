@@ -1,5 +1,7 @@
-/* The Today page: a dark green-black river, lime for now, clay for what needs you. A light
-   theme follows the system's. Fonts are the ones cedar-chat serves itself (/fonts/). */
+/* The Today page. Dark: a green-black river. Light ("Now in the dark"): a neutral page on which
+   the Now section is a dark-green block, drawn exactly as in the dark theme, so the present is
+   the lit part of the day. One hue family, green with lime for now, and amber for what needs you
+   (never red: that is for what failed). Fonts are the ones cedar-chat serves itself (/fonts/). */
 
 :root {
   --bg: #0f1411;
@@ -9,12 +11,17 @@
   --text: #edefe8;
   --text-2: #c9d0c8;
   --muted: #9aa39b;
+  /* Now: text, lines and focus. */
   --now: #c8f169;
-  --now-ink: #0f1411;
   --now-soft: #1f2a16;
-  --need: #f4b08f;
-  --need-ink: #1c120c;
-  --need-soft: #2b1d15;
+  /* The one filled button of a view. */
+  --primary-bg: #c8f169;
+  --primary-ink: #0f1411;
+  /* Needs you: text on its soft chip, and the fill of its border, dot and go-ahead button. */
+  --need: #f2c14e;
+  --need-soft: #3a2f10;
+  --need-fill: #f2c14e;
+  --need-ink: #1f1600;
   --bad: #ef8a7a;
   --sans: 'Figtree', system-ui, sans-serif;
   --display: 'Instrument Sans', 'Figtree', system-ui, sans-serif;
@@ -24,21 +31,48 @@
 
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #f6f5ef;
+    --bg: #f7f7f4;
     --surface: #ffffff;
-    --line: #e1e2da;
-    --line-strong: #c5c9bd;
-    --text: #18201b;
-    --text-2: #3b453e;
-    --muted: #5d685f;
-    --now: #3d6b12;
-    --now-ink: #ffffff;
-    --now-soft: #eaf3dc;
-    --need: #9a4a24;
-    --need-ink: #ffffff;
-    --need-soft: #f8e7de;
+    --line: #e2e4de;
+    --line-strong: #c4c9c2;
+    --text: #121815;
+    --text-2: #37423b;
+    --muted: #5b635d;
+    --now: #1f5a40;
+    --now-soft: #e4efd9;
+    --primary-bg: #0f1f17;
+    --primary-ink: #c8f169;
+    --need: #6b4a00;
+    --need-soft: #fff1cc;
+    --need-fill: #d99a00;
+    --need-ink: #1f1600;
     --bad: #a3342a;
     color-scheme: light;
+  }
+
+  /* The Now section is a dark block on the light page, with the dark theme's own colours. */
+  #now {
+    --bg: #0f1f17;
+    --surface: #17291f;
+    --line: #2e4638;
+    --line-strong: #3f5a4b;
+    --text: #edefe8;
+    --text-2: #c9d0c8;
+    --muted: #9aa39b;
+    --now: #c8f169;
+    --now-soft: #22361a;
+    --primary-bg: #c8f169;
+    --primary-ink: #0f1f17;
+    --need: #f2c14e;
+    --need-soft: #3a2f10;
+    --need-fill: #f2c14e;
+    --bad: #ef8a7a;
+    color-scheme: dark;
+    background: var(--bg);
+    color: var(--text);
+    border-radius: 24px;
+    padding: 20px 20px 20px 16px;
+    margin: 0 -16px;
   }
 }
 
@@ -65,7 +99,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .icon:hover, .btn:hover { border-color: var(--line-strong); }
 .linkish { background: none; border: 0; padding: 8px 4px; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 14px; }
 .needs { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 18px; background: var(--need-soft); color: var(--need); font-weight: 600; font-size: 13px; text-decoration: none; }
-.needs .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--need); }
+.needs .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--need-fill); }
 
 /* -- layout ------------------------------------------------------------------------------- */
 .layout { display: flex; flex-wrap: wrap; gap: 48px; padding-top: 28px; }
@@ -115,7 +149,7 @@ a.what-title:hover { text-decoration: underline; }
 .hint { flex: 1 1 220px; margin: 0; color: var(--muted); font-size: 13px; }
 .private { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; cursor: pointer; }
 .private input { width: 18px; height: 18px; accent-color: var(--now); }
-.primary { height: 44px; padding: 0 20px; border-radius: 22px; border: 0; background: var(--now); color: var(--now-ink); font-weight: 600; cursor: pointer; }
+.primary { height: 44px; padding: 0 20px; border-radius: 22px; border: 0; background: var(--primary-bg); color: var(--primary-ink); font-weight: 600; cursor: pointer; }
 .primary:disabled { opacity: 0.6; cursor: default; }
 .error { margin: 0; color: var(--bad); }
 
@@ -123,7 +157,7 @@ a.what-title:hover { text-decoration: underline; }
 .card { display: flex; gap: 16px; }
 .card .time { padding-top: 18px; }
 .card-body { flex: 1 1 0; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
-.card.waiting .card-body, .card.asking .card-body { border-color: var(--need); }
+.card.waiting .card-body, .card.asking .card-body { border-color: var(--need-fill); }
 .card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .card-title { font: 600 18px/1.3 var(--display); text-decoration: none; overflow-wrap: anywhere; }
 a.card-title:hover { text-decoration: underline; }
@@ -132,7 +166,7 @@ a.card-title:hover { text-decoration: underline; }
 .card p { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .actions button, .actions a { height: 44px; padding: 0 18px; border-radius: 22px; border: 1px solid var(--line-strong); background: transparent; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; text-decoration: none; }
-.actions .go { background: var(--need); color: var(--need-ink); border-color: var(--need); font-weight: 600; }
+.actions .go { background: var(--need-fill); color: var(--need-ink); border-color: var(--need-fill); font-weight: 600; }
 .answer { display: flex; flex-wrap: wrap; gap: 8px; }
 .answer input { flex: 1 1 220px; min-width: 0; height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line-strong); background: var(--bg); }
 .progress { font: 13px/1.4 var(--mono); color: var(--text-2); }
@@ -154,6 +188,7 @@ dialog form { display: flex; flex-direction: column; gap: 12px; }
 dialog input { height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--bg); width: 100%; }
 
 @media (max-width: 640px) {
+  #now { margin: 0 -8px; padding: 16px 12px; border-radius: 20px; }
   .band, .ask { margin-left: 0; }
   :root { --time-w: 64px; }
   .time, .now-time { font-size: 12px; }
@@ -166,7 +201,7 @@ dialog input { height: 44px; padding: 0 12px; border-radius: 10px; border: 1px s
 
 /* -- one ask's outcome -------------------------------------------------------------------- */
 /* The follow-up card (followup-view.css) draws with these. */
-:root { --sheet: var(--surface); --ink: var(--text); --ink-2: var(--text-2); --accent: var(--now); --warn: var(--need); --warn-line: var(--need); --warn-wash: var(--surface); }
+:root, #now { --sheet: var(--surface); --ink: var(--text); --ink-2: var(--text-2); --accent: var(--now); --warn: var(--need); --warn-line: var(--need-fill); --warn-wash: var(--surface); }
 /* The outbox card (handover-view.css) inside a card of the river, or a part of an outcome. */
 .card-body .cedar-handover, .part .cedar-handover { margin: 0; max-width: none; }
 .card-body .cedar-handover { border: 0; padding: 0; background: none; }
