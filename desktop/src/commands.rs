@@ -286,6 +286,13 @@ pub async fn disconnect_remote(app: AppHandle) -> Result<(), String> {
     crate::remote::switch(app, None).await.map_err(fail)
 }
 
+/// Starts Tailscale on this computer and checks the chat on another computer again, when the
+/// page offered that (`remote_tailscale_offer`). The page follows along in `remote`.
+#[tauri::command]
+pub async fn connect_tailscale(app: AppHandle) -> Result<(), String> {
+    app::connect_tailscale(app).await.map_err(fail)
+}
+
 /// "Check now" on the setup page.
 #[tauri::command]
 pub async fn check_for_updates(app: AppHandle) -> Result<(), String> {

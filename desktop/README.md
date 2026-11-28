@@ -491,6 +491,11 @@ While it is connected:
   the server, its state, and *Open chat*, *Open in browser*, *Copy access token*, *Check again*
   and *Disconnect*. *Open Cedar* in the menu shows its chat once it answered; *Restart Services*
   checks the server again.
+- When the server doesn't answer, its address is on a tailnet (`….ts.net`), and Tailscale on this
+  computer isn't running or is turned off, the page offers **Start Tailscale and connect**: the
+  app opens Tailscale's app (macOS and Windows) or runs `tailscale up`, waits up to 45 seconds
+  for it to connect, and checks the server again. A Tailscale that is logged out is yours to
+  log in.
 - Conversations, agents, memory, records, workspaces and personal tools all live on that server.
   Agents run there whether or not this computer is on.
 - The app follows that server's desktop notification stream, so its responses and agents notify
@@ -907,7 +912,7 @@ One-time setup:
 | iPhone, iPad & Android: "HTTPS is not enabled" or "no tailnet name" | Turn on HTTPS Certificates and MagicDNS in the Tailscale admin console's DNS page, then click *Try again*. |
 | The iOS or Android app can't connect | Use the `https://…ts.net` address from the setup page, without a port; check that the phone is logged in to the same tailnet, that the computer is awake, and that `tailscale serve status` on it lists the chat port. The first connection can take a few seconds while Tailscale gets the certificate. |
 | Cedar stopped with an error | *Open Logs Folder*; `cedar.log` says why. After three quick crashes the app stops retrying until *Restart Services*. |
-| Cedar on another computer: "can't reach …" | The other computer must be on, serving the chat (`tailscale serve status` there lists it), and this computer on the same tailnet. Then *Check again*. |
+| Cedar on another computer: "can't reach …" | The other computer must be on, serving the chat (`tailscale serve status` there lists it), and this computer on the same tailnet. Then *Check again*. With Tailscale not running or turned off on this computer, the page offers *Start Tailscale and connect* instead. |
 | Cedar on another computer: "didn't accept the access token" | The server's access token changed. *Disconnect*, then connect again with the new one. |
 
 ### macOS

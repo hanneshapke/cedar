@@ -219,8 +219,12 @@ function renderRemote(s) {
     $('remote-text').textContent = tr('remote.connected', { url: s.remote_server });
   } else if (r.state === 'failed') {
     dot($('remote-dot'), 'bad');
-    $('remote-text').textContent = tr('remote.failed', { url: s.remote_server });
+    const key = s.remote_tailscale_offer ? 'remote.failedTailscale' : 'remote.failed';
+    $('remote-text').textContent = tr(key, { url: s.remote_server });
     $('remote-detail').textContent = r.detail;
+  } else if (r.state === 'starting_tailscale') {
+    dot($('remote-dot'), 'busy');
+    $('remote-text').textContent = tr('remote.startingTailscale');
   } else {
     dot($('remote-dot'), 'busy');
     $('remote-text').textContent = tr('remote.checking', { url: s.remote_server });
@@ -228,7 +232,13 @@ function renderRemote(s) {
   const ready = r.state === 'connected';
   $('remote-open').disabled = !ready;
   $('remote-browser').disabled = !ready;
-  $('remote-retry').disabled = r.state === 'checking';
+  const busy = r.state === 'checking' || r.state === 'starting_tailscale';
+  $('remote-retry').disabled = busy;
+  // Tailscale on this computer isn't connected: starting it is the first thing to try, so it is
+  // the button that stands out while it is offered.
+  const offer = r.state === 'failed' && s.remote_tailscale_offer;
+  $('remote-tailscale').classList.toggle('hidden', !offer);
+  $('remote-open').classList.toggle('primary', !offer);
 }
 
 // The banner under the header: the one thing that is going on, from the whole status. Either
@@ -249,7 +259,9 @@ function activity(s, p) {
   if (s.remote_server) {
     const r = s.remote;
     if (r.state === 'connected') return { mode: 'ready', text: tr('activity.remoteReady', { url: s.remote_server }), target: 'remote' };
+    if (r.state === 'failed' && s.remote_tailscale_offer) return waiting(tr('activity.remoteTailscale', { url: s.remote_server }), 'remote');
     if (r.state === 'failed') return waiting(tr('activity.remoteFailed', { url: s.remote_server }), 'remote');
+    if (r.state === 'starting_tailscale') return busy(tr('remote.startingTailscale'), 'remote');
     return busy(tr('remote.checking', { url: s.remote_server }), 'remote');
   }
   // Docker, and setting it up from here.
@@ -1129,6 +1141,11 @@ $('remote-open').addEventListener('click', () => invoke('open_chat').catch((e) =
 $('remote-browser').addEventListener('click', () => invoke('open_in_browser').catch((e) => alert(e)));
 $('remote-copy-token').addEventListener('click', () => invoke('copy_token').catch((e) => alert(e)));
 $('remote-retry').addEventListener('click', () => invoke('recheck').then(refresh));
+// Runs until Tailscale is up and the server was asked again; the page follows along meanwhile.
+$('remote-tailscale').addEventListener('click', () => {
+  invoke('connect_tailscale').catch((e) => alert(e)).finally(refresh);
+  setTimeout(refresh, 100);
+});
 $('remote-disconnect').addEventListener('click', () => {
   $('remote-error').textContent = '';
   $('remote-disconnect').disabled = true;
