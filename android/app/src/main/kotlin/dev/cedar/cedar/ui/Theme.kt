@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -51,85 +52,29 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 
-// Cedar's colours (docs/assets), as iOS/Cedar/App/Theme.swift: the mark's forest green and clay
-// on warm paper (light) or deep charcoal (dark).
-private val Green = Color(0xFF3A5F4B)
-private val GreenDark = Color(0xFF5E9C78)
-private val Clay = Color(0xFFB5553A)
-private val ClayDark = Color(0xFFE09A7A)
-private val Cream = Color(0xFFF3EDE3)
+// Cedar's colours, as the web's Today page and iOS/Cedar/App/Theme.swift: a neutral page with
+// white cards (light) or a green-black one (dark), one hue family for what Cedar does (a dark
+// green for links, selection and toggles, lime on the darkest green for the action of a view),
+// and amber for what needs the person. Red is for what failed, never for attention. The mark
+// keeps its own forest green and clay: that is the logo, not the interface.
+private val MarkGreen = Color(0xFF3A5F4B)
+private val MarkClay = Color(0xFFB5553A)
+private val MarkClayDark = Color(0xFFE09A7A)
+private val Paper = Color(0xFFEDEFE8)
+
+private val Lime = Color(0xFFC8F169)
+private val Amber = Color(0xFFF2C14E)
+private val AmberInk = Color(0xFF1F1600)
+/** The darkest green: the fill of a view's main action in light mode, and the Now block. */
+private val Night = Color(0xFF0F1F17)
 
 private val Light = lightColorScheme(
-    primary = Green,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFDCE8E0),
-    onPrimaryContainer = Color(0xFF0F2A1C),
-    secondary = Clay,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFF6E3DC),
-    onSecondaryContainer = Color(0xFF4A1E10),
-    background = Color(0xFFF7F5F0),
-    surface = Color(0xFFF7F5F0),
-    surfaceVariant = Color(0xFFEFECE5),
-    // Cards and panels: white on the paper.
-    surfaceContainerLowest = Color.White,
-    surfaceContainerLow = Color(0xFFF3F0EA),
-    surfaceContainer = Color.White,
-    surfaceContainerHigh = Color(0xFFF3F0EA),
-    // Code, chips and the sidebar switch: a step up from a card.
-    surfaceContainerHighest = Color(0xFFEFECE5),
-    outlineVariant = Color(0xFFE3DFD6),
-)
-
-private val Dark = darkColorScheme(
-    primary = GreenDark,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF233B2D),
-    onPrimaryContainer = Color(0xFFD5E6DB),
-    secondary = ClayDark,
-    onSecondary = Color(0xFF2A120A),
-    secondaryContainer = Color(0xFF3A2219),
-    onSecondaryContainer = Color(0xFFF6E3DC),
-    background = Color(0xFF111311),
-    surface = Color(0xFF111311),
-    surfaceVariant = Color(0xFF252925),
-    surfaceContainerLowest = Color(0xFF0C0E0C),
-    surfaceContainerLow = Color(0xFF161916),
-    surfaceContainer = Color(0xFF1B1E1B),
-    surfaceContainerHigh = Color(0xFF202420),
-    surfaceContainerHighest = Color(0xFF252925),
-    outlineVariant = Color(0xFF2E332E),
-    onSurface = Cream,
-    onBackground = Cream,
-)
-
-/** Light and dark, following the system, in Cedar's colours. */
-@Composable
-fun CedarTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
-}
-
-// -- Today's own colours -------------------------------------------------------------------------
-//
-// The Today screens (the river, the ask sheet, an outcome) don't sit on the app's warm paper. Their
-// page is a neutral one, what is now sits in one dark-green block with the lime of the web page's
-// dark theme, and what needs the person is amber, not clay. In dark mode the app's own surfaces
-// stay, with the same lime and amber, so both modes agree. Everything below resolves through
-// MaterialTheme, so the cards the chat shares (a held call, a follow-up) take the colours of
-// wherever they are put: `CedarColors.clay` is the amber here, and `secondaryText` the muted ink.
-
-private val TodayLime = Color(0xFFC8F169)
-private val TodayAmber = Color(0xFFF2C14E)
-private val TodayNight = Color(0xFF0F1F17)
-private val TodayAmberInk = Color(0xFF1F1600)
-
-/** The Today page in light mode: neutral paper, dark-green actions with lime text. */
-private val TodayLight = lightColorScheme(
-    primary = TodayNight,
-    onPrimary = TodayLime,
-    primaryContainer = Color(0xFFE3EBDD),
-    onPrimaryContainer = TodayNight,
-    // On the page, what needs the person is dark amber on a pale one.
+    // Links, selection, focus, toggles; a plain filled button is this with lime text.
+    primary = Color(0xFF1F5A40),
+    onPrimary = Lime,
+    primaryContainer = Color(0xFFE4EFD9),
+    onPrimaryContainer = Night,
+    // What needs the person: dark amber on the page, on a pale amber ground.
     secondary = Color(0xFF6B4A00),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFFFF1CC),
@@ -140,29 +85,72 @@ private val TodayLight = lightColorScheme(
     onSurface = Color(0xFF121815),
     surfaceVariant = Color(0xFFECEDE8),
     onSurfaceVariant = Color(0xFF5B635D),
+    // Cards and panels: white on the page.
     surfaceContainerLowest = Color.White,
     surfaceContainerLow = Color(0xFFF1F2EE),
     surfaceContainer = Color.White,
     surfaceContainerHigh = Color(0xFFF1F2EE),
+    // Code, chips and the sidebar switch: a step up from a card.
     surfaceContainerHighest = Color(0xFFECEDE8),
     outline = Color(0xFFC4C9C2),
     outlineVariant = Color(0xFFE2E4DE),
 )
 
+private val Dark = darkColorScheme(
+    primary = Lime,
+    onPrimary = Color(0xFF0F1411),
+    primaryContainer = Color(0xFF22361A),
+    onPrimaryContainer = Lime,
+    secondary = Amber,
+    onSecondary = AmberInk,
+    secondaryContainer = Color(0xFF3A2F10),
+    onSecondaryContainer = Amber,
+    background = Color(0xFF0F1411),
+    onBackground = Paper,
+    surface = Color(0xFF0F1411),
+    onSurface = Paper,
+    surfaceVariant = Color(0xFF222B26),
+    onSurfaceVariant = Color(0xFF9AA39B),
+    surfaceContainerLowest = Color(0xFF0B0F0D),
+    surfaceContainerLow = Color(0xFF141A16),
+    surfaceContainer = Color(0xFF171E1A),
+    surfaceContainerHigh = Color(0xFF1C2420),
+    surfaceContainerHighest = Color(0xFF222B26),
+    outline = Color(0xFF3A4A3F),
+    outlineVariant = Color(0xFF26302A),
+)
+
+/** Light and dark, following the system, in Cedar's colours. */
+@Composable
+fun CedarTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
+}
+
+// -- Today's own colours -------------------------------------------------------------------------
+//
+// The Today screens (the river, the ask sheet, an outcome) use the app's colours, with two things
+// of their own in light mode: their buttons are the darkest green with lime text, and what is
+// now sits in one dark-green block drawn in the dark theme's colours. Everything resolves through
+// MaterialTheme, so the cards the chat shares (a held call, a follow-up) take the colours of
+// wherever they are put.
+
+/** The Today page in light mode: the app's, with the darkest green for its actions. */
+private val TodayLight = Light.copy(primary = Night, onPrimary = Lime)
+
 /** What is now, in light mode: the dark-green block. */
 private val TodayNow = darkColorScheme(
-    primary = TodayLime,
-    onPrimary = TodayNight,
+    primary = Lime,
+    onPrimary = Night,
     primaryContainer = Color(0xFF22361A),
-    onPrimaryContainer = TodayLime,
-    secondary = TodayAmber,
-    onSecondary = TodayAmberInk,
+    onPrimaryContainer = Lime,
+    secondary = Amber,
+    onSecondary = AmberInk,
     secondaryContainer = Color(0xFF3A2F10),
-    onSecondaryContainer = TodayAmber,
-    background = TodayNight,
-    onBackground = Color(0xFFEDEFE8),
-    surface = TodayNight,
-    onSurface = Color(0xFFEDEFE8),
+    onSecondaryContainer = Amber,
+    background = Night,
+    onBackground = Paper,
+    surface = Night,
+    onSurface = Paper,
     surfaceVariant = Color(0xFF22342A),
     onSurfaceVariant = Color(0xFF9AA39B),
     surfaceContainerLowest = Color(0xFF0B1711),
@@ -174,22 +162,10 @@ private val TodayNow = darkColorScheme(
     outlineVariant = Color(0xFF2E4638),
 )
 
-/** Today in dark mode: the app's dark surfaces, with the same lime and amber. */
-private val TodayDark = Dark.copy(
-    primary = TodayLime,
-    onPrimary = TodayNight,
-    primaryContainer = Color(0xFF22361A),
-    onPrimaryContainer = TodayLime,
-    secondary = TodayAmber,
-    onSecondary = TodayAmberInk,
-    secondaryContainer = Color(0xFF3A2F10),
-    onSecondaryContainer = TodayAmber,
-)
-
 /** The Today screens' colours over the app's, with the text colour that goes with them. */
 @Composable
 fun TodayTheme(content: @Composable () -> Unit) {
-    val scheme = if (isSystemInDarkTheme()) TodayDark else TodayLight
+    val scheme = if (isSystemInDarkTheme()) Dark else TodayLight
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(LocalContentColor provides scheme.onSurface, content = content)
     }
@@ -202,7 +178,7 @@ fun TodayTheme(content: @Composable () -> Unit) {
 @Composable
 fun TodayNowBlock(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val dark = isSystemInDarkTheme()
-    val scheme = if (dark) TodayDark else TodayNow
+    val scheme = if (dark) Dark else TodayNow
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
             Column(
@@ -239,13 +215,32 @@ object CedarColors {
     val secondaryText: Color
         @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
-    /** The mark's clay: what needs the user (answers, approvals) and unread counts. */
+    /** What needs the user (answers, approvals, held calls) and unread counts: amber, as text or a tint. */
     val clay: Color
         @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.secondary
 
-    /** The mark's bars: the green on paper, cream on charcoal. */
+    /** The amber as a fill (a badge, a dot), and the ink that goes on it. */
+    val attentionFill: Color get() = Amber
+    val onAttentionFill: Color get() = AmberInk
+
+    /** The fill of a view's main action, and its text: lime on the darkest green, or the reverse on a dark ground. */
+    val actionFill: Color
+        @Composable @ReadOnlyComposable get() = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Lime else Night
+    val onActionFill: Color
+        @Composable @ReadOnlyComposable get() = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Night else Lime
+
+    /** What the person wrote, in the chat: the darkest green (a raised green in the dark), with paper-white text. */
+    val bubble: Color
+        @Composable @ReadOnlyComposable get() = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF22361A) else Night
+    val onBubble: Color get() = Paper
+
+    /** The mark's bars: its own green on a light ground, paper on a dark one. */
     val markInk: Color
-        @Composable @ReadOnlyComposable get() = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Cream else Green
+        @Composable @ReadOnlyComposable get() = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Paper else MarkGreen
+
+    /** The mark's dash: its own clay, which is the logo's and not the interface's amber. */
+    val markDash: Color
+        @Composable @ReadOnlyComposable get() = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) MarkClayDark else MarkClay
 }
 
 /** The frame tool calls and cards sit in, as the iOS app's `cardStyle()`. */
@@ -274,7 +269,7 @@ fun Modifier.surfaceCard(
 @Composable
 fun CedarMark(size: Dp = 28.dp) {
     val ink = CedarColors.markInk
-    val clay = CedarColors.clay
+    val clay = CedarColors.markDash
     Canvas(Modifier.size(size)) {
         val s = this.size.width / 48f
         fun bar(x: Float, y: Float, width: Float, color: Color) = drawRoundRect(
@@ -332,7 +327,7 @@ fun RowIcon(icon: ImageVector, tint: Color = MaterialTheme.colorScheme.primary, 
     }
 }
 
-/** A primary action: the brand green, tall and softly rounded, as the iOS app's `ProminentButtonStyle`. */
+/** A view's main action: lime on the darkest green, tall and softly rounded, as the iOS app's `ProminentButtonStyle`. */
 @Composable
 fun ProminentButton(
     onClick: () -> Unit,
@@ -345,6 +340,7 @@ fun ProminentButton(
         modifier = modifier.heightIn(min = 52.dp),
         enabled = enabled,
         shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = CedarColors.actionFill, contentColor = CedarColors.onActionFill),
         content = content,
     )
 }

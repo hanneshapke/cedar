@@ -468,11 +468,11 @@ internal fun HeldCallView(
     val secondary = CedarColors.secondaryText
     val open = item?.isOpen == true
     var expanded by rememberSaveable(item?.id ?: note?.id) { mutableStateOf(true) }
-    Panel(tint = if (open) CedarColors.orange else null) {
+    Panel(tint = if (open) CedarColors.clay else null) {
         PanelTitle(
             Icons.Outlined.BackHand,
             stringResource(if (open || item == null) R.string.held_title else R.string.held_title_settled),
-            color = if (open) CedarColors.orange else MaterialTheme.colorScheme.primary,
+            color = if (open) CedarColors.clay else MaterialTheme.colorScheme.primary,
         )
         val reason = item?.reason?.takeIf { it.isNotEmpty() } ?: note?.reason.orEmpty()
         if (reason.isNotEmpty()) SelectionContainer { Text(reason, style = MaterialTheme.typography.bodyLarge) }

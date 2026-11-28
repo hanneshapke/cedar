@@ -656,10 +656,10 @@ fun <T> SegmentedSwitch(
                         "$waiting",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondary,
+                        color = CedarColors.onAttentionFill,
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(CedarColors.clay)
+                            .background(CedarColors.attentionFill)
                             .padding(horizontal = 6.dp, vertical = 1.dp),
                     )
                 }

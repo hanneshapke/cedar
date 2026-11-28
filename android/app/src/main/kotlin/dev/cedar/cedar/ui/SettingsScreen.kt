@@ -383,7 +383,7 @@ fun SettingsScreen(app: AppModel, onAllowNotifications: () -> Unit) {
                 Footnote(stringResource(R.string.language_footnote))
                 // Applies at once too: whether other apps on this phone may start agents (AgentIntentReceiver).
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SettingsIcon(Icons.Outlined.PhoneAndroid, Color(0xFFE08A1E))
+                    SettingsIcon(Icons.Outlined.PhoneAndroid, CedarColors.orange)
                     Text(stringResource(R.string.allow_automation), Modifier.weight(1f))
                     Switch(checked = app.allowAutomation, onCheckedChange = { app.chooseAllowAutomation(it) })
                 }

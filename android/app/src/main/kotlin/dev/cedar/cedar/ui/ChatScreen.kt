@@ -367,12 +367,12 @@ fun UserBubble(text: String, attachments: List<AttachmentInfo> = emptyList()) {
         Column(
             Modifier
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 6.dp, bottomStart = 20.dp))
-                .background(MaterialTheme.colorScheme.primary)
+                .background(CedarColors.bubble)
                 .padding(horizontal = 15.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            SelectionContainer { Text(text, color = MaterialTheme.colorScheme.onPrimary) }
+            SelectionContainer { Text(text, color = CedarColors.onBubble) }
             if (attachments.isNotEmpty()) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     attachments.forEach { file ->
@@ -382,10 +382,10 @@ fun UserBubble(text: String, attachments: List<AttachmentInfo> = emptyList()) {
                         ) {
                             Icon(
                                 if (file.mediaType == OutgoingAttachment.PDF) Icons.Outlined.Description else Icons.Outlined.Image, null, Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary,
+                                tint = CedarColors.onBubble,
                             )
                             Spacer(Modifier.size(4.dp))
-                            Text(file.name, style = MaterialTheme.typography.labelSmall, maxLines = 1, color = MaterialTheme.colorScheme.onPrimary)
+                            Text(file.name, style = MaterialTheme.typography.labelSmall, maxLines = 1, color = CedarColors.onBubble)
                         }
                     }
                 }
