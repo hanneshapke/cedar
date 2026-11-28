@@ -26,7 +26,7 @@
 .cedar-send-levels { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 8px 30px; }
 .cedar-send-level { padding: 2px 9px; border: 1px solid rgba(128, 128, 128, .35); border-radius: 999px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
 .cedar-send-level:hover { border-color: var(--accent); color: var(--accent); }
-.cedar-send-level[aria-checked="true"] { border-color: var(--accent); background: var(--accent); color: #fff; }
+.cedar-send-level[aria-checked="true"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent, #fff); }
 
 @media (max-width: 640px) {
   .cedar-send-pick { max-width: 140px; }

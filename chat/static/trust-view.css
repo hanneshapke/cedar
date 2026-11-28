@@ -12,7 +12,7 @@
 .cedar-plan-mark { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--line); color: transparent; }
 .cedar-plan-mark svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .cedar-plan-step[data-state="running"] .cedar-plan-mark { border-color: var(--accent); animation: cedar-plan-pulse 1.4s ease-in-out infinite; }
-.cedar-plan-step[data-state="done"] .cedar-plan-mark { border-color: var(--accent); background: var(--accent); color: var(--on-ink, #fff); }
+.cedar-plan-step[data-state="done"] .cedar-plan-mark { border-color: var(--accent); background: var(--accent); color: var(--on-accent, var(--on-ink, #fff)); }
 .cedar-plan-step[data-state="error"] .cedar-plan-mark { border-color: var(--error); background: var(--error-wash); }
 .cedar-plan-title { min-width: 0; color: var(--ink); }
 .cedar-plan-step[data-state="done"] .cedar-plan-title { color: var(--ink-2, var(--ink)); }
@@ -27,7 +27,7 @@ input.cedar-plan-title:focus { border-color: var(--accent); background: var(--sh
 .cedar-plan-actions { display: flex; align-items: center; gap: 8px; padding: 8px 14px 12px; }
 .cedar-plan-add { padding: 0 10px; height: 28px; border: 1px solid var(--line); border-radius: 7px; background: var(--sheet); font: 500 12.5px inherit; font-family: inherit; color: var(--ink); cursor: pointer; }
 .cedar-plan-add:hover { background: var(--wash); }
-.cedar-plan-start { margin-left: auto; padding: 0 14px; height: 30px; border: 0; border-radius: 7px; background: var(--ink); color: var(--on-ink, #fff); font: 500 12.5px inherit; font-family: inherit; cursor: pointer; }
+.cedar-plan-start { margin-left: auto; padding: 0 14px; height: 30px; border: 0; border-radius: 7px; background: var(--primary-bg, var(--ink)); color: var(--primary-ink, var(--on-ink, #fff)); font: 500 12.5px inherit; font-family: inherit; cursor: pointer; }
 .cedar-plan-start:disabled { opacity: .5; cursor: default; }
 @keyframes cedar-plan-pulse { 50% { opacity: .35; } }
 
@@ -38,7 +38,7 @@ input.cedar-plan-title:focus { border-color: var(--accent); background: var(--sh
 .cedar-approval-body { overflow-wrap: anywhere; white-space: pre-line; color: var(--ink); }
 .cedar-approval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; }
 .cedar-approval-btn { height: 28px; padding: 0 10px; border: 1px solid var(--warn-line, #e9d9b8); border-radius: 6px; background: var(--sheet); font: 500 12.5px inherit; font-family: inherit; color: var(--ink); cursor: pointer; }
-.cedar-approval-btn.primary { background: var(--ink); border-color: var(--ink); color: var(--on-ink, #fff); }
+.cedar-approval-btn.primary { background: var(--primary-bg, var(--ink)); border-color: var(--primary-bg, var(--ink)); color: var(--primary-ink, var(--on-ink, #fff)); }
 .cedar-approval-btn:disabled { opacity: .5; cursor: default; }
 .cedar-approval-later { color: var(--muted); font-size: 12px; }
 .cedar-approval[data-state="allowed"] .cedar-approval-later, .cedar-approval[data-state="denied"] .cedar-approval-later { display: none; }
@@ -56,7 +56,7 @@ input.cedar-plan-title:focus { border-color: var(--accent); background: var(--sh
 
 sup .cedar-cite, .cedar-cite { font: 500 10.5px var(--mono); color: var(--accent); text-decoration: none; background: var(--accent-wash); padding: 1px 3px; border-radius: 3px; margin: 0; }
 sup:has(> .cedar-cite) { line-height: 0; margin-left: 1px; }
-.cedar-cite:hover { background: var(--accent); color: var(--on-ink, #fff); }
+.cedar-cite:hover { background: var(--accent); color: var(--on-accent, var(--on-ink, #fff)); }
 .cedar-sources { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; line-height: 1.4; }
 .cedar-source { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; }
 .cedar-source-n { font: 500 11px var(--mono); color: var(--accent); padding-top: 2px; }

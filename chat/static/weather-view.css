@@ -232,7 +232,7 @@
 .cw-day-row:hover { background: var(--cw-soft); }
 
 .cw-day-row:focus-visible {
-  outline: 2px solid var(--accent, #c96442);
+  outline: 2px solid var(--accent, #1f5a40);
   outline-offset: -2px;
 }
 

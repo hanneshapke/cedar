@@ -46,11 +46,11 @@
   align-items: flex-start;
   padding: 9px 12px;
   border-top: 1px solid rgba(128, 128, 128, .2);
-  background: color-mix(in srgb, var(--accent, #c96442) 12%, transparent);
+  background: color-mix(in srgb, var(--accent, #1f5a40) 12%, transparent);
 }
 
 .cedar-trip-rec .cedar-trip-mode {
-  background: var(--accent, #c96442);
+  background: var(--accent, #1f5a40);
   color: #fff;
 }
 
@@ -113,12 +113,12 @@
 }
 
 .cedar-trip-option:focus-visible {
-  outline: 2px solid var(--accent, #c96442);
+  outline: 2px solid var(--accent, #1f5a40);
   outline-offset: -2px;
 }
 
 .cedar-trip-option[aria-pressed="true"] {
-  border-left-color: var(--accent, #c96442);
+  border-left-color: var(--accent, #1f5a40);
   background: rgba(128, 128, 128, .1);
 }
 
@@ -134,7 +134,7 @@
 }
 
 .cedar-trip-option[aria-pressed="true"] .cedar-trip-mode {
-  background: var(--accent, #c96442);
+  background: var(--accent, #1f5a40);
   color: #fff;
 }
 
@@ -166,7 +166,7 @@
 
 .cedar-trip-tag.rec {
   border-color: transparent;
-  background: var(--accent, #c96442);
+  background: var(--accent, #1f5a40);
   color: #fff;
 }
 
@@ -226,7 +226,7 @@
 }
 
 .cedar-trip-step {
-  --leg: var(--accent, #c96442);
+  --leg: var(--accent, #1f5a40);
   position: relative;
   display: grid;
   grid-template-columns: 58px 14px 1fr;

@@ -62,7 +62,7 @@
   color: var(--muted, #6b685f); font: 500 11px/1.6 var(--mono, ui-monospace, monospace);
   letter-spacing: .02em; vertical-align: middle; white-space: nowrap; cursor: pointer; opacity: .75;
 }
-:root[data-actions] .cedar-act-how:hover, :root[data-actions] .cedar-act-how:focus-visible { border-color: var(--accent, #1f7a5c); color: var(--accent, #1f7a5c); opacity: 1; }
+:root[data-actions] .cedar-act-how:hover, :root[data-actions] .cedar-act-how:focus-visible { border-color: var(--accent, #1f5a40); color: var(--accent, #1f5a40); opacity: 1; }
 :root[data-actions] .user-msg > .cedar-act-how { align-self: center; margin: 0 8px 0 0; }
 .cedar-act-how svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 

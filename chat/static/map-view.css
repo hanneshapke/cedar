@@ -75,7 +75,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent, #c96442);
+  background: var(--accent, #1f5a40);
   color: #fff;
   font-size: 11px;
   font-weight: 600;
@@ -115,7 +115,7 @@
   box-sizing: border-box;
   border-radius: 50% 50% 50% 0;
   border: 2px solid #fff;
-  background: var(--accent, #c96442);
+  background: var(--accent, #1f5a40);
   box-shadow: 0 2px 6px rgba(0, 0, 0, .35);
   transform: rotate(-45deg);
 }

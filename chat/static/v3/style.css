@@ -93,7 +93,7 @@ a { color: var(--accent); }
 .card-head .acts { display: flex; flex: none; gap: 4px; }
 .card-head .acts .copy-btn { border: 1px solid var(--line); background: var(--sheet); color: var(--ink); font-weight: 500; height: 28px; }
 .card-head .acts .copy-btn:hover { background: var(--wash); }
-.card-head .acts .copy-btn.primary { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.card-head .acts .copy-btn.primary { background: var(--primary-bg, var(--ink)); border-color: var(--primary-bg, var(--ink)); color: var(--primary-ink, var(--on-ink, #fff)); }
 .card-body { border-top: 1px solid var(--line-soft); }
 .card.running .card-head .ico { color: var(--accent); background: var(--accent-wash); }
 .card.running .meta { color: var(--accent); }
@@ -158,7 +158,7 @@ a { color: var(--accent); }
 .md th { font-weight: 600; }
 .copy-btn { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 12px; }
 .copy-btn:hover { background: var(--line-soft); color: var(--ink); }
-.primary { padding: 8px 16px; border: 0; border-radius: 6px; background: var(--ink); color: var(--on-ink); font-weight: 500; }
+.primary { padding: 8px 16px; border: 0; border-radius: 6px; background: var(--primary-bg, var(--ink)); color: var(--primary-ink, var(--on-ink, #fff)); font-weight: 500; }
 
 .backdrop { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .25); }
 .conv:hover { background: var(--wash); }
