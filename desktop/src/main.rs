@@ -110,6 +110,7 @@ fn main() {
             commands::connect_remote,
             commands::choose_local,
             commands::disconnect_remote,
+            commands::connect_tailscale,
         ])
         .build(tauri::generate_context!())
         .expect("Cedar could not start")
